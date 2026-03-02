@@ -3,6 +3,10 @@ setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 
+REM Adauga Git in PATH
+if exist "C:\Program Files\Git\cmd\git.exe" set "PATH=%PATH%;C:\Program Files\Git\cmd"
+if exist "C:\Program Files (x86)\Git\cmd\git.exe" set "PATH=%PATH%;C:\Program Files (x86)\Git\cmd"
+
 echo.
 echo ============================================================
 echo   SETUP: GitHub + Deploy automat pe Railway
