@@ -1,0 +1,26 @@
+---
+description: Modificările se fac în varianta online (backend/) pentru Railway
+alwaysApply: true
+---
+
+# Variantă online – unde se fac modificările
+
+## Regula principală
+
+**Toate modificările de cod pentru aplicația online (Railway) se fac în `backend/`:**
+
+- `backend/main.py` – aplicația FastAPI, rute API, interfață HTML
+- `backend/auth.py` – JWT, hash parolă, verificare token
+- `backend/database.py` – CRUD, utilizatori, pacienți, analize
+- `backend/config.py` – setări
+- Alte fișiere din `backend/`
+
+## Deploy online
+
+- **Railway** folosește `backend.main:app` (definit în `railway.json`)
+- URL: https://ionut-analize-app-production.up.railway.app
+- După modificări: `git add .` → `git commit` → `railway up` (sau push dacă e conectat la GitHub)
+
+## Ce NU se modifică automat
+
+- `deployment_cpanel/` – variantă separată pentru cPanel; nu se actualizează cu modificările din `backend/` decât dacă utilizatorul cere în mod explicit

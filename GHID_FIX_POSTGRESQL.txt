@@ -1,0 +1,194 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║           🔧 FIX: ADAUGĂ POSTGRESQL ÎN RAILWAY 🔧                      ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+PROBLEMA: Aplicația rulează, dar fără database!
+  → /health returnează doar "OK" în loc de JSON cu "database": "connected"
+
+CAUZA: PostgreSQL nu a fost adăugat în Railway
+
+SOLUȚIE: Adaugă PostgreSQL în Railway Dashboard (2 minute)
+
+═══════════════════════════════════════════════════════════════════════════
+  🚀 METODA 1: SCRIPT AUTOMAT (RECOMANDAT)
+═══════════════════════════════════════════════════════════════════════════
+
+Dublu-click pe: FIX_RAILWAY_ADD_POSTGRESQL.bat
+
+Script-ul te va ghida pas cu pas!
+
+═══════════════════════════════════════════════════════════════════════════
+  📋 METODA 2: MANUAL (5 PAȘI)
+═══════════════════════════════════════════════════════════════════════════
+
+PAS 1: Deschide Railway Dashboard
+──────────────────────────────────
+
+PowerShell:
+  railway open
+
+SAU accesează direct:
+  https://railway.app/dashboard
+
+PAS 2: Click pe proiectul tău
+──────────────────────────────
+
+→ Click pe "analize-medicale" (sau numele proiectului tău)
+
+PAS 3: Adaugă PostgreSQL
+─────────────────────────
+
+În dashboard:
+  1. Click butonul "+ New" (sus-dreapta, lângă proiectul tău)
+  2. Selectează "Database"
+  3. Selectează "PostgreSQL"
+  4. Click "Add PostgreSQL"
+
+Railway va crea database-ul AUTOMAT! (30 secunde)
+DATABASE_URL se setează AUTOMAT în variabilele environment!
+
+PAS 4: Rulează migrațiile
+──────────────────────────
+
+Așteaptă 30 secunde ca PostgreSQL să pornească, apoi în PowerShell:
+
+  railway run python run_migrations.py
+
+Ar trebui să vezi:
+  "Creez tabelele..."
+  "Tabele create cu succes!"
+
+PAS 5: Restart aplicația
+─────────────────────────
+
+  railway restart
+
+SAU:
+
+  railway up --detach
+
+Așteaptă 1 minut ca aplicația să pornească cu noua configurație.
+
+PAS 6: TEST
+───────────
+
+Accesează în browser:
+  https://analize-xxx.railway.app/health
+
+Ar trebui să vezi:
+  {
+    "status": "ok",
+    "database": "connected"
+  }
+
+✓ SUCCESS! Database-ul funcționează!
+
+═══════════════════════════════════════════════════════════════════════════
+  🎥 GHID VIZUAL (ce să cauți în Railway Dashboard)
+═══════════════════════════════════════════════════════════════════════════
+
+1. Railway Dashboard arată așa:
+   ┌─────────────────────────────────────┐
+   │  Projects                           │
+   │  ┌───────────────────────────┐      │
+   │  │  analize-medicale    [+New]│  ←── Click aici
+   │  │  ┌─────────────────┐      │      │
+   │  │  │ Service (Python)│      │      │
+   │  │  └─────────────────┘      │      │
+   │  └───────────────────────────┘      │
+   └─────────────────────────────────────┘
+
+2. După click "+ New":
+   ┌─────────────────────┐
+   │  Add Service        │  
+   │  ───────────────    │
+   │  ▶ Empty Service    │
+   │  ▶ GitHub Repo      │
+   │  ▶ Database    ←──────── Click aici
+   │  ▶ Template         │
+   └─────────────────────┘
+
+3. Selectează Database Type:
+   ┌─────────────────────┐
+   │  Database Type      │
+   │  ───────────────    │
+   │  ● PostgreSQL   ←────── Click aici
+   │  ○ MySQL            │
+   │  ○ MongoDB          │
+   │  ○ Redis            │
+   └─────────────────────┘
+
+4. După adăugare vei vedea:
+   ┌───────────────────────────┐
+   │  analize-medicale         │
+   │  ┌─────────────────┐      │
+   │  │ Service (Python)│      │
+   │  └─────────────────┘      │
+   │  ┌─────────────────┐      │
+   │  │ PostgreSQL      │  ←── NOU!
+   │  └─────────────────┘      │
+   └───────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+  🔍 VERIFICARE DATABASE_URL
+═══════════════════════════════════════════════════════════════════════════
+
+În PowerShell:
+  railway variables
+
+Ar trebui să vezi:
+  DATABASE_URL=postgresql://postgres:...@...railway.app:5432/railway
+
+Dacă vezi asta → DATABASE_URL e setat corect! ✓
+
+═══════════════════════════════════════════════════════════════════════════
+  🆘 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════
+
+PROBLEMA: "railway: command not found"
+SOLUȚIE: 
+  npm install -g @railway/cli
+  Restart PowerShell
+
+PROBLEMA: Migrațiile eșuează cu "connection refused"
+SOLUȚIE:
+  PostgreSQL încă se inițializează
+  Așteaptă 1-2 minute și încearcă din nou
+
+PROBLEMA: /health tot returnează doar "OK"
+SOLUȚIE:
+  1. Verifică DATABASE_URL: railway variables
+  2. Restart aplicația: railway restart
+  3. Așteaptă 1 minut
+  4. Verifică logs: railway logs --follow
+
+PROBLEMA: "Table already exists"
+SOLUȚIE:
+  Normal! Înseamnă că migrațiile au rulat deja
+  Aplicația ar trebui să funcționeze
+
+═══════════════════════════════════════════════════════════════════════════
+  📊 DUPĂ FINALIZARE
+═══════════════════════════════════════════════════════════════════════════
+
+Vei avea:
+  ✓ Aplicație Python pe Railway
+  ✓ PostgreSQL Database pe Railway
+  ✓ DATABASE_URL configurat automat
+  ✓ Tabele create în PostgreSQL
+  ✓ /health returnează JSON complet
+  ✓ Aplicația funcțională 100%
+
+Test complet:
+  1. /health → {"status":"ok","database":"connected"}
+  2. / → Interfața aplicației
+  3. Upload PDF → Funcționează
+  4. Tab Pacient → Arată date
+
+═══════════════════════════════════════════════════════════════════════════
+
+🚀 START: Dublu-click pe FIX_RAILWAY_ADD_POSTGRESQL.bat
+
+SAU rulează manual pașii de mai sus!
+
+Succes! 🎉

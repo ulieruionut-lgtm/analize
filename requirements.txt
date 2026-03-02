@@ -1,0 +1,25 @@
+# Backend (versiuni flexibile pentru Python 3.11+)
+fastapi>=0.109
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+
+# PDF & OCR
+pdfplumber>=0.10
+pymupdf>=1.23          # convertire PDF la imagine, fara poppler
+pytesseract>=0.3       # OCR Tesseract (pentru PDF-uri scanate)
+Pillow>=10.2
+
+# Database
+psycopg2-binary>=2.9   # PostgreSQL
+pymysql>=1.1.0         # MySQL
+sqlalchemy>=2.0
+
+# Auth (JWT + password hashing)
+passlib>=1.7
+python-jose[cryptography]>=3.3
+
+# Utils
+pydantic>=2.6
+pydantic-settings>=2.1
+python-dotenv>=1.0
+requests>=2.31

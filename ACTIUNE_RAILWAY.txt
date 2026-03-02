@@ -1,0 +1,45 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    ACTIUNE NECESARA - URGENT                            ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+AM IDENTIFICAT PROBLEMA!
+
+Proiectul "zestful-truth" are 2 servicii, dar doar 1 ruleaza (1/2 services online).
+
+══════════════════════════════════════════════════════════════════════════
+
+PASI PENTRU A REPARA:
+
+1. Deschide proiectul zestful-truth:
+   https://railway.com/project/8a6b04fc-a7b8-4584-bcfc-5a47a83595a1
+
+2. Vei vedea 2 servicii. Unul din ele probabil e:
+   - PostgreSQL (database)
+   - Aplicatia ta (stopped sau failed)
+
+3. Click pe fiecare serviciu si spune-mi:
+   - Numele serviciului
+   - Status (Active/Stopped/Failed)
+   - Daca e "Failed", ce eroare afiseaza in Logs
+
+══════════════════════════════════════════════════════════════════════════
+
+CE SA VERIFICI:
+
+Pentru fiecare serviciu din dashboard:
+  
+  Serviciu 1: _______________ (nume)
+    Status: [ ] Active  [ ] Stopped  [ ] Failed
+    
+  Serviciu 2: _______________ (nume)
+    Status: [ ] Active  [ ] Stopped  [ ] Failed
+
+══════════════════════════════════════════════════════════════════════════
+
+FA UN SCREENSHOT cu cele 2 servicii si arata-mi!
+
+SAU spune-mi:
+- Ce nume au cele 2 servicii?
+- Care ruleaza si care nu?
+
+══════════════════════════════════════════════════════════════════════════

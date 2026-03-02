@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+upload_eroare.txt
+
+# Buletine uploads (nu urca PDFuri de test)
+buletine/
+*.pdf
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Backup
+*.bak
+backup/
+*.sql.gz
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary
+tmp/
+temp/
+*.tmp

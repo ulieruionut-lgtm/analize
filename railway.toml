@@ -1,0 +1,11 @@
+# Railway deployment cu PostgreSQL
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# Railway va citi din Procfile automat
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

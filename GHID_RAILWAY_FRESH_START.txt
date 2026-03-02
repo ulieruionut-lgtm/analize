@@ -1,0 +1,306 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║         GHID PAS CU PAS - DEPLOYMENT RAILWAY (CONT NOU)                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📧 Cont Railway: scanari.cabinet@gmail.com
+
+══════════════════════════════════════════════════════════════════════════
+
+📋 REZUMAT COMPLET:
+
+1. ✅ Verificare Railway CLI
+2. ✅ Logout din cont vechi (dacă există)
+3. ✅ Login cu contul nou (scanari.cabinet@gmail.com)
+4. ✅ Creare proiect Railway
+5. ✅ Adăugare PostgreSQL (MANUAL în dashboard)
+6. ✅ Deploy aplicație Python
+7. ✅ Rulare migrații database
+8. ✅ Test final
+
+══════════════════════════════════════════════════════════════════════════
+
+🚀 METODA AUTOMATĂ (RECOMANDATĂ):
+
+  Dublu-click pe:
+    RAILWAY_FRESH_START.bat
+
+  Scriptul va face TOTUL automat și te va ghida pas cu pas!
+
+══════════════════════════════════════════════════════════════════════════
+
+📖 METODA MANUALĂ (dacă vrei să înțelegi fiecare pas):
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 1: VERIFICARE RAILWAY CLI
+──────────────────────────────────────────────────────────────────────────
+
+Deschide PowerShell și rulează:
+
+  railway --version
+
+Dacă nu merge:
+  npm install -g @railway/cli
+
+Dacă "npm" nu merge:
+  - Instalează Node.js de aici: https://nodejs.org/
+  - Restart PowerShell
+  - Încearcă din nou
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 2: LOGOUT DIN CONT VECHI
+──────────────────────────────────────────────────────────────────────────
+
+  railway logout
+
+(Dacă nu ești logat, vei vedea o eroare - e OK!)
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 3: LOGIN CU CONTUL NOU
+──────────────────────────────────────────────────────────────────────────
+
+  railway login --browserless
+
+Ce se întâmplă:
+  1. Vei primi un LINK în consolă
+  2. Click pe link (sau copiază-l în browser)
+  3. Loghează-te cu: scanari.cabinet@gmail.com
+  4. Autorizează aplicația
+  5. Revino în PowerShell
+
+Verificare:
+  railway whoami
+
+Trebuie să vezi: "Logged in as ..."
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 4: CREARE PROIECT
+──────────────────────────────────────────────────────────────────────────
+
+  cd "D:\Ionut analize"
+  railway init
+
+Selectează:
+  - Create new project
+  - Nume: ionut-analize-medicale
+
+Verificare:
+  railway status
+
+Trebuie să vezi:
+  Project: ionut-analize-medicale
+  Environment: production
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 5: ADĂUGARE POSTGRESQL (FOARTE IMPORTANT!)
+──────────────────────────────────────────────────────────────────────────
+
+Deschide Railway dashboard:
+  railway open
+
+PAȘI EXACTI în browser:
+  1. Vei vedea proiectul "ionut-analize-medicale"
+  2. Click pe proiect (dacă nu e deschis)
+  3. Click butonul "+ New" (sus-dreapta, mov/violet)
+  4. Click "Database"
+  5. Click "PostgreSQL"
+  6. Așteptă 20-30 secunde
+
+CE TREBUIE SĂ VEZI:
+  - Un card nou "Postgres" cu buline verzi
+  - Status: "Online"
+
+DACĂ NU MERGE:
+  - Refresh pagina
+  - Așteptă încă 30 secunde
+  - Verifică că ai selectat proiectul corect
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 6: VERIFICARE DATABASE_URL
+──────────────────────────────────────────────────────────────────────────
+
+În PowerShell:
+  railway variables
+
+Trebuie să vezi:
+  DATABASE_URL = postgresql://...
+
+DACĂ NU VEZI DATABASE_URL:
+  - PostgreSQL nu e încă gata
+  - Așteptă 1 minut
+  - railway variables (din nou)
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 7: DEPLOY APLICAȚIE
+──────────────────────────────────────────────────────────────────────────
+
+  cd "D:\Ionut analize"
+  
+  git add .
+  git commit -m "Deploy fresh"
+  
+  railway up
+
+Ce se întâmplă:
+  - Railway va încărca codul
+  - Va citi Dockerfile
+  - Va face build (2-3 minute)
+  - Va porni aplicația
+
+AȘTEPTARE: 2-3 minute!
+
+Verificare:
+  railway logs
+
+Trebuie să vezi:
+  "Application startup complete"
+  SAU
+  "Uvicorn running on ..."
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 8: RULARE MIGRAȚII
+──────────────────────────────────────────────────────────────────────────
+
+  railway run python run_migrations.py
+
+Ce se întâmplă:
+  - Conectare la PostgreSQL
+  - Creeare tabele (pacienti, buletine, etc.)
+  - Inserare date inițiale
+
+Trebuie să vezi:
+  "Migrații executate cu succes!"
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 9: OBȚINERE URL APLICAȚIE
+──────────────────────────────────────────────────────────────────────────
+
+  railway domain
+
+Vei primi un URL, ex:
+  ionut-analize-medicale-production-abc123.up.railway.app
+
+URL COMPLET:
+  https://ionut-analize-medicale-production-abc123.up.railway.app
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 10: TEST FINAL
+──────────────────────────────────────────────────────────────────────────
+
+Deschide în browser:
+  https://[URL-TĂU]/health
+
+Trebuie să vezi:
+  {"status":"ok","database":"connected"}
+
+SAU testează în PowerShell:
+  curl https://[URL-TĂU]/health
+
+DACĂ VEZI:
+  ✅ {"status":"ok","database":"connected"} = PERFECT!
+  ⚠️ {"status":"ok"} = Database nu e conectat
+  ❌ Eroare 404/500 = Aplicația nu rulează
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 11: DESCHIDE APLICAȚIA
+──────────────────────────────────────────────────────────────────────────
+
+Deschide în browser:
+  https://[URL-TĂU]
+
+Vei vedea:
+  🏥 Analize Medicale
+  📤 Upload PDF analize
+  👤 Caută pacient
+
+══════════════════════════════════════════════════════════════════════════
+
+🆘 DEPANARE (DACĂ CEVA NU MERGE):
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: "railway: command not found"
+Soluție:
+  1. npm install -g @railway/cli
+  2. Restart PowerShell
+  3. Încearcă din nou
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: "Unauthorized. Please login"
+Soluție:
+  railway logout
+  railway login --browserless
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: "No project linked"
+Soluție:
+  railway link
+  (Selectează proiectul corect)
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: "DATABASE_URL not found"
+Soluție:
+  1. Verifică că PostgreSQL e adăugat în dashboard
+  2. Așteptă 30 secunde
+  3. railway variables (verifică din nou)
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: Build failed
+Soluție:
+  railway logs
+  (Vezi exact ce eroare e)
+  
+  Cauze comune:
+  - requirements.txt lipsește
+  - Dockerfile greșit
+  - Python version incompatibilă
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: /health returnează doar "OK"
+Soluție:
+  1. DATABASE_URL nu e setat
+  2. Verifică: railway variables
+  3. Adaugă PostgreSQL în dashboard
+  4. railway restart
+
+──────────────────────────────────────────────────────────────────────────
+Problemă: 404 Not Found
+Soluție:
+  1. Aplicația nu rulează
+  2. Verifică: railway logs
+  3. Verifică: railway status
+  4. railway restart
+
+══════════════════════════════════════════════════════════════════════════
+
+📞 COMENZI UTILE:
+
+  railway open           Deschide dashboard
+  railway logs           Vezi logs real-time
+  railway logs --follow  Vezi logs continuous
+  railway restart        Restart aplicație
+  railway status         Status proiect
+  railway variables      Vezi toate variabilele
+  railway domain         Vezi URL aplicație
+  railway run CMD        Rulează comandă în Railway
+  railway whoami         Verifică cine ești logat
+
+══════════════════════════════════════════════════════════════════════════
+
+✅ CHECKLIST FINAL:
+
+  [ ] Railway CLI instalat
+  [ ] Logat cu scanari.cabinet@gmail.com
+  [ ] Proiect "ionut-analize-medicale" creat
+  [ ] PostgreSQL adăugat și online
+  [ ] DATABASE_URL prezent în variables
+  [ ] Aplicație deployed (railway up)
+  [ ] Migrații rulate (run_migrations.py)
+  [ ] /health returnează {"database":"connected"}
+  [ ] Aplicația accesibilă în browser
+
+══════════════════════════════════════════════════════════════════════════
+
+🎉 GATA! APLICAȚIA TA E LIVE!
+
+  URL: https://[proiect-tau].up.railway.app
+
+══════════════════════════════════════════════════════════════════════════

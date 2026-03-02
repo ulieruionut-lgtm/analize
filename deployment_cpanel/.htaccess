@@ -1,0 +1,27 @@
+# .htaccess pentru Analize Medicale
+# Redirect trafic către aplicația Python (dacă rulează pe port 8000)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    
+    # Nu rewrite pentru installer.php
+    RewriteCond %{REQUEST_URI} !^/installer\.php$
+    
+    # Redirect la Python app (localhost:8000)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ http://localhost:8000/$1 [P,L]
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# PHP settings
+php_value upload_max_filesize 20M
+php_value post_max_size 20M
+php_value max_execution_time 300

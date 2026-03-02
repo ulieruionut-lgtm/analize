@@ -1,0 +1,191 @@
+═══════════════════════════════════════════════════════════════════════════
+  📋 INSTRUCȚIUNI DEPLOYMENT CPANEL - ROMARG HOSTING
+═══════════════════════════════════════════════════════════════════════════
+
+IMPORTANT: Romarg Hosting folosește PHP 7 + MySQL.
+Aplicația ta folosește Python + FastAPI.
+
+╔════════════════════════════════════════════════════════════════════════╗
+║  VARIANTĂ RECOMANDATĂ: Arhitectură Hibridă                             ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+  🌐 Railway.app (gratuit) → Aplicația Python FastAPI
+  💾 Romarg MySQL → Baza de date (accesibilă de pe Railway)
+
+AVANTAJE:
+  ✓ Python complet funcțional (Railway)
+  ✓ Folosești MySQL-ul de pe Romarg (inclus în pachet)
+  ✓ Totul gratuit pentru început
+  ✓ HTTPS automat
+  ✓ Deployment simplu
+
+───────────────────────────────────────────────────────────────────────────
+  PAȘI DEPLOYMENT
+───────────────────────────────────────────────────────────────────────────
+
+═══ PARTEA 1: MySQL pe Romarg (5 minute) ═══
+
+1. LOGIN CPANEL
+   → Accesează: https://cpanel.romarg.ro
+   → Username: contul tău Romarg
+   → Password: parola cPanel
+
+2. CREEAZĂ DATABASE MYSQL
+   a) Mergi la: "MySQL® Databases"
+   
+   b) Creează database:
+      Nume: cpanel_analize (sau alt nume)
+      → Click "Create Database"
+   
+   c) Creează user MySQL:
+      Username: cpanel_user
+      Password: [generează parolă puternică]
+      → Click "Create User"
+   
+   d) Adaugă user la database:
+      User: cpanel_user
+      Database: cpanel_analize
+      Privilegii: ALL PRIVILEGES
+      → Click "Add"
+
+3. NOTEAZĂ DATELE:
+   ✓ Host: cpanel.mysql.romarg.ro (sau localhost)
+   ✓ Database: cpanel_analize
+   ✓ User: cpanel_user
+   ✓ Password: [parola ta]
+   ✓ Port: 3306
+
+4. PERMITE ACCES REMOTE (IMPORTANT!)
+   a) În cPanel → "Remote MySQL"
+   b) Adaugă: %.railway.internal
+   c) Adaugă: %.render.com
+   d) Adaugă: % (toate IP-urile - doar pentru început)
+
+5. UPLOAD & RULEAZĂ INSTALLER
+   a) File Manager → public_html
+   b) Upload deployment_cpanel.zip
+   c) Extract arhiva
+   d) Accesează: http://your-domain.ro/installer.php
+   e) Completează datele MySQL
+   f) Click "Test Conexiune & Salvează Config"
+   g) Click "Creează Tabelele MySQL"
+
+═══ PARTEA 2: Python FastAPI pe Railway (5 minute) ═══
+
+6. INSTALARE RAILWAY CLI (pe calculatorul tău)
+   
+   Windows:
+   > npm install -g @railway/cli
+   
+   Sau download de la: https://railway.app
+
+7. DEPLOYMENT RAILWAY
+   
+   a) Deschide terminal în: D:\Ionut analize
+   
+   b) Login Railway:
+      > railway login
+   
+   c) Creează proiect:
+      > railway init --name analize-medicale
+   
+   d) Configurează DATABASE_URL în Railway:
+      > railway variables set DATABASE_URL="mysql://cpanel_user:PAROLA@cpanel.mysql.romarg.ro:3306/cpanel_analize"
+      
+      ⚠ Înlocuiește PAROLA cu parola ta MySQL!
+   
+   e) Deploy:
+      > railway up
+   
+   f) Obține URL-ul:
+      > railway domain
+      → Salvează URL-ul (ex: https://analize-xxx.railway.app)
+
+8. TEST APLICAȚIE
+   
+   a) Accesează: https://analize-xxx.railway.app/health
+      Răspuns așteptat: {"status": "ok", "database": "connected"}
+   
+   b) Accesează: https://analize-xxx.railway.app
+      → Ar trebui să vezi interfața aplicației
+
+═══ VARIANTA 2: Doar pe Romarg (dacă ai SSH) ═══
+
+Dacă ai acces SSH pe Romarg:
+
+1. Conectare SSH:
+   > ssh user@server.romarg.ro
+
+2. Instalare dependințe:
+   > cd ~/public_html
+   > python3 -m venv venv
+   > source venv/bin/activate
+   > pip install -r requirements.txt
+
+3. Configurare .env:
+   > nano .env
+   
+   DATABASE_URL=mysql://cpanel_user:PAROLA@localhost:3306/cpanel_analize
+   OCR_LANG=ron
+
+4. Pornire aplicație:
+   > nohup uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+
+5. Configurare port în cPanel (Advanced → Application Manager)
+
+───────────────────────────────────────────────────────────────────────────
+  🆘 TROUBLESHOOTING
+───────────────────────────────────────────────────────────────────────────
+
+EROARE: "Can't connect to MySQL server"
+  → Verifică: Remote MySQL este activat în cPanel
+  → Adaugă %.railway.internal în whitelist
+  → Verifică username/password
+
+EROARE: "Access denied for user"
+  → Verifică: user-ul are ALL PRIVILEGES pe database
+  → Username format corect: cpanel_user (fără prefix)
+
+EROARE: "Tesseract not found" (pe Railway)
+  → Railway: Dockerfile include Tesseract automat ✓
+  → Romarg SSH: apt install tesseract-ocr tesseract-ocr-ron
+
+───────────────────────────────────────────────────────────────────────────
+  📊 COMPARAȚIE VARIANTE
+───────────────────────────────────────────────────────────────────────────
+
+| Criterii        | Railway+Romarg | Doar Romarg SSH |
+|-----------------|----------------|-----------------|
+| Dificultate     | ⭐⭐ (ușor)    | ⭐⭐⭐⭐ (mediu) |
+| Python complet  | ✓ DA           | ⚠ Depinde SSH   |
+| MySQL          | ✓ Romarg       | ✓ Romarg        |
+| Tesseract OCR   | ✓ Automat      | Manual install  |
+| HTTPS           | ✓ Automat      | Manual certbot  |
+| Cost            | Gratuit        | Inclus în pachet|
+| Recomandare     | ✅ DA          | Dacă ai SSH     |
+
+───────────────────────────────────────────────────────────────────────────
+  ✅ VERIFICARE FINALĂ
+───────────────────────────────────────────────────────────────────────────
+
+□ MySQL creat pe Romarg
+□ Remote MySQL activat
+□ Tabele create (via installer.php)
+□ Railway CLI instalat
+□ Aplicația deployed pe Railway
+□ DATABASE_URL configurat în Railway
+□ /health returnează status: ok
+□ Interfața se încarcă corect
+□ Upload PDF funcționează
+
+───────────────────────────────────────────────────────────────────────────
+  📞 SUPORT
+───────────────────────────────────────────────────────────────────────────
+
+Romarg Hosting: https://romarg.ro/contact
+Railway Support: https://railway.app/help
+Documentație: Citește DEPLOYMENT_GUIDE.md
+
+═══════════════════════════════════════════════════════════════════════════
+  Succes cu deployment-ul! 🚀
+═══════════════════════════════════════════════════════════════════════════

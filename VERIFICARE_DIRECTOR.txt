@@ -1,0 +1,25 @@
+========================================
+  VERIFICARE: lucrezi in folderul corect
+========================================
+
+Acest fisier este in:  D:\Ionut analize
+
+Daca il vezi aici, esti in directorul corect.
+
+Pași:
+0. In Cursor: apasa  Ctrl+K S  (sau File > Save All) ca toate fisierele sa fie salvate pe disc.
+1. In File Explorer, mergi la  D:\Ionut analize
+2. Verifica ca exista:
+   - PORNESTE_APLICATIA.bat
+   - folder  backend
+   - fisier  backend\main.py
+3. Deschide  backend\main.py  cu Notepad si cauta (Ctrl+F):  upload_eroare
+   - Daca gasesti = modificarile sunt aici. Ruleaza  PORNESTE_APLICATIA.bat  din acest folder.
+   - Daca NU gasesti = ai deschis alt folder. In Cursor: File > Open Folder > alege  D:\Ionut analize
+
+4. Ruleaza aplicatia: dublu-clic pe  PORNESTE_APLICATIA.bat  (din  D:\Ionut analize)
+   NU din Downloads sau de pe Desktop - trebuie din  D:\Ionut analize
+
+========================================
+Ultima actualizare a acestui fisier: 22.02.2026
+========================================

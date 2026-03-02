@@ -1,0 +1,7 @@
+Aplicația folosește acum SQLite (fișierul analize.db din acest folder).
+Nu mai trebuie să configurezi nimic – doar pornești PORNESTE_APLICATIA.bat.
+
+Dacă vrei să folosești PostgreSQL în loc de SQLite:
+1. Instalează PostgreSQL și creează baza analize_medicale.
+2. În .env pune: DATABASE_URL=postgresql://utilizator:parola@localhost:5432/analize_medicale
+3. Rulează sql/001_schema.sql și 002_seed_analize_standard.sql în PostgreSQL.

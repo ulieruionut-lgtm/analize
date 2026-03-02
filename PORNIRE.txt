@@ -1,0 +1,19 @@
+========================================
+  Cum pornesti aplicatia (2 pasi)
+========================================
+
+1. INSTALEAZA PYTHON (o singura data)
+   - Descarca: https://www.python.org/downloads/
+   - La instalare BIFEAZA "Add Python to PATH"
+   - Finalizeaza instalarea
+
+2. PORNESTE APLICATIA
+   - Dublu-clic pe:  PORNESTE_APLICATIA.bat
+   - Prima data va instala pachete si va crea baza de date (analize.db) - 1-2 minute
+   - Cand vezi "Uvicorn running on...", deschide in browser:  http://localhost:8000
+   - Incarca PDF-uri cu analize; datele se salveaza local (nu trebuie PostgreSQL)
+   - Opreste serverul: in fereastra neagra apasa Ctrl+C
+
+----------------------------------------
+Dupa prima pornire: DOAR_PORNESTE_SERVERUL.bat (mai rapid)
+----------------------------------------

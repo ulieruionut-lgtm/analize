@@ -1,0 +1,189 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║           🚀 DEPLOYMENT RAILWAY - START RAPID 🚀                       ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+Bun venit! Vei pune aplicația online pe Railway.app în 10 minute.
+
+═══════════════════════════════════════════════════════════════════════════
+  🎯 CE VOI FACE
+═══════════════════════════════════════════════════════════════════════════
+
+1️⃣ Setup MySQL pe Romarg (3 min) - via cPanel
+2️⃣ Instalare Railway CLI (2 min) - automat
+3️⃣ Deploy aplicație (3 min) - 3 comenzi
+4️⃣ Test final (2 min) - verificare funcționare
+
+Total: ~10 minute
+
+═══════════════════════════════════════════════════════════════════════════
+  🚀 PAS 1: RULEAZĂ SCRIPTUL
+═══════════════════════════════════════════════════════════════════════════
+
+Dublu-click pe:
+  
+  ► DEPLOY_RAILWAY_START.bat
+
+Script-ul te va ghida pas cu pas prin tot procesul!
+
+═══════════════════════════════════════════════════════════════════════════
+  📋 SAU: PAȘI MANUALI (dacă preferi)
+═══════════════════════════════════════════════════════════════════════════
+
+PARTEA 1: Setup MySQL pe Romarg
+────────────────────────────────
+
+1. Login cPanel: https://cpanel.romarg.ro
+
+2. MySQL® Databases:
+   ✓ Create Database: "analize"
+   ✓ Create User: "analize_user" + parolă puternică
+   ✓ Add User to Database → ALL PRIVILEGES
+
+3. Remote MySQL®:
+   ✓ Add Host: %.railway.internal
+   ✓ Add Host: %
+
+4. (Opțional) Test cu installer.php:
+   ✓ Upload deployment_cpanel.zip în File Manager
+   ✓ Extract
+   ✓ Accesează: your-domain.ro/installer.php
+   ✓ Click "Creează Tabelele MySQL"
+
+NOTEAZĂ DATELE:
+  Host: cpanel.mysql.romarg.ro (sau localhost)
+  Database: analize
+  User: analize_user
+  Password: [parola ta]
+  Port: 3306
+
+PARTEA 2: Deploy pe Railway
+────────────────────────────
+
+Deschide PowerShell în: D:\Ionut analize
+
+# 1. Instalare Railway CLI
+npm install -g @railway/cli
+
+# 2. Login Railway
+railway login
+→ Se deschide browser → Creează cont gratuit
+
+# 3. Inițializare proiect
+railway init
+
+# 4. Configurare DATABASE_URL (înlocuiește cu datele tale!)
+railway variables set DATABASE_URL="mysql://analize_user:PAROLA@cpanel.mysql.romarg.ro:3306/analize"
+
+# 5. Deploy
+railway up
+→ Așteaptă 2-3 minute (build + deploy)
+
+# 6. Obține URL
+railway domain
+→ Notează URL-ul: https://analize-xxx.railway.app
+
+PARTEA 3: Test
+──────────────
+
+1. Health check: https://analize-xxx.railway.app/health
+   Răspuns așteptat: {"status":"ok","database":"connected"}
+
+2. Interfață: https://analize-xxx.railway.app
+   → Upload un PDF de test
+
+3. Verifică în cPanel → phpMyAdmin:
+   → Tabelul "pacienti" ar trebui să aibă înregistrări noi
+
+═══════════════════════════════════════════════════════════════════════════
+  🆘 PROBLEME?
+═══════════════════════════════════════════════════════════════════════════
+
+EROARE: "npm: command not found"
+  → Instalează Node.js: winget install OpenJS.NodeJS.LTS
+  → Sau de la: https://nodejs.org
+
+EROARE: "railway: command not found"
+  → npm install -g @railway/cli
+  → Restart PowerShell după instalare
+
+EROARE: "Can't connect to MySQL server"
+  → Verifică Remote MySQL este activat în cPanel
+  → Verifică %.railway.internal e în whitelist
+  → Test conexiune în installer.php
+
+EROARE: Railway "Health check failed"
+  → railway logs (vezi erori detaliate)
+  → Verifică DATABASE_URL (railway variables)
+  → Testează: railway shell → python test_database.py
+
+═══════════════════════════════════════════════════════════════════════════
+  📚 COMENZI UTILE
+═══════════════════════════════════════════════════════════════════════════
+
+railway logs              # Vezi logs
+railway logs --follow     # Logs real-time
+railway open              # Deschide dashboard
+railway domain            # Vezi URL-ul
+railway variables         # Vezi variabilele env
+railway shell             # SSH în container
+railway restart           # Restart aplicație
+railway status            # Status proiect
+
+═══════════════════════════════════════════════════════════════════════════
+  💰 COSTURI
+═══════════════════════════════════════════════════════════════════════════
+
+Plan Hobby (Gratuit):
+  ✓ 500 ore/lună (~17h/zi)
+  ✓ 512 MB RAM
+  ✓ 1 GB storage
+  ✓ 100 GB bandwidth
+  ✓ SSL/HTTPS inclus
+
+Exemplu: Dacă aplicația rulează 8h/zi = 240h/lună → GRATUIT ✓
+
+După 500h:
+  Plan Developer: $5/lună (unlimited)
+
+═══════════════════════════════════════════════════════════════════════════
+  ✅ VERIFICARE FINALĂ
+═══════════════════════════════════════════════════════════════════════════
+
+□ MySQL creat pe Romarg
+□ Remote MySQL activat (%.railway.internal)
+□ Railway CLI instalat
+□ railway login efectuat
+□ railway init executat
+□ DATABASE_URL configurat
+□ railway up executat cu succes
+□ /health returnează status: ok
+□ Interfața se încarcă în browser
+□ Upload PDF funcționează
+□ Datele apar în MySQL (Romarg)
+
+═══════════════════════════════════════════════════════════════════════════
+  🎉 SUCCESS!
+═══════════════════════════════════════════════════════════════════════════
+
+Aplicația ta este LIVE:
+  🌐 URL: https://analize-xxx.railway.app
+  💾 Database: MySQL pe Romarg
+  🔒 HTTPS: Automat
+  💰 Cost: Gratuit (500h/lună)
+
+Next steps:
+  ✓ Testează toate features
+  ✓ Upload câteva PDF-uri
+  ✓ Verifică tabelul de evoluție
+  ✓ Share URL-ul cu colegii
+
+Pentru întrebări:
+  • Railway Docs: https://docs.railway.app
+  • Railway Discord: https://railway.app/discord
+  • Logs: railway logs --follow
+
+═══════════════════════════════════════════════════════════════════════════
+
+🚀 START ACUM: Dublu-click pe DEPLOY_RAILWAY_START.bat
+
+Succes! 🎉

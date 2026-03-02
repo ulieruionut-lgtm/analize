@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║         GHID RAPID - ADAUGARE APLICATIE IN RAILWAY DASHBOARD           ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+SITUATIE CURENTA:
+  ✅ Logat: scanari.cabinet@gmail.com
+  ✅ Proiect: ionut-analize-medicale
+  ✅ PostgreSQL: Online si functional
+  ❌ Aplicatie: Nu e adaugata inca
+
+══════════════════════════════════════════════════════════════════════════
+
+SOLUTIA RAPIDA - 5 CLICK-URI IN DASHBOARD:
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 1: Deschide proiectul (deja ești acolo!)
+──────────────────────────────────────────────────────────────────────────
+
+URL: https://railway.com/project/0ce8e8d5-630d-4dbf-bdcc-6fc0a77c4612
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 2: Adauga serviciul pentru aplicatie
+──────────────────────────────────────────────────────────────────────────
+
+1. Click butonul "+ Create" (sus-dreapta, violet)
+
+2. Selecteaza "Empty Service"
+
+3. Numele: ionut-analize-app (sau orice nume doresti)
+
+4. Click "Create"
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 3: Configureaza serviciul
+──────────────────────────────────────────────────────────────────────────
+
+Dupa ce se creaza serviciul, vei vedea un card nou.
+
+Click pe cardul "ionut-analize-app"
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 4: Settings -> Start Command
+──────────────────────────────────────────────────────────────────────────
+
+1. Click pe tab "Settings" (jos)
+
+2. Scroll jos la "Deploy"
+
+3. La "Start Command" scrie:
+   uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+
+4. Click "Save"
+
+──────────────────────────────────────────────────────────────────────────
+PASUL 5: Deploy din CLI
+──────────────────────────────────────────────────────────────────────────
+
+Revii in PowerShell si rulezi:
+
+  cd "D:\Ionut analize"
+  railway service
+  (selecteaza serviciul ionut-analize-app)
+  railway up
+
+SAU mai simplu:
+
+  railway up --service ionut-analize-app
+
+══════════════════════════════════════════════════════════════════════════
+
+ALTERNATIVA ULTRA-RAPIDA (fara Empty Service):
+
+──────────────────────────────────────────────────────────────────────────
+
+In loc de "Empty Service", poti folosi "Deploy from local directory":
+
+1. Click "+ Create"
+2. Selecteaza "Deploy from local directory"
+3. Selecteaza folderul: D:\Ionut analize
+4. Railway va uploada tot automat!
+
+══════════════════════════════════════════════════════════════════════════
+
+DUPA DEPLOY:
+
+1. Railway va face build (2-3 minute)
+2. Vei vedea logs in "Deployments"
+3. Cand e gata, vei primi un URL
+
+══════════════════════════════════════════════════════════════════════════
