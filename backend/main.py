@@ -21,6 +21,7 @@ from backend.database import (
     create_user as db_create_user,
     delete_buletin,
     delete_pacient,
+    delete_rezultat_single,
     delete_user_by_id,
     ensure_default_admin,
     export_backup_data,
@@ -31,11 +32,14 @@ from backend.database import (
     get_historicul_analiza,
     get_historicul_analiza_by_cod,
     get_pacient_cu_analize,
+    get_rezultate_buletin,
     get_user_by_username,
     insert_buletin,
     insert_rezultat,
+    add_rezultat_manual,
     search_pacienti,
     sterge_analiza_necunoscuta,
+    update_rezultat,
     update_user_password,
     upsert_pacient,
 )
@@ -494,6 +498,59 @@ async def get_pacient(cnp: str, current_user: dict = Depends(get_current_user)):
 async def lista_analize_standard(current_user: dict = Depends(get_current_user)):
     """Lista tuturor tipurilor de analize din baza de date."""
     return get_all_analize_standard()
+
+
+@app.get("/buletin/{buletin_id}/rezultate")
+async def get_buletin_rezultate(buletin_id: int, current_user: dict = Depends(get_current_user)):
+    """Lista tuturor rezultatelor dintr-un buletin (pentru editare manuala)."""
+    rows = get_rezultate_buletin(buletin_id)
+    return rows
+
+
+@app.put("/rezultat/{rezultat_id}")
+async def edit_rezultat(rezultat_id: int, body: dict, current_user: dict = Depends(get_current_user)):
+    """Editeaza un rezultat existent: valoare, unitate, flag, analiza_standard_id."""
+    ok = update_rezultat(
+        rezultat_id=rezultat_id,
+        valoare=body.get("valoare"),
+        unitate=body.get("unitate"),
+        flag=body.get("flag"),
+        analiza_standard_id=body.get("analiza_standard_id"),
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Rezultatul nu a fost gasit.")
+    return {"ok": True}
+
+
+@app.delete("/rezultat/{rezultat_id}")
+async def sterge_rezultat(rezultat_id: int, current_user: dict = Depends(get_current_user)):
+    """Sterge un singur rezultat dintr-un buletin."""
+    ok = delete_rezultat_single(rezultat_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Rezultatul nu a fost gasit.")
+    return {"ok": True}
+
+
+@app.post("/buletin/{buletin_id}/rezultat")
+async def adauga_rezultat(buletin_id: int, body: dict, current_user: dict = Depends(get_current_user)):
+    """Adauga manual un rezultat intr-un buletin existent."""
+    valoare = body.get("valoare")
+    if valoare is None:
+        raise HTTPException(status_code=422, detail="Campul 'valoare' este obligatoriu.")
+    denumire = (body.get("denumire_raw") or "").strip()
+    if not denumire:
+        raise HTTPException(status_code=422, detail="Campul 'denumire_raw' este obligatoriu.")
+    row = add_rezultat_manual(
+        buletin_id=buletin_id,
+        analiza_standard_id=body.get("analiza_standard_id"),
+        denumire_raw=denumire,
+        valoare=float(valoare),
+        unitate=body.get("unitate"),
+        flag=body.get("flag"),
+    )
+    if not row:
+        raise HTTPException(status_code=500, detail="Eroare la adaugarea rezultatului.")
+    return {"ok": True, "id": row["id"]}
 
 
 @app.get("/analize-necunoscute")
@@ -1598,12 +1655,13 @@ async function veziPacient(cnp) {
     // Tabel evoluție
     html += '<div class="tabel-evolutie-container"><table class="tabel-evolutie">';
 
-    // Header cu date + buton stergere buletin
+    // Header cu date + butoane editare/stergere buletin
     html += '<thead><tr><th class="col-analiza">Tip Analize / Data</th>';
     data.date_buletine.forEach((d, i) => {
       const bId = data.buletine_ids ? data.buletine_ids[i] : null;
-      const delBtn = bId ? `<br><button onclick="stergeBuletin(${bId},'${escHtml(cnp)}')" title="Sterge acest buletin" style="background:none;border:none;cursor:pointer;color:var(--rosu);font-size:0.75rem;padding:2px 0">🗑️ șterge</button>` : '';
-      html += `<th style="white-space:nowrap">${escHtml(d)}${delBtn}</th>`;
+      const editBtn = bId ? `<button onclick="editBuletin(${bId},'${escHtml(cnp)}')" title="Editeaza analizele din acest buletin" style="background:none;border:none;cursor:pointer;color:var(--albastru);font-size:0.75rem;padding:2px 4px">✏️ editează</button>` : '';
+      const delBtn = bId ? `<button onclick="stergeBuletin(${bId},'${escHtml(cnp)}')" title="Sterge acest buletin" style="background:none;border:none;cursor:pointer;color:var(--rosu);font-size:0.75rem;padding:2px 4px">🗑️ șterge</button>` : '';
+      html += `<th style="white-space:nowrap">${escHtml(d)}<br><span style="display:flex;gap:4px;justify-content:center">${editBtn}${delBtn}</span></th>`;
     });
     html += '</tr></thead><tbody>';
 
@@ -1658,7 +1716,6 @@ async function stergeBuletin(buletinId, cnp) {
     const r = await fetch('/buletin/' + buletinId, { method: 'DELETE', headers: getAuthHeaders() });
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
-      // Sterge din cache si reincarca tab-ul pacientului
       delete _tabPacienti[cnp];
       await veziPacient(cnp);
     } else {
@@ -1666,6 +1723,226 @@ async function stergeBuletin(buletinId, cnp) {
     }
   } catch(e) {
     alert('Eroare: ' + e.message);
+  }
+}
+
+// ======= EDITARE BULETIN =======
+let _editBuletinId = null;
+let _editCnp = null;
+let _analizeLista = [];
+
+async function editBuletin(buletinId, cnp) {
+  _editBuletinId = buletinId;
+  _editCnp = cnp;
+
+  // Incarca lista analize standard (pentru dropdown)
+  if (!_analizeLista.length) {
+    const r = await fetch('/analize-standard', { headers: getAuthHeaders() });
+    _analizeLista = r.ok ? await r.json() : [];
+  }
+
+  // Incarca rezultatele buletinului
+  const r = await fetch('/buletin/' + buletinId + '/rezultate', { headers: getAuthHeaders() });
+  if (!r.ok) { alert('Nu s-au putut încărca datele buletinului.'); return; }
+  const rezultate = await r.json();
+
+  // Construieste dropdown analize
+  let opts = '<option value="">— fara mapare —</option>';
+  _analizeLista.forEach(a => {
+    opts += `<option value="${a.id}">${escHtml(a.denumire_standard)} (${escHtml(a.cod_standard||'')})</option>`;
+  });
+
+  // Construieste tabel rezultate
+  let rows = '';
+  rezultate.forEach(rz => {
+    const selOpts = opts.replace(`value="${rz.analiza_standard_id}"`, `value="${rz.analiza_standard_id}" selected`);
+    rows += `<tr id="erow-${rz.id}">
+      <td style="min-width:200px">
+        <select style="width:100%;font-size:0.8rem;padding:3px" onchange="editField(${rz.id},'analiza_standard_id',this.value||null)">
+          ${selOpts}
+        </select>
+        <div style="font-size:0.72rem;color:var(--gri);margin-top:2px">${escHtml(rz.denumire_raw||'')}</div>
+      </td>
+      <td><input type="number" step="any" value="${rz.valoare??''}" style="width:80px;padding:3px;font-size:0.85rem"
+          onchange="editField(${rz.id},'valoare',parseFloat(this.value)||null)" /></td>
+      <td><input type="text" value="${escHtml(rz.unitate||'')}" style="width:60px;padding:3px;font-size:0.85rem"
+          onchange="editField(${rz.id},'unitate',this.value)" /></td>
+      <td>
+        <select style="width:55px;padding:3px;font-size:0.85rem" onchange="editField(${rz.id},'flag',this.value||null)">
+          <option value="" ${!rz.flag?'selected':''}>—</option>
+          <option value="H" ${rz.flag==='H'?'selected':''}>H</option>
+          <option value="L" ${rz.flag==='L'?'selected':''}>L</option>
+        </select>
+      </td>
+      <td>
+        <button onclick="stergeRezultat(${rz.id})" style="background:var(--rosu);color:white;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:0.8rem">✕</button>
+      </td>
+    </tr>`;
+  });
+
+  // Modal
+  let modal = document.getElementById('modal-edit-buletin');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-edit-buletin';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:24px;width:min(900px,96vw);max-height:82vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0">✏️ Editare buletin #${buletinId}</h3>
+        <button onclick="inchideModalEdit()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--gri)">✕</button>
+      </div>
+      <div id="edit-msg" style="margin-bottom:8px;min-height:20px"></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+          <thead><tr style="background:var(--fundal)">
+            <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border)">Analiză</th>
+            <th style="padding:8px;border-bottom:2px solid var(--border)">Valoare</th>
+            <th style="padding:8px;border-bottom:2px solid var(--border)">Unitate</th>
+            <th style="padding:8px;border-bottom:2px solid var(--border)">Flag</th>
+            <th style="padding:8px;border-bottom:2px solid var(--border)"></th>
+          </tr></thead>
+          <tbody id="edit-tbody">${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <strong style="font-size:0.9rem">➕ Adaugă analiză lipsă</strong>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:flex-end">
+          <div>
+            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Tip analiză</div>
+            <select id="new-analiza-id" style="padding:6px;font-size:0.85rem;min-width:220px">${opts}</select>
+          </div>
+          <div>
+            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Valoare *</div>
+            <input type="number" step="any" id="new-valoare" placeholder="ex: 15.9" style="padding:6px;width:90px;font-size:0.85rem" />
+          </div>
+          <div>
+            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Unitate</div>
+            <input type="text" id="new-unitate" placeholder="ex: g/dL" style="padding:6px;width:80px;font-size:0.85rem" />
+          </div>
+          <div>
+            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Flag</div>
+            <select id="new-flag" style="padding:6px;font-size:0.85rem">
+              <option value="">—</option>
+              <option value="H">H (Ridicat)</option>
+              <option value="L">L (Scăzut)</option>
+            </select>
+          </div>
+          <button onclick="adaugaRezultatNou()" style="background:var(--verde);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:0.85rem;font-weight:600">➕ Adaugă</button>
+        </div>
+      </div>
+      <div style="margin-top:20px;text-align:right">
+        <button onclick="inchideModalEditSiReincarca()" style="background:var(--albastru);color:white;border:none;border-radius:6px;padding:10px 24px;cursor:pointer;font-size:0.9rem;font-weight:600">✅ Gata — Salvează și închide</button>
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+let _editPending = {};  // { rezultat_id: {field: value} }
+
+function editField(rzId, field, value) {
+  if (!_editPending[rzId]) _editPending[rzId] = {};
+  _editPending[rzId][field] = value;
+  // Salveaza automat dupa 600ms (debounce)
+  clearTimeout(_editPending[rzId]._timer);
+  _editPending[rzId]._timer = setTimeout(() => saveRezultat(rzId), 600);
+}
+
+async function saveRezultat(rzId) {
+  const changes = _editPending[rzId];
+  if (!changes) return;
+  const {_timer, ...body} = changes;
+  try {
+    const r = await fetch('/rezultat/' + rzId, {
+      method: 'PUT',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const row = document.getElementById('erow-' + rzId);
+    if (r.ok && row) {
+      row.style.background = '#e8f5e9';
+      setTimeout(() => { if(row) row.style.background = ''; }, 1000);
+    }
+    delete _editPending[rzId];
+  } catch(e) {
+    showEditMsg('Eroare salvare: ' + e.message, true);
+  }
+}
+
+async function stergeRezultat(rzId) {
+  if (!confirm('Ștergi această analiză din buletin?')) return;
+  const r = await fetch('/rezultat/' + rzId, { method: 'DELETE', headers: getAuthHeaders() });
+  if (r.ok) {
+    const row = document.getElementById('erow-' + rzId);
+    if (row) row.remove();
+    showEditMsg('Analiză ștearsă.', false);
+  } else {
+    showEditMsg('Eroare la ștergere.', true);
+  }
+}
+
+async function adaugaRezultatNou() {
+  const aid = document.getElementById('new-analiza-id').value;
+  const val = document.getElementById('new-valoare').value;
+  const unit = document.getElementById('new-unitate').value.trim();
+  const flag = document.getElementById('new-flag').value;
+  if (!val) { showEditMsg('Introduceți valoarea!', true); return; }
+
+  // Gaseste denumire_standard
+  const analiza = _analizeLista.find(a => String(a.id) === String(aid));
+  const denumire = analiza ? analiza.denumire_standard : (unit || 'Analiză adăugată manual');
+
+  const body = {
+    analiza_standard_id: aid ? parseInt(aid) : null,
+    denumire_raw: denumire,
+    valoare: parseFloat(val),
+    unitate: unit || null,
+    flag: flag || null,
+  };
+  const r = await fetch('/buletin/' + _editBuletinId + '/rezultat', {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) {
+    showEditMsg('✅ Analiză adăugată! Închide și redeschide pentru a vedea toate modificările.', false);
+    document.getElementById('new-valoare').value = '';
+    document.getElementById('new-unitate').value = '';
+    document.getElementById('new-flag').value = '';
+  } else {
+    showEditMsg('Eroare: ' + (j.detail || 'necunoscuta'), true);
+  }
+}
+
+function showEditMsg(msg, isErr) {
+  const el = document.getElementById('edit-msg');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isErr ? 'var(--rosu)' : 'var(--verde)';
+  }
+}
+
+function inchideModalEdit() {
+  const modal = document.getElementById('modal-edit-buletin');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+  _editPending = {};
+}
+
+async function inchideModalEditSiReincarca() {
+  // Salveaza orice modificari nesalvate
+  for (const rzId of Object.keys(_editPending)) {
+    await saveRezultat(parseInt(rzId));
+  }
+  inchideModalEdit();
+  // Reincarca vizualizarea pacientului
+  if (_editCnp) {
+    delete _tabPacienti[_editCnp];
+    await veziPacient(_editCnp);
   }
 }
 

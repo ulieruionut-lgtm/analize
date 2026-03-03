@@ -541,6 +541,75 @@ def delete_pacient(pacient_id: int) -> bool:
         return False
 
 
+# --- Editare manuala rezultate ---
+
+def get_rezultate_buletin(buletin_id: int) -> list:
+    """Returneaza toate rezultatele unui buletin, cu denumire_standard si flag."""
+    try:
+        with get_cursor(commit=False) as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"""
+                SELECT r.id, r.denumire_raw, r.valoare, r.unitate, r.flag,
+                       r.interval_min, r.interval_max,
+                       r.analiza_standard_id,
+                       a.denumire_standard, a.cod_standard
+                FROM rezultate_analize r
+                LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id
+                WHERE r.buletin_id = {ph}
+                ORDER BY a.denumire_standard NULLS LAST, r.denumire_raw
+            """, (buletin_id,))
+            rows = cur.fetchall()
+            return [_row_to_dict(r) for r in rows] if rows else []
+    except Exception:
+        return []
+
+
+def update_rezultat(rezultat_id: int, valoare: Optional[float], unitate: Optional[str],
+                    flag: Optional[str], analiza_standard_id: Optional[int]) -> bool:
+    """Actualizeaza un rezultat existent (editare manuala)."""
+    try:
+        with get_cursor() as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"""
+                UPDATE rezultate_analize
+                SET valoare={ph}, unitate={ph}, flag={ph}, analiza_standard_id={ph}
+                WHERE id={ph}
+            """, (valoare, unitate, flag or None, analiza_standard_id, rezultat_id))
+            return cur.rowcount > 0
+    except Exception:
+        return False
+
+
+def delete_rezultat_single(rezultat_id: int) -> bool:
+    """Sterge un singur rezultat dintr-un buletin."""
+    try:
+        with get_cursor() as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"DELETE FROM rezultate_analize WHERE id={ph}", (rezultat_id,))
+            return cur.rowcount > 0
+    except Exception:
+        return False
+
+
+def add_rezultat_manual(buletin_id: int, analiza_standard_id: Optional[int],
+                        denumire_raw: str, valoare: float, unitate: Optional[str],
+                        flag: Optional[str]) -> Optional[dict]:
+    """Adauga manual un rezultat intr-un buletin existent."""
+    try:
+        with get_cursor() as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"""
+                INSERT INTO rezultate_analize
+                    (buletin_id, analiza_standard_id, denumire_raw, valoare, unitate, flag)
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph})
+                RETURNING id
+            """, (buletin_id, analiza_standard_id, denumire_raw.strip(), valoare, unitate, flag or None))
+            row = cur.fetchone()
+            return {"id": row[0]} if row else None
+    except Exception:
+        return None
+
+
 # --- Export backup (JSON) ---
 def _json_serializable(val: Any) -> Any:
     """Convertește o valoare la forma serializabilă JSON (datetime, Decimal, etc.)."""
