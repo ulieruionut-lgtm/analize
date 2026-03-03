@@ -533,16 +533,20 @@ async def sterge_rezultat(rezultat_id: int, current_user: dict = Depends(get_cur
 
 @app.post("/buletin/{buletin_id}/rezultat")
 async def adauga_rezultat(buletin_id: int, body: dict, current_user: dict = Depends(get_current_user)):
-    """Adauga manual un rezultat intr-un buletin existent."""
+    """Adauga manual un rezultat intr-un buletin existent.
+    Daca se specifica si analiza_standard_id, denumire_raw este salvata ca alias
+    pentru a fi recunoscuta automat la upload-uri viitoare.
+    """
     valoare = body.get("valoare")
     if valoare is None:
         raise HTTPException(status_code=422, detail="Campul 'valoare' este obligatoriu.")
     denumire = (body.get("denumire_raw") or "").strip()
     if not denumire:
         raise HTTPException(status_code=422, detail="Campul 'denumire_raw' este obligatoriu.")
+    analiza_standard_id = body.get("analiza_standard_id")
     row = add_rezultat_manual(
         buletin_id=buletin_id,
-        analiza_standard_id=body.get("analiza_standard_id"),
+        analiza_standard_id=analiza_standard_id,
         denumire_raw=denumire,
         valoare=float(valoare),
         unitate=body.get("unitate"),
@@ -550,7 +554,15 @@ async def adauga_rezultat(buletin_id: int, body: dict, current_user: dict = Depe
     )
     if not row:
         raise HTTPException(status_code=500, detail="Eroare la adaugarea rezultatului.")
-    return {"ok": True, "id": row["id"]}
+
+    # Daca s-a specificat tipul de analiza, inregistreaza denumire_raw ca alias
+    # pentru a fi recunoscuta automat la upload-uri viitoare
+    alias_salvat = False
+    if analiza_standard_id and denumire:
+        from backend.normalizer import adauga_alias_nou
+        alias_salvat = adauga_alias_nou(denumire, int(analiza_standard_id))
+
+    return {"ok": True, "id": row["id"], "alias_salvat": alias_salvat}
 
 
 @app.get("/analize-necunoscute")
@@ -1909,7 +1921,10 @@ async function adaugaRezultatNou() {
   });
   const j = await r.json().catch(() => ({}));
   if (r.ok) {
-    showEditMsg('✅ Analiză adăugată! Închide și redeschide pentru a vedea toate modificările.', false);
+    const invatMsg = (j.alias_salvat && aid)
+      ? ' Sistemul a învățat această analiză și o va recunoaște automat la viitoare upload-uri.'
+      : '';
+    showEditMsg('✅ Analiză adăugată!' + invatMsg + ' Apasă "Gata" pentru a vedea modificările.', false);
     document.getElementById('new-valoare').value = '';
     document.getElementById('new-unitate').value = '';
     document.getElementById('new-flag').value = '';
