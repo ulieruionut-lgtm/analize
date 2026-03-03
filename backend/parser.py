@@ -21,7 +21,21 @@ _LINII_EXCLUSE = re.compile(
     r"Activitate|Analize neacreditate|Opinii|Rezultatele examinarilor|"
     r"Probele biologice|acreditat|Policlinica|Laborator de|eMail|Corp Central|"
     r"Aripa de|Jud\.|Loc\.|Telefon program|Punct recoltare|Adresa:|Telefon:|"
-    r"Cod client|Cod proba|Cod caz|Varsta|Sex:|Prenume:|Nume:|Medic:|Cabinet)",
+    r"Cod client|Cod proba|Cod caz|Varsta|Sex:|Prenume:|Nume:|Medic:|Cabinet|"
+    # Antete sectiuni laborator
+    r"HEMOLEUCOGRAMA|BIOCHIMIE|IMUNOLOGIE|HORMONI|SUMAR URINA|COAGULARE|"
+    r"LIPIDOGRAMA|ELECTROFOREZA|SEROLOGIE|MARKERI|MINERALE|"
+    # Note de clasificare (ex: "Crescut : 160-189", "Acceptabil: < 110")
+    r"Acceptabil\s*:|Borderline|Crescut\s*[:\(]|Foarte\s+crescut|"
+    r"Usor\s+crescut|Moderat\s+crescut|crescute?\s*[>:]|"
+    r"Normal\s*:|Optim\s*:|Risc\s*:|Deficit\s+|Nivel\s+toxic|"
+    # Note cu varsta/trimestru
+    r"\d{1,3}-\d{1,3}\s+ani|peste\s+\d+\s+ani|trimest|"
+    r"persoanelor|persoane\s+varst|"
+    # Note diagnostice
+    r"Diagnosticul|Glicemie\s+bazala\s+modif|Se\s+recomanda\s+retest|"
+    # Artefacte OCR
+    r"Regulamentul\s+nr)",
     re.IGNORECASE,
 )
 
@@ -129,6 +143,13 @@ def _este_linie_parametru(linie: str) -> bool:
         return False
     # Linii care incep cu ghilimele sau caractere speciale OCR
     if re.match(r'^["\'\[\]\{\}]', linie):
+        return False
+    # Linii de clasificare/referinta: "Ceva: < 60", "eGFR: = 142", "k = 0.7"
+    # Detecteaza pattern: text_scurt ':' optional_spatiu operator_sau_numar
+    if re.search(r':\s*[<>=≤≥]\s*\d', linie):
+        return False
+    # Linii cu text foarte scurt si ambiguu (< 4 caractere utile)
+    if len(re.sub(r'[^a-zA-Z]', '', linie)) < 3:
         return False
     return True
 
