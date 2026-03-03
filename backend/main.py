@@ -87,15 +87,17 @@ def _raspuns_eroare(status: int, mesaj: str):
 
 
 def _normalizare_data_text(raw: str) -> str:
-    """Normalizeaza data ca DD.MM.YYYY (fara ora)."""
+    """Normalizeaza data in format ISO YYYY-MM-DD (compatibil PostgreSQL)."""
     raw = (raw or "").strip()
     raw = raw.replace("/", ".").replace("-", ".")
+    # DD.MM.YYYY -> YYYY-MM-DD
     m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4})$", raw)
     if m:
-        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    # YYYY.MM.DD -> YYYY-MM-DD
     m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})$", raw)
     if m:
-        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}"
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     return raw[:10]
 
 
