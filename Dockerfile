@@ -1,13 +1,18 @@
 FROM python:3.11-slim
 
-# Instaleaza Tesseract OCR + pachetul pentru limba romana si engleza
+# Instaleaza Tesseract OCR si wget pentru descarcarea datelor lingvistice
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
-    tesseract-ocr-ron \
-    tesseract-ocr-eng \
-    libglib2.0-0 \
-    libgl1-mesa-glx \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /tessdata \
+    && wget -q -O /tessdata/ron.traineddata \
+       https://github.com/tesseract-ocr/tessdata_fast/raw/main/ron.traineddata \
+    && wget -q -O /tessdata/eng.traineddata \
+       https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
+
+# Spune Tesseract unde sa gaseasca datele lingvistice
+ENV TESSDATA_PREFIX=/tessdata
 
 WORKDIR /app
 
