@@ -947,7 +947,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub">Panou medic – v22.02.2026 | <span id="user-display"></span></div>
+    <div class="sub">Panou medic – v03.03.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none">📥 Export backup</button>
