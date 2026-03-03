@@ -1,7 +1,8 @@
 # Railway deployment cu PostgreSQL
 
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # Railway va citi din Procfile automat
