@@ -1,6 +1,6 @@
 """Detectare tip PDF (text vs scan) + extragere text.
-- PDF cu text: pdfplumber
-- PDF scanat: PyMuPDF (fitz) pentru imagini + Tesseract OCR
+- PDF cu text: pdfplumber (extract_text + extract_tables pentru tabele cu borduri)
+- PDF scanat: PyMuPDF (fitz) pentru imagini + preprocesare + Tesseract OCR
   PyMuPDF nu are nevoie de poppler - merge pe Windows fara instalare extra.
 """
 from pathlib import Path
@@ -11,24 +11,94 @@ import pdfplumber
 from backend.config import settings
 
 
+def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
+    """
+    Extrage continut din tabele cu borduri folosind pdfplumber extract_tables().
+    Returneaza text formatat ca linii 'parametru valoare unitate interval'.
+    Util pentru PDF-uri Bioclinica/MedLife cu celule bordate.
+    """
+    linii = []
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                tabele = page.extract_tables()
+                for tabel in tabele:
+                    for rand in tabel:
+                        if not rand:
+                            continue
+                        # Curata celulele None/goale
+                        celule = [str(c).strip() if c else "" for c in rand]
+                        # Filtreaza randuri complet goale
+                        if not any(celule):
+                            continue
+                        # Uneste celulele cu spatiu (parser-ul va detecta formatul)
+                        linie = "  ".join(c for c in celule if c)
+                        if linie:
+                            linii.append(linie)
+    except Exception:
+        pass
+    return "\n".join(linii)
+
+
+def _preproceseaza_imagine_ocr(img):
+    """
+    Preproceseaza o imagine pentru OCR mai bun:
+    1. Converteste la grayscale
+    2. Mareste contrastul
+    3. Sterge liniile subtiri de bordura (detectie numpy)
+    4. Binarizeaza
+    Returneaza imaginea procesata (PIL Image).
+    """
+    try:
+        import numpy as np
+        from PIL import ImageEnhance, ImageFilter
+
+        # Grayscale
+        gray = img.convert("L")
+
+        # Mareste contrastul
+        gray = ImageEnhance.Contrast(gray).enhance(2.0)
+        gray = ImageEnhance.Sharpness(gray).enhance(1.5)
+
+        # Converteste la numpy pentru procesare linii
+        arr = np.array(gray)
+
+        # Binarizare: pixeli inchisi (< 180) -> negru, restul -> alb
+        binary = (arr < 180).astype(np.uint8)
+
+        # Sterge liniile orizontale de bordura:
+        # O linie e "bordura" daca > 85% din pixeli sunt negri SI e subtire (<= 4px)
+        for i in range(binary.shape[0]):
+            if binary[i].mean() > 0.85:
+                arr[i] = 255  # alb -> sterge linia
+
+        # Sterge liniile verticale de bordura
+        for j in range(binary.shape[1]):
+            if binary[:, j].mean() > 0.85:
+                arr[:, j] = 255  # alb -> sterge coloana
+
+        from PIL import Image as PILImage
+        return PILImage.fromarray(arr)
+    except Exception:
+        # Daca preprocesarea esueaza, returneaza imaginea originala
+        return img.convert("L")
+
+
 def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
     """
     Converteste PDF la imagini cu PyMuPDF (fitz) si ruleaza Tesseract OCR.
-    Nu necesita poppler - PyMuPDF este self-contained.
+    Aplica preprocesare imagine pentru rezultate mai bune pe tabele cu borduri.
     """
-    # 1. Verifica PyMuPDF
     try:
-        import fitz  # PyMuPDF
+        import fitz
     except ImportError:
         return "", "PyMuPDF nu este instalat. Ruleaza: pip install pymupdf"
 
-    # 2. Verifica Tesseract
     try:
         import pytesseract
     except ImportError:
         return "", "pytesseract nu este instalat. Ruleaza: pip install pytesseract"
 
-    # 3. Verifica ca Tesseract e in PATH
     try:
         pytesseract.get_tesseract_version()
     except Exception as tess_err:
@@ -42,21 +112,44 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
             hint = f"Tesseract nu e gasit in PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
         return "", "Tesseract OCR nu este disponibil. " + hint
 
-    # 4. Converteste PDF la imagini cu PyMuPDF si ruleaza OCR
     try:
         from PIL import Image
         import io
 
         doc = fitz.open(pdf_path)
         texts = []
+
+        # Configuratie Tesseract: LSTM engine + bloc uniform de text
+        tess_config = "--oem 1 --psm 6"
+
         for page_num in range(len(doc)):
             page = doc[page_num]
-            # Rezolutie 300 DPI pentru OCR bun
-            mat = fitz.Matrix(300 / 72, 300 / 72)
+            # 400 DPI pentru calitate mai buna (anterior: 300)
+            mat = fitz.Matrix(400 / 72, 400 / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
             img_bytes = pix.tobytes("png")
             img = Image.open(io.BytesIO(img_bytes))
-            text = pytesseract.image_to_string(img, lang=settings.ocr_lang)
+
+            # Preprocesare: sterge borduri, mareste contrast
+            img_proc = _preproceseaza_imagine_ocr(img)
+
+            # OCR cu configuratie imbunatatita
+            text = pytesseract.image_to_string(
+                img_proc,
+                lang=settings.ocr_lang,
+                config=tess_config,
+            )
+
+            # Daca rezultatul e slab, incearca si cu imaginea originala (PSM 4)
+            if len(text.strip()) < 100:
+                text_fallback = pytesseract.image_to_string(
+                    img.convert("L"),
+                    lang=settings.ocr_lang,
+                    config="--oem 1 --psm 4",
+                )
+                if len(text_fallback.strip()) > len(text.strip()):
+                    text = text_fallback
+
             texts.append(text)
         doc.close()
         return "\n".join(texts), None
@@ -97,25 +190,39 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set]:
     - tip = 'text'  → PDF cu text direct (nu e nevoie de OCR)
     - tip = 'ocr'   → PDF scanat, s-a folosit Tesseract
     - colored_tokens = set de valori numerice scrise cu culoare non-neagra (doar pt text PDFs)
+
+    Strategii de extragere (in ordine):
+    1. pdfplumber extract_text() - text normal
+    2. pdfplumber extract_tables() - tabele cu borduri (prinde valori in celule)
+    3. Tesseract OCR cu preprocesare - pentru PDF-uri scanate
     """
-    # Pas 1: incearca pdfplumber (rapid, fara OCR)
-    text_pdf = ""
+    # Pas 1: incearca pdfplumber extract_text() (rapid, fara OCR)
+    text_normal = ""
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
                 t = page.extract_text()
                 if t:
-                    text_pdf += t + "\n"
+                    text_normal += t + "\n"
     except Exception:
         pass
-    text_pdf = (text_pdf or "").strip()
+    text_normal = (text_normal or "").strip()
 
-    # Daca textul e suficient de lung, e PDF text
-    if len(text_pdf) >= settings.pdf_text_min_chars:
+    # Pas 2: extrage si continut din tabele cu borduri (prinde valorile in celule)
+    text_tabele = _extrage_tabele_pdfplumber(pdf_path)
+
+    # Combina text normal + tabele (tabele pot contine valori ratate de extract_text)
+    text_combinat = text_normal
+    if text_tabele:
+        text_combinat = text_normal + "\n" + text_tabele if text_normal else text_tabele
+    text_combinat = text_combinat.strip()
+
+    # Daca textul combinat e suficient de lung, e PDF text
+    if len(text_combinat) >= settings.pdf_text_min_chars:
         colored = extract_colored_tokens(pdf_path)
-        return text_pdf, "text", None, colored
+        return text_combinat, "text", None, colored
 
-    # Pas 2: PDF scanat - folosim PyMuPDF + Tesseract
+    # Pas 3: PDF scanat - PyMuPDF + Tesseract cu preprocesare
     ocr_text, ocr_err = _run_ocr_pymupdf(pdf_path)
-    combined = (text_pdf + "\n" + ocr_text).strip() if text_pdf else ocr_text.strip()
+    combined = (text_combinat + "\n" + ocr_text).strip() if text_combinat else ocr_text.strip()
     return combined, "ocr", ocr_err, set()
