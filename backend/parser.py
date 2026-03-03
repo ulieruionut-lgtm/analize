@@ -230,6 +230,22 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     )
 
 
+def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max) -> float:
+    """
+    Corecteaza erori OCR de tipul '9.9 -> 99' (punct zecimal pierdut).
+    Daca valoarea e > 10x intervalul_max si valoarea/10 e in interval,
+    inseamna ca OCR a omis punctul zecimal.
+    """
+    if interval_max is None or interval_max <= 0:
+        return valoare
+    if valoare > 10 * interval_max:
+        v_corectat = valoare / 10
+        # Valoarea corectata trebuie sa fie cel mult de 2x interval_max
+        if v_corectat <= 2 * interval_max:
+            return v_corectat
+    return valoare
+
+
 def extract_rezultate(text: str) -> list[RezultatParsat]:
     """
     Extrage analizele din text. Suporta:
@@ -276,6 +292,8 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             break
         if not denumire:
             continue
+        # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 fL citit ca 99)
+        valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max)
         flag_calc = None
         if interval_min is not None and interval_max is not None:
             if valoare > interval_max:

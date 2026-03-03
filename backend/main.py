@@ -1444,7 +1444,14 @@ async function trimite() {
       const r = await fetch('/upload', { method: 'POST', body: fd, headers: getAuthHeaders() });
       const txt = await r.text();
       let j;
-      try { j = JSON.parse(txt); } catch { j = { detail: 'Răspuns invalid: ' + txt.substring(0,100) }; }
+      try { j = JSON.parse(txt); } catch {
+        // Serverul a returnat non-JSON (ex: 503 la restart) - reincercam o data
+        if (r.status === 503 || r.status === 502 || r.status === 504) {
+          j = { detail: 'Serverul se restartează (eroare ' + r.status + '). Încearcă din nou în 10-20 secunde.' };
+        } else {
+          j = { detail: 'Răspuns neașteptat de la server (status ' + r.status + '). Încearcă din nou.' };
+        }
+      }
       if (r.ok) {
         reusit++;
         pacientInfo = j.pacient || {};
@@ -1455,12 +1462,12 @@ async function trimite() {
       } else {
         esuat++;
         status = 'err';
-        mesaj = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : String(r.status);
+        mesaj = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : 'Eroare ' + r.status;
       }
     } catch(err) {
       esuat++;
       status = 'err';
-      mesaj = 'Eroare rețea: ' + err.message;
+      mesaj = 'Eroare rețea: ' + err.message + '. Verifică conexiunea și încearcă din nou.';
     }
     rezultate.push({ nume: f.name, status, mesaj, pacientInfo });
 
