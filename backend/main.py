@@ -834,7 +834,11 @@ async def index():
     font-weight: 600;
     text-align: left;
     min-width: 220px;
-    max-width: 300px;
+    max-width: 280px;
+    width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     z-index: 2;
   }
 
@@ -1647,7 +1651,8 @@ async function veziPacient(cnp) {
 
     // Rânduri analize
     data.analize.forEach(a => {
-      html += '<tr><td class="col-analiza">';
+      const titleComplet = a.denumire_standard + (a.unitate ? ' (' + a.unitate + ')' : '');
+      html += `<tr><td class="col-analiza" title="${escHtml(titleComplet)}">`;
       html += escHtml(a.denumire_standard);
       if (a.unitate) {
         html += ` <span style="color:var(--gri);font-size:0.85rem;font-weight:400">(${escHtml(a.unitate)})</span>`;
