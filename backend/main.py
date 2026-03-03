@@ -163,55 +163,6 @@ async def health():
         return JSONResponse(content={"status": "error", "database": str(e)}, status_code=503)
 
 
-@app.post("/init-admin")
-async def init_admin():
-    """Endpoint special pentru initializare admin (poate fi apelat o singura data)."""
-    try:
-        from backend.database import ensure_default_admin, get_all_users
-        result = ensure_default_admin()
-        users = get_all_users()
-        return {
-            "message": "Utilizator admin creat" if result else "Admin exista deja",
-            "created": result,
-            "total_users": len(users),
-            "users": [{"id": u.get("id"), "username": u.get("username")} for u in users]
-        }
-    except Exception as e:
-        import traceback
-        return JSONResponse(
-            content={"error": str(e), "traceback": traceback.format_exc()},
-            status_code=500
-        )
-
-
-@app.post("/reset-admin-password")
-async def reset_admin_password():
-    """Resetare parola admin la 'admin123' si rehashuire toti utilizatorii la pbkdf2."""
-    try:
-        rezultate = []
-        users = get_all_users()
-        for u in users:
-            username = u.get("username", "")
-            if username.lower() == "admin":
-                new_hash = hash_password("admin123")
-                ok = update_user_password(username, new_hash)
-                rezultate.append({"username": username, "parola_noua": "admin123", "ok": ok})
-            else:
-                new_hash = hash_password(username + "123")
-                ok = update_user_password(username, new_hash)
-                rezultate.append({"username": username, "parola_noua": username + "123", "ok": ok})
-        return {
-            "message": "Parole resetate cu pbkdf2_sha256",
-            "utilizatori": rezultate
-        }
-    except Exception as e:
-        import traceback
-        return JSONResponse(
-            content={"error": str(e), "traceback": traceback.format_exc()},
-            status_code=500
-        )
-
-
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
