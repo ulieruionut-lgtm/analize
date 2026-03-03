@@ -970,15 +970,15 @@ async def index():
   <!-- TAB 1: Upload -->
   <div id="tab-upload" class="sectiune activa">
     <div class="card">
-      <h2>Încarcă buletin PDF</h2>
+      <h2>Încarcă buletine PDF</h2>
       <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <div class="upload-icon">📄</div>
-        <p>Trage fișierul PDF aici sau <strong>click</strong> pentru a selecta</p>
-        <p style="font-size:0.8rem;margin-top:6px;color:#9aa0a6">Suportă PDF text și PDF scanat (OCR automat)</p>
+        <p>Trage fișierele PDF aici sau <strong>click</strong> pentru a selecta</p>
+        <p style="font-size:0.8rem;margin-top:6px;color:#9aa0a6">Poți selecta mai multe fișiere deodată · PDF text și scanat (OCR automat)</p>
         <div id="file-name"></div>
       </div>
-      <input type="file" id="file-input" accept=".pdf">
-      <div style="margin-top:16px; display:flex; gap:12px; align-items:center;">
+      <input type="file" id="file-input" accept=".pdf" multiple>
+      <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-primary" id="btn-upload" onclick="trimite()" disabled>
           <span id="btn-text">Procesează PDF</span>
         </button>
@@ -1431,67 +1431,109 @@ function schimbTab(id) {
 // ─── Upload ──────────────────────────────────────────────────────────────────
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
-let fisierSelectat = null;
+let fisierSelectat = [];
 
-fileInput.onchange = e => selecteazaFisier(e.target.files[0]);
+fileInput.onchange = e => selecteazaFisiere(Array.from(e.target.files));
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('drag-over');
-  selecteazaFisier(e.dataTransfer.files[0]);
+  selecteazaFisiere(Array.from(e.dataTransfer.files));
 });
 
-function selecteazaFisier(f) {
-  if (!f) return;
-  if (!f.name.toLowerCase().endsWith('.pdf')) {
-    afiseazaMesaj('upload-out','eroare','Fișierul trebuie să fie PDF.');
+function selecteazaFisiere(files) {
+  if (!files || !files.length) return;
+  const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  const nonPdf = files.length - pdfs.length;
+  if (!pdfs.length) {
+    afiseazaMesaj('upload-out','eroare','Fișierele trebuie să fie PDF.');
     return;
   }
-  fisierSelectat = f;
-  document.getElementById('file-name').textContent = '📎 ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)';
+  fisierSelectat = pdfs;
+  const totalKB = pdfs.reduce((s, f) => s + f.size, 0) / 1024;
+  let info = pdfs.length === 1
+    ? '📎 ' + pdfs[0].name + ' (' + (pdfs[0].size/1024).toFixed(1) + ' KB)'
+    : '📎 ' + pdfs.length + ' fișiere selectate (' + totalKB.toFixed(1) + ' KB total)';
+  if (nonPdf > 0) info += ' · <span style="color:var(--rosu)">' + nonPdf + ' ignorate (nu sunt PDF)</span>';
+  document.getElementById('file-name').innerHTML = info;
   document.getElementById('btn-upload').disabled = false;
+  document.getElementById('btn-text').textContent = pdfs.length === 1 ? 'Procesează PDF' : 'Procesează ' + pdfs.length + ' PDF-uri';
   document.getElementById('upload-out').innerHTML = '';
 }
 
 async function trimite() {
-  if (!fisierSelectat) return;
+  if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
   const btnText = document.getElementById('btn-text');
   const prog = document.getElementById('prog');
   btn.disabled = true;
-  btnText.innerHTML = '<span class="spinner"></span> Se procesează…';
-  prog.textContent = fisierSelectat.name.toLowerCase().endsWith('.pdf') && fisierSelectat.size > 500000
-    ? 'Fisier mare – poate dura 30-60 sec pentru scanat…' : '';
+  const out = document.getElementById('upload-out');
+  out.innerHTML = '';
 
-  const fd = new FormData();
-  fd.append('file', fisierSelectat);
-  try {
-    const r = await fetch('/upload', { method: 'POST', body: fd, headers: getAuthHeaders() });
-    const text = await r.text();
-    let j;
-    try { j = JSON.parse(text); } catch { j = { detail: 'Raspuns invalid server: ' + text.substring(0,120) }; }
+  const total = fisierSelectat.length;
+  let reusit = 0, esuat = 0;
+  const rezultate = [];
 
-    if (r.ok) {
-      const p = j.pacient || {};
-      afiseazaMesaj('upload-out','succes',
-        '<strong>✅ ' + j.message + '</strong>' +
-        'Pacient: <strong>' + (p.nume||'') + '</strong> (CNP: ' + (p.cnp||'') + ')<br>' +
-        'Tip extragere: ' + (j.tip_extragere==='ocr'?'🔍 OCR (scanat)':'📝 Text direct') +
-        ' &nbsp;|&nbsp; Analize salvate: <strong>' + (j.numar_analize||0) + '</strong>' +
-        '<br><br><button class="btn btn-secondary" onclick="veziPacient(\'' + (p.cnp||'') + '\')">👤 Vezi analizele pacientului</button>'
-      );
-      incarcaRecenti();
-    } else {
-      const msg = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : String(r.status);
-      afiseazaMesaj('upload-out','eroare', '<strong>❌ Eroare:</strong>' + msg);
+  for (let i = 0; i < total; i++) {
+    const f = fisierSelectat[i];
+    btnText.innerHTML = '<span class="spinner"></span> ' + (i+1) + ' / ' + total + '…';
+    prog.textContent = f.size > 500000 ? f.name + ' – fișier mare, OCR poate dura 30-60 sec…' : f.name;
+
+    const fd = new FormData();
+    fd.append('file', f);
+    let status = 'ok', mesaj = '', pacientInfo = null;
+    try {
+      const r = await fetch('/upload', { method: 'POST', body: fd, headers: getAuthHeaders() });
+      const txt = await r.text();
+      let j;
+      try { j = JSON.parse(txt); } catch { j = { detail: 'Răspuns invalid: ' + txt.substring(0,100) }; }
+      if (r.ok) {
+        reusit++;
+        pacientInfo = j.pacient || {};
+        mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
+          + ' (CNP: ' + escHtml(pacientInfo.cnp||'') + ')'
+          + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
+          + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
+      } else {
+        esuat++;
+        status = 'err';
+        mesaj = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : String(r.status);
+      }
+    } catch(err) {
+      esuat++;
+      status = 'err';
+      mesaj = 'Eroare rețea: ' + err.message;
     }
-  } catch(err) {
-    afiseazaMesaj('upload-out','eroare','<strong>Eroare rețea:</strong>' + err.message);
+    rezultate.push({ nume: f.name, status, mesaj, pacientInfo });
+
+    // Afișează progresul live
+    out.innerHTML = rezultate.map(rz =>
+      '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<span style="font-size:1.1rem">' + (rz.status==='ok' ? '✅' : '❌') + '</span>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:500;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escHtml(rz.nume) + '">' + escHtml(rz.nume) + '</div>' +
+          '<div style="font-size:0.82rem;color:' + (rz.status==='ok'?'var(--verde)':'var(--rosu)') + '">' + rz.mesaj + '</div>' +
+        '</div>' +
+        (rz.status==='ok' && rz.pacientInfo ? '<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.78rem;white-space:nowrap" onclick="veziPacient(\'' + escHtml(rz.pacientInfo.cnp||'') + '\')">👤 Vezi</button>' : '') +
+      '</div>'
+    ).join('') +
+    (i < total-1 ? '<div style="padding:8px 0;color:var(--gri);font-size:0.83rem">Se procesează fișierul ' + (i+2) + '/' + total + '…</div>' : '');
   }
+
+  // Sumar final
+  const sumar = total === 1
+    ? (reusit ? '<span style="color:var(--verde)">✅ PDF procesat cu succes.</span>' : '<span style="color:var(--rosu)">❌ Procesare eșuată.</span>')
+    : '<strong>' + reusit + '/' + total + ' PDF-uri procesate cu succes' + (esuat ? ' · ' + esuat + ' erori' : '') + '</strong>';
+  out.insertAdjacentHTML('afterbegin', '<div style="padding:10px 0 12px;font-size:0.9rem">' + sumar + '</div>');
+
+  incarcaRecenti();
   btn.disabled = false;
-  btnText.textContent = 'Procesează PDF';
+  btnText.textContent = total === 1 ? 'Procesează PDF' : 'Procesează ' + total + ' PDF-uri';
   prog.textContent = '';
+  fisierSelectat = [];
+  document.getElementById('file-name').innerHTML = '';
+  fileInput.value = '';
 }
 
 async function incarcaRecenti() {
