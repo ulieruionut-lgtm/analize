@@ -19,6 +19,15 @@ from backend.models import RezultatParsat
 
 # ─── Normalizare text ─────────────────────────────────────────────────────────
 
+def _curata_artefacte(text: str) -> str:
+    """Elimina artefacte de laborator si OCR: asteriscuri, <, >, # etc."""
+    # Sterge asteriscuri, semne <> la inceput/sfarsit, artefacte comune OCR
+    text = re.sub(r'[\*\<\>\#\~\^]+', ' ', text)
+    # Sterge spatii multiple si trimeaza
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
 def _normalizeaza(text: str) -> str:
     """Lowercase + eliminare diacritice + collapse whitespace."""
     text = text.strip().lower()
@@ -83,52 +92,51 @@ def invalideaza_cache():
 def _cauta_in_cache(raw: str) -> Optional[int]:
     """
     Incearca mai multe strategii de matching si returneaza analiza_standard_id sau None.
+    Daca nu gaseste nimic sigur, returneaza None (va fi salvata ca necunoscuta).
     """
     cache_norm, cache_raw = _incarca_cache()
     if not cache_norm:
         return None
 
     raw = raw.strip()
-    raw_lower = raw.lower()
-    raw_norm = _normalizeaza(raw)
-    raw_fara_par = _normalizeaza(_fara_paranteze(raw))
+    # Curata artefactele de laborator (*, <, >, etc.) inainte de matching
+    raw_curat = _curata_artefacte(raw)
+    raw_lower = raw_curat.lower()
+    raw_norm = _normalizeaza(raw_curat)
+    raw_fara_par = _normalizeaza(_fara_paranteze(raw_curat))
 
-    # 1. Exact match (case-insensitive)
+    # 1. Exact match pe textul original (case-insensitive)
+    if raw.lower() in cache_raw:
+        return cache_raw[raw.lower()]
+
+    # 2. Exact match dupa curatare artefacte (case-insensitive)
     if raw_lower in cache_raw:
         return cache_raw[raw_lower]
 
-    # 2. Match normalizat (diacritice eliminate)
+    # 3. Match normalizat (diacritice eliminate)
     if raw_norm in cache_norm:
         return cache_norm[raw_norm]
 
-    # 3. Match fara paranteze
+    # 4. Match fara paranteze + normalizat
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
 
-    # 4. Match dupa primul cuvant semnificativ (>= 3 litere)
+    # 5. Match dupa primele 2 cuvinte semnificative (mai conservator)
     cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', raw_norm) if len(w) >= 3 and not w.isdigit()]
-    if cuvinte:
-        # Cauta alias-uri care incep cu sau contin primul cuvant
-        prim = cuvinte[0]
+    if len(cuvinte) >= 2:
+        first_two = cuvinte[:2]
         for alias_norm, aid in cache_norm.items():
-            alias_cuvinte = alias_norm.split()
-            if alias_cuvinte and alias_cuvinte[0] == prim:
+            alias_cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', alias_norm)
+                             if len(w) >= 3 and not w.isdigit()]
+            if len(alias_cuvinte) >= 2 and alias_cuvinte[:2] == first_two:
                 return aid
 
-    # 5. Substring bidirectional: raw contine alias sau alias contine raw
-    # (doar pentru texte cu >= 4 caractere, evita false positive)
-    if len(raw_norm) >= 4:
-        for alias_norm, aid in cache_norm.items():
-            if len(alias_norm) >= 4:
-                if raw_norm in alias_norm or alias_norm in raw_norm:
-                    return aid
-
-    # 6. Match dupa cuvinte cheie comune (>= 2 cuvinte comune)
+    # 6. Match dupa cuvinte cheie comune (>= 3 cuvinte comune, evita false pozitive)
     raw_kw = _cuvinte_cheie(raw_norm)
-    if len(raw_kw) >= 2:
+    if len(raw_kw) >= 3:
         for alias_norm, aid in cache_norm.items():
             alias_kw = _cuvinte_cheie(alias_norm)
-            if len(raw_kw & alias_kw) >= 2:
+            if len(raw_kw & alias_kw) >= 3:
                 return aid
 
     return None
@@ -186,7 +194,8 @@ def normalize_rezultate(lista: list[RezultatParsat]) -> list[RezultatParsat]:
 
 def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
     """
-    Adauga un alias nou (aprobat de medic) si marcheaza necunoscuta ca aprobata.
+    Adauga un alias nou (aprobat de medic), marcheaza necunoscuta ca aprobata
+    si actualizeaza RETROACTIV toate rezultatele existente cu acel denumire_raw.
     Invalideaza cache-ul.
     """
     try:
@@ -205,6 +214,11 @@ def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
                        WHERE denumire_raw = ?""",
                     (analiza_standard_id, denumire_raw.strip())
                 )
+                # Actualizeaza retroactiv rezultatele existente cu denumire_raw=NULL
+                cur.execute(
+                    "UPDATE rezultate_analize SET analiza_standard_id=? WHERE denumire_raw=? AND analiza_standard_id IS NULL",
+                    (analiza_standard_id, denumire_raw.strip())
+                )
             else:
                 cur.execute(
                     "INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -212,6 +226,11 @@ def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
                 )
                 cur.execute(
                     "UPDATE analiza_necunoscuta SET aprobata=1, analiza_standard_id=%s WHERE denumire_raw=%s",
+                    (analiza_standard_id, denumire_raw.strip())
+                )
+                # Actualizeaza retroactiv rezultatele existente cu analiza_standard_id=NULL
+                cur.execute(
+                    "UPDATE rezultate_analize SET analiza_standard_id=%s WHERE denumire_raw=%s AND analiza_standard_id IS NULL",
                     (analiza_standard_id, denumire_raw.strip())
                 )
         invalideaza_cache()

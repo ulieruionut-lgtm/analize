@@ -1945,7 +1945,7 @@ async function aprobaAlias(id, denumireRaw) {
       const row = document.getElementById('nec-row-' + id);
       if (row) {
         row.innerHTML = `<td colspan="4">
-          <span style="color:var(--verde)">✅ <strong>${escHtml(denumireRaw)}</strong> a fost asociat cu succes. Va fi recunoscut la următorul upload.</span>
+          <span style="color:var(--verde)">✅ <strong>${escHtml(denumireRaw)}</strong> a fost asociat cu succes. Toate rezultatele existente au fost actualizate și va fi recunoscut automat la orice upload viitor.</span>
         </td>`;
       }
       // Actualizeaza badge
