@@ -118,8 +118,14 @@ def _row_to_dict(row) -> dict:
     if row is None:
         return None
     if hasattr(row, "keys"):
-        return dict(row)
-    return dict(zip([c[0] for c in row.description], row))
+        d = dict(row)
+    else:
+        d = dict(zip([c[0] for c in row.description], row))
+    # Convertim datetime/date la string ISO (PostgreSQL le returneaza ca obiecte Python)
+    for k, v in d.items():
+        if isinstance(v, (datetime, date)):
+            d[k] = v.isoformat()
+    return d
 
 
 # --- Pacienti ---
