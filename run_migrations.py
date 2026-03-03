@@ -28,7 +28,7 @@ conn = psycopg2.connect(url)
 conn.autocommit = False
 try:
     cur = conn.cursor()
-    for fname in ["001_schema.sql", "003_users_auth_postgres.sql"]:
+    for fname in ["001_schema.sql", "003_users_auth_postgres.sql", "004_pg_analize_extinse.sql"]:
         path = sql_dir / fname
         if not path.exists():
             print("Lipsă:", path)
