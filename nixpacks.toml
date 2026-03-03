@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["tesseract4", "wget"]
+
+[phases.build]
+cmds = [
+  "mkdir -p /app/tessdata",
+  "wget -q -O /app/tessdata/ron.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/ron.traineddata",
+  "wget -q -O /app/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
+]
+
+[variables]
+TESSDATA_PREFIX = "/app"

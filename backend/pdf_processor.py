@@ -31,13 +31,16 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
     # 3. Verifica ca Tesseract e in PATH
     try:
         pytesseract.get_tesseract_version()
-    except Exception:
-        return "", (
-            "Tesseract nu este instalat sau nu este in PATH. "
-            "Descarca de la: https://github.com/UB-Mannheim/tesseract/wiki "
-            "si instaleaza cu optiunea 'Romanian' bifata. "
-            "Apoi adauga C:\\Program Files\\Tesseract-OCR la variabila PATH."
-        )
+    except Exception as tess_err:
+        import os, platform
+        if platform.system() == "Windows":
+            hint = ("Descarca de la: https://github.com/UB-Mannheim/tesseract/wiki "
+                    "si instaleaza cu optiunea 'Romanian' bifata. "
+                    "Apoi adauga C:\\Program Files\\Tesseract-OCR la variabila PATH.")
+        else:
+            tpfx = os.environ.get("TESSDATA_PREFIX", "(negasit)")
+            hint = f"Tesseract nu e gasit in PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
+        return "", "Tesseract OCR nu este disponibil. " + hint
 
     # 4. Converteste PDF la imagini cu PyMuPDF si ruleaza OCR
     try:
