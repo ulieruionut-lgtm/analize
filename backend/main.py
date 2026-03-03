@@ -950,7 +950,7 @@ async def index():
     <div class="sub">Panou medic – v22.02.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn-logout" id="btn-header-backup" onclick="exportBackup()" style="display:none">📥 Export backup</button>
+    <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none">📥 Export backup</button>
     <button class="btn-logout" onclick="logout()">Ieșire</button>
   </div>
 </div>
@@ -1065,10 +1065,10 @@ async def index():
       </div>
       <p id="setari-msg-parola" style="margin-top:10px;font-size:0.88rem;display:none"></p>
     </div>
-    <div class="card" id="card-backup">
+    <div class="card" id="card-backup" style="display:none">
       <h2>Backup baza de date</h2>
-      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Descarcă o copie de siguranță a pacienților, buletinelor și rezultatelor (JSON). Doar admin poate descărca.</p>
-      <button class="btn btn-primary" id="btn-export-backup" onclick="exportBackup()">Exportă backup</button>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Descarcă o copie de siguranță a pacienților, buletinelor și rezultatelor (fișier JSON).</p>
+      <button class="btn btn-primary" id="btn-export-backup" onclick="exportBackup(this)">Exportă backup</button>
     </div>
     <div class="card" id="card-user-management" style="display:none">
       <h2>Gestionare utilizatori</h2>
@@ -1256,15 +1256,18 @@ async function incarcaSetari() {
   } catch { card.style.display = 'none'; if (cardBackup) cardBackup.style.display = 'none'; }
 }
 
-async function exportBackup() {
-  const btn = document.getElementById('btn-export-backup');
-  btn.disabled = true;
-  btn.textContent = 'Se descarcă…';
+async function exportBackup(btnEl) {
+  const btns = [
+    document.getElementById('btn-export-backup'),
+    document.getElementById('btn-header-backup'),
+    btnEl || null
+  ].filter(Boolean);
+  btns.forEach(b => { b.disabled = true; b._txt = b.textContent; b.textContent = 'Se descarcă…'; });
   try {
     const r = await fetch('/api/backup', { headers: getAuthHeaders() });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      alert('Eroare: ' + (j.detail || r.status));
+      alert('Eroare la backup: ' + (j.detail || r.status));
       return;
     }
     const blob = await r.blob();
@@ -1277,13 +1280,14 @@ async function exportBackup() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
   } catch (e) {
     alert('Eroare: ' + (e.message || ''));
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Exportă backup';
+    btns.forEach(b => { b.disabled = false; b.textContent = b._txt || 'Exportă backup'; });
   }
 }
 
