@@ -36,6 +36,16 @@ _LINII_EXCLUSE = re.compile(
     r"Diagnosticul|Glicemie\s+bazala\s+modif|Se\s+recomanda\s+retest|"
     # Artefacte OCR si certificate
     r"Regulamentul\s+nr|CERTIFICAT|certificat|Seria\s+[A-Z]|Nr\.\s+[A-Z]|"
+    # Linii administrative laborator
+    r"Cod\s+Cerere|Cod\s+Proba|Formular:|Act:\s+[A-Z]|Cont:\s+RO|"
+    r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
+    r"Data\s+nasterii|Spectrofotome|CITOMETRIE|Raspuns\s+rapid|"
+    r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
+    # Intervale referinta si clasificari
+    r"Usor\s+crescut|Moderat\s+crescut|Foarte\s+crescut|"
+    r"Optim\s*:|Normal\s*:|Diabet\s+|Glicemie\s+bazala|"
+    r"trimestrul|trimester\s+[I]|20-40\s+ani|peste\s+40\s+ani|"
+    r"eGFR:\s*[<>]|G1\s+=|G2\s+=|G3|G4|G5|"
     # Linii scurte care incep cu punct/doua puncte/spatiu (artefacte tabele)
     r":\s*[a-z]\s+[a-z]|^\s*[:\.\-]\s)",
     re.IGNORECASE,
