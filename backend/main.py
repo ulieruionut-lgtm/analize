@@ -1855,8 +1855,9 @@ async function editBuletin(buletinId, cnp) {
               <option value="L">L (Scăzut)</option>
             </select>
           </div>
-          <button onclick="adaugaRezultatNou()" style="background:var(--verde);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:0.85rem;font-weight:600">➕ Adaugă</button>
+          <button id="btn-adauga-rez" onclick="adaugaRezultatNou()" style="background:var(--verde);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:0.85rem;font-weight:600">➕ Adaugă</button>
         </div>
+        <div id="edit-msg-add" style="margin-top:10px;padding:8px 12px;border-radius:6px;display:none;font-size:0.9rem"></div>
       </div>
       <div style="margin-top:20px;text-align:right">
         <button onclick="inchideModalEditSiReincarca()" style="background:var(--albastru);color:white;border:none;border-radius:6px;padding:10px 24px;cursor:pointer;font-size:0.9rem;font-weight:600">✅ Gata — Salvează și închide</button>
@@ -1911,38 +1912,73 @@ async function stergeRezultat(rzId) {
 
 async function adaugaRezultatNou() {
   const aid = document.getElementById('new-analiza-id').value;
-  const val = document.getElementById('new-valoare').value;
+  const val = document.getElementById('new-valoare').value.trim();
   const unit = document.getElementById('new-unitate').value.trim();
   const flag = document.getElementById('new-flag').value;
-  if (!val) { showEditMsg('Introduceți valoarea!', true); return; }
 
-  // Gaseste denumire_standard
-  const analiza = _analizeLista.find(a => String(a.id) === String(aid));
-  const denumire = analiza ? analiza.denumire_standard : (unit || 'Analiză adăugată manual');
+  if (!val) {
+    showAddMsg('⚠️ Introduceți valoarea numerică (ex: 15.9)!', true);
+    document.getElementById('new-valoare').focus();
+    return;
+  }
+  if (!aid) {
+    showAddMsg('⚠️ Selectați tipul de analiză din lista de mai sus!', true);
+    return;
+  }
 
-  const body = {
-    analiza_standard_id: aid ? parseInt(aid) : null,
-    denumire_raw: denumire,
-    valoare: parseFloat(val),
-    unitate: unit || null,
-    flag: flag || null,
-  };
-  const r = await fetch('/buletin/' + _editBuletinId + '/rezultat', {
-    method: 'POST',
-    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const j = await r.json().catch(() => ({}));
-  if (r.ok) {
-    const invatMsg = (j.alias_salvat && aid)
-      ? ' Sistemul a învățat această analiză și o va recunoaște automat la viitoare upload-uri.'
-      : '';
-    showEditMsg('✅ Analiză adăugată!' + invatMsg + ' Apasă "Gata" pentru a vedea modificările.', false);
-    document.getElementById('new-valoare').value = '';
-    document.getElementById('new-unitate').value = '';
-    document.getElementById('new-flag').value = '';
-  } else {
-    showEditMsg('Eroare: ' + (j.detail || 'necunoscuta'), true);
+  const btn = document.getElementById('btn-adauga-rez');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Se salvează...'; }
+
+  try {
+    const analiza = _analizeLista.find(a => String(a.id) === String(aid));
+    const denumire = analiza ? analiza.denumire_standard : (unit || 'Analiză adăugată manual');
+
+    const body = {
+      analiza_standard_id: parseInt(aid),
+      denumire_raw: denumire,
+      valoare: parseFloat(val.replace(',', '.')),
+      unitate: unit || null,
+      flag: flag || null,
+    };
+
+    const r = await fetch('/buletin/' + _editBuletinId + '/rezultat', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (r.ok) {
+      const invatMsg = j.alias_salvat
+        ? ' Sistemul a învățat-o și o va recunoaște automat la upload-uri viitoare.'
+        : '';
+      showAddMsg('✅ ' + escHtml(denumire) + ' (' + val + ' ' + (unit||'') + ') adăugat cu succes!' + invatMsg, false);
+      document.getElementById('new-valoare').value = '';
+      document.getElementById('new-unitate').value = '';
+      document.getElementById('new-flag').value = '';
+      document.getElementById('new-analiza-id').value = '';
+    } else {
+      showAddMsg('❌ Eroare: ' + (j.detail || 'Nu s-a putut salva. Verifică că ești autentificat.'), true);
+    }
+  } catch(e) {
+    showAddMsg('❌ Eroare rețea: ' + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Adaugă'; }
+  }
+}
+
+function showAddMsg(msg, isErr) {
+  // Mesaj langa butonul de adaugare (vizibil fara scroll)
+  const el = document.getElementById('edit-msg-add');
+  if (el) {
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.background = isErr ? '#fdecea' : '#e8f5e9';
+    el.style.color = isErr ? '#c62828' : '#2e7d32';
+    el.style.border = '1px solid ' + (isErr ? '#ef9a9a' : '#a5d6a7');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Auto-ascunde dupa 6 secunde daca e succes
+    if (!isErr) setTimeout(() => { el.style.display = 'none'; }, 6000);
   }
 }
 
