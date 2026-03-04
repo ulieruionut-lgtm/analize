@@ -34,8 +34,10 @@ _LINII_EXCLUSE = re.compile(
     r"persoanelor|persoane\s+varst|"
     # Note diagnostice
     r"Diagnosticul|Glicemie\s+bazala\s+modif|Se\s+recomanda\s+retest|"
-    # Artefacte OCR
-    r"Regulamentul\s+nr)",
+    # Artefacte OCR si certificate
+    r"Regulamentul\s+nr|CERTIFICAT|certificat|Seria\s+[A-Z]|Nr\.\s+[A-Z]|"
+    # Linii scurte care incep cu punct/doua puncte/spatiu (artefacte tabele)
+    r":\s*[a-z]\s+[a-z]|^\s*[:\.\-]\s)",
     re.IGNORECASE,
 )
 
@@ -141,8 +143,8 @@ def _este_linie_parametru(linie: str) -> bool:
         return False
     if re.match(r"^\d{2}\.\d{2}\.\d{4}", linie):
         return False
-    # Linii care incep cu ghilimele sau caractere speciale OCR
-    if re.match(r'^["\'\[\]\{\}]', linie):
+    # Linii care incep cu semne de punctuatie sau caractere speciale (artefacte tabele)
+    if re.match(r'^["\'\[\]\{\}:;|\\]', linie):
         return False
     # Linii de clasificare/referinta: "Ceva: < 60", "eGFR: = 142", "k = 0.7"
     # Detecteaza pattern: text_scurt ':' optional_spatiu operator_sau_numar

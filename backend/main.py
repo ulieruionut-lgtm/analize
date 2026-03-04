@@ -1128,13 +1128,15 @@ function deschideTabPacient(cnp, nume, htmlContent) {
   const baraDinamica = document.getElementById('tabs-dinamice');
   const continutDinamic = document.getElementById('continut-pacienti-dinamici');
 
-  if (!_tabPacienti[cnp]) {
-    // Tab nou
+  // Verifica atat in cache cat si in DOM (evita duplicate la stergere/reincarca)
+  const btnExistent = document.querySelector('.tab-pacient-btn[data-cnp="' + cnp + '"]');
+
+  if (!_tabPacienti[cnp] && !btnExistent) {
+    // Tab nou - nu exista nici in cache, nici in DOM
     _tabPacienti[cnp] = { nume, html: htmlContent };
 
     const btn = document.createElement('button');
     btn.className = 'tab-pacient-btn';
-    btn.id = 'tab-btn-p-' + CSS.escape(cnp);
     btn.setAttribute('data-cnp', cnp);
     btn.innerHTML =
       '<span class="tab-nume">👤 ' + escHtml(nume) + '</span>' +
@@ -1150,8 +1152,19 @@ function deschideTabPacient(cnp, nume, htmlContent) {
     baraDinamica.appendChild(btn);
     baraDinamica.style.display = 'flex';
   } else {
-    // Actualizeaza continutul (ex: dupa stergere buletin)
-    _tabPacienti[cnp].html = htmlContent;
+    // Tab existent - actualizeaza doar continutul si eventual numele
+    if (!_tabPacienti[cnp]) _tabPacienti[cnp] = { nume, html: htmlContent };
+    else _tabPacienti[cnp].html = htmlContent;
+
+    // Actualizeaza numele daca e mai bun (nu mai e CNP-ul gol)
+    if (nume && nume !== cnp) {
+      _tabPacienti[cnp].nume = nume;
+      const tabBtn = document.querySelector('.tab-pacient-btn[data-cnp="' + cnp + '"]');
+      if (tabBtn) {
+        const span = tabBtn.querySelector('.tab-nume');
+        if (span) span.textContent = '👤 ' + nume;
+      }
+    }
   }
 
   activeazaTabPacient(cnp);
