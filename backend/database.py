@@ -605,8 +605,14 @@ def add_rezultat_manual(buletin_id: int, analiza_standard_id: Optional[int],
                 RETURNING id
             """, (buletin_id, analiza_standard_id, denumire_raw.strip(), valoare, unitate, flag or None))
             row = cur.fetchone()
-            return {"id": row[0]} if row else None
-    except Exception:
+            if row is None:
+                return None
+            # RealDictCursor (PostgreSQL) returneaza dict, sqlite returneaza tuple
+            row_id = row["id"] if hasattr(row, "keys") else row[0]
+            return {"id": row_id}
+    except Exception as e:
+        import logging
+        logging.error(f"add_rezultat_manual error: {e}")
         return None
 
 
