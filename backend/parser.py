@@ -215,6 +215,11 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if not name or len(name) < 2:
         return None
 
+    # Daca "numele" este doar un numar (ex: "14.2" care e de fapt limita inf referinta),
+    # nu este o denumire valida de analiza
+    if re.match(r'^\d+[.,]?\d*\s*$', name):
+        return None
+
     try:
         valoare = float(m_val.group(1).replace(",", "."))
     except ValueError:
