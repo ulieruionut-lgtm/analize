@@ -3,13 +3,16 @@ Normalizare denumiri analize: mapare alias → analiza_standard.
 
 Strategii de matching (in ordine, se opreste la primul match):
   1. Exact match (case-insensitive, trimmed)
-  2. Match dupa normalizare diacritice (ă→a, î→i, etc.)
-  3. Match dupa normalizare + eliminare paranteze si cod
-  4. Match substring bidirectional (alias contine raw sau invers)
-  5. Match dupa primul cuvant semnificativ
+  2. Exact match dupa curatare artefacte (*, <, >, #)
+  3. Match normalizat (diacritice eliminate)
+  4. Match fara paranteze + normalizat
+  5. Match dupa primele 2 cuvinte semnificative (conservator)
+  6. Match dupa >= 3 cuvinte cheie comune
+  7. Fuzzy match (similaritate >= 88%) pentru erori OCR (ex: Hcmoglobina -> Hemoglobina)
 
 Daca nu gaseste nimic: salveaza in analiza_necunoscuta pentru aprobare manuala.
 """
+import difflib
 import re
 import unicodedata
 from typing import Optional
@@ -138,6 +141,14 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
             alias_kw = _cuvinte_cheie(alias_norm)
             if len(raw_kw & alias_kw) >= 3:
                 return aid
+
+    # 7. Fuzzy matching pentru erori OCR (ex: "Hcmoglobina" -> "Hemoglobina")
+    # Folosim difflib.get_close_matches cu threshold 0.88 - suficient de strict
+    # pentru a evita false pozitive dar prinde erorile tipice OCR (1-2 litere gresite)
+    if len(raw_norm) >= 5:  # nu aplica pe denumiri prea scurte
+        matches = difflib.get_close_matches(raw_norm, cache_norm.keys(), n=1, cutoff=0.88)
+        if matches:
+            return cache_norm[matches[0]]
 
     return None
 

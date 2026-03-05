@@ -3,6 +3,7 @@
 - PDF scanat: PyMuPDF (fitz) pentru imagini + preprocesare + Tesseract OCR
   PyMuPDF nu are nevoie de poppler - merge pe Windows fara instalare extra.
 """
+import re
 from pathlib import Path
 from typing import Tuple
 
@@ -67,15 +68,35 @@ def _preproceseaza_imagine_ocr(img):
         binary = (arr < 180).astype(np.uint8)
 
         # Sterge liniile orizontale de bordura:
-        # O linie e "bordura" daca > 85% din pixeli sunt negri SI e subtire (<= 4px)
-        for i in range(binary.shape[0]):
-            if binary[i].mean() > 0.85:
-                arr[i] = 255  # alb -> sterge linia
+        # O linie e "bordura" daca > 90% din pixeli sunt negri
+        # SI este subtire (1-3 pixeli consecutivi) - evita stergerea textului dens
+        i = 0
+        while i < binary.shape[0]:
+            if binary[i].mean() > 0.90:
+                # Detectam cat de groasa e linia (linii consecutive)
+                j = i + 1
+                while j < binary.shape[0] and binary[j].mean() > 0.90:
+                    j += 1
+                grosime = j - i
+                if grosime <= 4:  # bordura subtire (1-4px) - sterge
+                    arr[i:j] = 255
+                i = j
+            else:
+                i += 1
 
-        # Sterge liniile verticale de bordura
-        for j in range(binary.shape[1]):
-            if binary[:, j].mean() > 0.85:
-                arr[:, j] = 255  # alb -> sterge coloana
+        # Sterge liniile verticale de bordura (la fel, max 4px grosime)
+        j = 0
+        while j < binary.shape[1]:
+            if binary[:, j].mean() > 0.90:
+                k = j + 1
+                while k < binary.shape[1] and binary[:, k].mean() > 0.90:
+                    k += 1
+                grosime = k - j
+                if grosime <= 4:
+                    arr[:, j:k] = 255
+                j = k
+            else:
+                j += 1
 
         from PIL import Image as PILImage
         return PILImage.fromarray(arr)
@@ -217,8 +238,10 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set]:
         text_combinat = text_normal + "\n" + text_tabele if text_normal else text_tabele
     text_combinat = text_combinat.strip()
 
-    # Daca textul combinat e suficient de lung, e PDF text
-    if len(text_combinat) >= settings.pdf_text_min_chars:
+    # Daca textul combinat e suficient de lung SI contine cel putin un numar
+    # (valoare potentiala de analiza), e PDF text
+    contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
+    if len(text_combinat) >= settings.pdf_text_min_chars and contine_numar:
         colored = extract_colored_tokens(pdf_path)
         return text_combinat, "text", None, colored
 

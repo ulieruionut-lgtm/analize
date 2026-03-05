@@ -220,6 +220,14 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
         except ValueError:
             pass
 
+    # Valideaza interval (interval_min trebuie < interval_max)
+    if interval_min is not None and interval_max is not None:
+        if interval_min >= interval_max:
+            interval_min = interval_max = None
+
+    # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 citit ca 99)
+    valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max)
+
     # Flag H/L — mai intai explicit din text, apoi calculat din interval
     flag = None
     if re.search(r"\bH\b", rest):
@@ -292,6 +300,9 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         try:
             interval_min = float(m.group(3).replace(",", "."))
             interval_max = float(m.group(4).replace(",", "."))
+            # Valideaza intervalul (min trebuie sa fie < max)
+            if interval_min >= interval_max:
+                interval_min = interval_max = None
         except ValueError:
             interval_min = interval_max = None
         denumire = ""
