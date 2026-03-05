@@ -41,6 +41,10 @@ _LINII_EXCLUSE = re.compile(
     r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
     r"Data\s+nasterii|Spectrofotome|CITOMETRIE|Raspuns\s+rapid|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
+    r"Bacteriurie|Corpi\s+cetonici|Nitri[ti]|Leucociturie|"
+    r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
+    r"Punct\s+de\s+lucru|Cod\s+de\s+bare|Cod:|Coad:|PD\s+\d|"
+    r"Data\s+-\s+ora\s+recolt|ora\s+recoltare|Data\s+recoltare|"
     # Intervale referinta si clasificari
     r"Usor\s+crescut|Moderat\s+crescut|Foarte\s+crescut|"
     r"Optim\s*:|Normal\s*:|Diabet\s+|Glicemie\s+bazala|"
@@ -163,6 +167,13 @@ def _este_linie_parametru(linie: str) -> bool:
     # Linii cu text foarte scurt si ambiguu (< 4 caractere utile)
     if len(re.sub(r'[^a-zA-Z]', '', linie)) < 3:
         return False
+    # Linii care incep cu numar de linie (ex: "9.3 Alfa2-globuline%", "1. Hemoglobina")
+    # dar NU linii care incep cu valori medicale cunoscute (ex: "25-OH Vitamina D")
+    if re.match(r'^\d+\.\d+\s+[A-Z]', linie):
+        # Sterge prefixul numeric si continua parsarea cu restul
+        linie_fara_prefix = re.sub(r'^\d+\.\d+\s+\*?\s*', '', linie).strip()
+        if linie_fara_prefix != linie:
+            return _este_linie_parametru(linie_fara_prefix)
     return True
 
 
@@ -176,6 +187,11 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
       RDW-CV 144 % 11.5-145%
     """
     linie = linie.strip()
+    if not linie:
+        return None
+
+    # Elimina prefix numeric de linie (ex: "9.3 Alfa2-globuline%" -> "Alfa2-globuline%")
+    linie = re.sub(r'^\d+\.\d+\s+\*?\s*', '', linie).strip()
     if not linie:
         return None
 
