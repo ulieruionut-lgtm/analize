@@ -2046,17 +2046,17 @@ function filtreazaAnalizeSearch(query) {
     dropdown.innerHTML = filtrate.map(a => {
       const den = escHtml(a.denumire_standard || '');
       const cod = escHtml(a.cod_standard || '');
-      // Evidentiaza termenul cautat
-      const highlight = q ? den.replace(
-        new RegExp(q.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi'),
+      const qEsc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const highlight = q ? den.replace(new RegExp(qEsc, 'gi'),
         m => '<mark style="background:#fff176;padding:0">' + m + '</mark>'
       ) : den;
-      return \`<div
-        onmousedown="selecteazaAnaliza(${a.id}, '${den.replace(/'/g,"\\\\'")}', '${cod}')"
-        style="padding:8px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center"
-        onmouseover="this.style.background='#e3f2fd'"
-        onmouseout="this.style.background=''"
-      ><span>\${highlight}</span><span style="color:#999;font-size:0.75rem;margin-left:8px">\${cod}</span></div>\`;
+      return '<div' +
+        ' data-id="' + a.id + '" data-den="' + den + '" data-cod="' + cod + '"' +
+        ' style="padding:8px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center"' +
+        ' onmousedown="selecteazaAnaliza(this.dataset.id, this.dataset.den, this.dataset.cod)"' +
+        ' onmouseover="this.style.background=\'#e3f2fd\'"' +
+        ' onmouseout="this.style.background=\'\'"' +
+        '><span>' + highlight + '</span><span style="color:#999;font-size:0.75rem;margin-left:8px">' + cod + '</span></div>';
     }).join('');
   }
   dropdown.style.display = 'block';
