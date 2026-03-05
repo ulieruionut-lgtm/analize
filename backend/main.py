@@ -1861,7 +1861,7 @@ async function editBuletin(buletinId, cnp) {
             />
             <input type="hidden" id="new-analiza-id" value="" />
             <div id="new-analiza-dropdown"
-              style="display:none;position:absolute;top:100%;left:0;z-index:2000;background:white;border:1.5px solid #ccc;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.15);max-height:220px;overflow-y:auto;min-width:300px">
+              style="display:none;position:fixed;z-index:99999;background:white;border:1.5px solid #1a73e8;border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,0.2);max-height:350px;overflow-y:auto;min-width:320px">
             </div>
           </div>
           <div>
@@ -2028,7 +2028,13 @@ function showEditMsg(msg, isErr) {
 
 function filtreazaAnalizeSearch(query) {
   const dropdown = document.getElementById('new-analiza-dropdown');
-  if (!dropdown) return;
+  const searchInput = document.getElementById('new-analiza-search');
+  if (!dropdown || !searchInput) return;
+  // Pozitioneaza dropdown fix sub input
+  const rect = searchInput.getBoundingClientRect();
+  dropdown.style.left = rect.left + 'px';
+  dropdown.style.top = (rect.bottom + 2) + 'px';
+  dropdown.style.width = rect.width + 'px';
   const q = query.trim().toLowerCase();
   const lista = _analizeLista || [];
 
