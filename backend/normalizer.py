@@ -14,6 +14,7 @@ Daca nu gaseste nimic: salveaza in analiza_necunoscuta pentru aprobare manuala.
 """
 import difflib
 import re
+import time
 import unicodedata
 from typing import Optional
 
@@ -58,14 +59,19 @@ def _cuvinte_cheie(text: str) -> set:
     return {w for w in re.split(r'[\s\-/\(\)]+', text) if len(w) >= 3 and not w.isdigit()}
 
 
-# Cache in-memory pentru alias-uri (evita query-uri repetate la DB)
-_CACHE: Optional[dict] = None   # { text_normalizat: analiza_standard_id }
-_CACHE_RAW: Optional[dict] = None  # { alias_original_lower: id }
+# Cache in-memory cu TTL de 3 minute - se reincarc automat din DB
+# Astfel aliasurile adaugate direct in DB sunt preluate rapid, fara restart
+_CACHE: Optional[dict] = None
+_CACHE_RAW: Optional[dict] = None
+_CACHE_TIMESTAMP: float = 0.0
+_CACHE_TTL_SECUNDE: int = 180  # 3 minute
 
 
 def _incarca_cache() -> tuple[dict, dict]:
-    global _CACHE, _CACHE_RAW
-    if _CACHE is not None:
+    global _CACHE, _CACHE_RAW, _CACHE_TIMESTAMP
+    acum = time.time()
+    # Reincarc daca cache-ul este gol SAU a expirat (TTL)
+    if _CACHE is not None and (acum - _CACHE_TIMESTAMP) < _CACHE_TTL_SECUNDE:
         return _CACHE, _CACHE_RAW
     try:
         from backend.database import get_cursor, _use_sqlite
@@ -80,16 +86,18 @@ def _incarca_cache() -> tuple[dict, dict]:
                 cache_norm[_normalizeaza(alias)] = aid
         _CACHE = cache_norm
         _CACHE_RAW = cache_raw
+        _CACHE_TIMESTAMP = acum
         return _CACHE, _CACHE_RAW
     except Exception:
         return {}, {}
 
 
 def invalideaza_cache():
-    """Apelat dupa ce se adauga un alias nou."""
-    global _CACHE, _CACHE_RAW
+    """Apelat dupa ce se adauga un alias nou - forteaza reincarcare imediata."""
+    global _CACHE, _CACHE_RAW, _CACHE_TIMESTAMP
     _CACHE = None
     _CACHE_RAW = None
+    _CACHE_TIMESTAMP = 0.0
 
 
 def _cauta_in_cache(raw: str) -> Optional[int]:
