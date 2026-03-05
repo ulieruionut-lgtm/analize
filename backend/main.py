@@ -1869,12 +1869,13 @@ async function editBuletin(buletinId, cnp) {
               <option value="L">L (Scăzut)</option>
             </select>
           </div>
-          <button id="btn-adauga-rez" onclick="adaugaRezultatNou()" style="background:var(--verde);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:0.85rem;font-weight:600">➕ Adaugă</button>
+          <button id="btn-adauga-rez" onclick="adaugaRezultatNou()" style="background:var(--verde);color:white;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:0.85rem;font-weight:600">➕ Adaugă în buletin</button>
         </div>
         <div id="edit-msg-add" style="margin-top:10px;padding:8px 12px;border-radius:6px;display:none;font-size:0.9rem"></div>
+        <div style="margin-top:6px;font-size:0.78rem;color:#888">⚠️ Apasă <strong>➕ Adaugă în buletin</strong> pentru fiecare analiză nouă, înainte de a da Gata.</div>
       </div>
       <div style="margin-top:20px;text-align:right">
-        <button onclick="inchideModalEditSiReincarca()" style="background:var(--albastru);color:white;border:none;border-radius:6px;padding:10px 24px;cursor:pointer;font-size:0.9rem;font-weight:600">✅ Gata — Salvează și închide</button>
+        <button onclick="inchideModalEditSiReincarca()" style="background:var(--albastru);color:white;border:none;border-radius:6px;padding:10px 24px;cursor:pointer;font-size:0.9rem;font-weight:600">✅ Gata — Închide</button>
       </div>
     </div>`;
   modal.style.display = 'flex';
@@ -2020,7 +2021,24 @@ function inchideModalEdit() {
 }
 
 async function inchideModalEditSiReincarca() {
-  // Salveaza orice modificari nesalvate
+  // Verifica daca formularul de adaugare are date nesalvate
+  const newVal = (document.getElementById('new-valoare') || {}).value || '';
+  const newAid = (document.getElementById('new-analiza-id') || {}).value || '';
+  if (newVal.trim()) {
+    if (newAid) {
+      // Salveaza automat analiza din formular
+      await adaugaRezultatNou();
+      // Asteapta putin sa se proceseze
+      await new Promise(res => setTimeout(res, 400));
+    } else {
+      // Are valoare dar nu are tip selectat
+      showAddMsg('⚠️ Ai introdus o valoare dar nu ai selectat tipul de analiză! Selectează tipul sau șterge valoarea înainte de a închide.', true);
+      document.getElementById('new-analiza-id').focus();
+      return; // Nu inchide modalul
+    }
+  }
+
+  // Salveaza orice modificari nesalvate din tabel
   for (const rzId of Object.keys(_editPending)) {
     await saveRezultat(parseInt(rzId));
   }
