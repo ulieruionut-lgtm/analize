@@ -1849,21 +1849,32 @@ async function editBuletin(buletinId, cnp) {
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <strong style="font-size:0.9rem">➕ Adaugă analiză lipsă</strong>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:flex-end">
-          <div>
-            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Tip analiză</div>
-            <select id="new-analiza-id" style="padding:6px;font-size:0.85rem;min-width:220px">${opts}</select>
+          <div style="position:relative">
+            <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Tip analiză <span style="color:#aaa">(caută după nume sau cod)</span></div>
+            <input type="text" id="new-analiza-search"
+              placeholder="🔍 ex: Hemoglobina, TSH, ALT..."
+              autocomplete="off"
+              style="padding:6px 10px;font-size:0.85rem;min-width:260px;border:1.5px solid #ccc;border-radius:6px;outline:none"
+              oninput="filtreazaAnalizeSearch(this.value)"
+              onfocus="filtreazaAnalizeSearch(this.value)"
+              onblur="setTimeout(()=>ascundeAnalizeSearch(),200)"
+            />
+            <input type="hidden" id="new-analiza-id" value="" />
+            <div id="new-analiza-dropdown"
+              style="display:none;position:absolute;top:100%;left:0;z-index:2000;background:white;border:1.5px solid #ccc;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.15);max-height:220px;overflow-y:auto;min-width:300px">
+            </div>
           </div>
           <div>
             <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Valoare *</div>
-            <input type="number" step="any" id="new-valoare" placeholder="ex: 15.9" style="padding:6px;width:90px;font-size:0.85rem" />
+            <input type="number" step="any" id="new-valoare" placeholder="ex: 15.9" style="padding:6px;width:90px;font-size:0.85rem;border:1.5px solid #ccc;border-radius:6px" />
           </div>
           <div>
             <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Unitate</div>
-            <input type="text" id="new-unitate" placeholder="ex: g/dL" style="padding:6px;width:80px;font-size:0.85rem" />
+            <input type="text" id="new-unitate" placeholder="ex: g/dL" style="padding:6px;width:80px;font-size:0.85rem;border:1.5px solid #ccc;border-radius:6px" />
           </div>
           <div>
             <div style="font-size:0.75rem;color:var(--gri);margin-bottom:3px">Flag</div>
-            <select id="new-flag" style="padding:6px;font-size:0.85rem">
+            <select id="new-flag" style="padding:6px;font-size:0.85rem;border:1.5px solid #ccc;border-radius:6px">
               <option value="">—</option>
               <option value="H">H (Ridicat)</option>
               <option value="L">L (Scăzut)</option>
@@ -1980,6 +1991,8 @@ async function adaugaRezultatNou() {
       document.getElementById('new-unitate').value = '';
       document.getElementById('new-flag').value = '';
       document.getElementById('new-analiza-id').value = '';
+      const srch = document.getElementById('new-analiza-search');
+      if (srch) { srch.value = ''; srch.style.borderColor = '#ccc'; }
     } else {
       showAddMsg('❌ Eroare: ' + (j.detail || 'Nu s-a putut salva. Verifică că ești autentificat.'), true);
     }
@@ -2013,6 +2026,62 @@ function showEditMsg(msg, isErr) {
   }
 }
 
+function filtreazaAnalizeSearch(query) {
+  const dropdown = document.getElementById('new-analiza-dropdown');
+  if (!dropdown) return;
+  const q = query.trim().toLowerCase();
+  const lista = _analizeLista || [];
+
+  const filtrate = q.length === 0
+    ? lista.slice(0, 40)  // primele 40 cand e gol
+    : lista.filter(a => {
+        const den = (a.denumire_standard || '').toLowerCase();
+        const cod = (a.cod_standard || '').toLowerCase();
+        return den.includes(q) || cod.includes(q);
+      }).slice(0, 50);
+
+  if (filtrate.length === 0) {
+    dropdown.innerHTML = '<div style="padding:10px;color:#999;font-size:0.85rem">Niciun rezultat</div>';
+  } else {
+    dropdown.innerHTML = filtrate.map(a => {
+      const den = escHtml(a.denumire_standard || '');
+      const cod = escHtml(a.cod_standard || '');
+      // Evidentiaza termenul cautat
+      const highlight = q ? den.replace(
+        new RegExp(q.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi'),
+        m => '<mark style="background:#fff176;padding:0">' + m + '</mark>'
+      ) : den;
+      return \`<div
+        onmousedown="selecteazaAnaliza(${a.id}, '${den.replace(/'/g,"\\\\'")}', '${cod}')"
+        style="padding:8px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center"
+        onmouseover="this.style.background='#e3f2fd'"
+        onmouseout="this.style.background=''"
+      ><span>\${highlight}</span><span style="color:#999;font-size:0.75rem;margin-left:8px">\${cod}</span></div>\`;
+    }).join('');
+  }
+  dropdown.style.display = 'block';
+}
+
+function selecteazaAnaliza(id, denumire, cod) {
+  const searchEl = document.getElementById('new-analiza-search');
+  const hiddenEl = document.getElementById('new-analiza-id');
+  const dropdown = document.getElementById('new-analiza-dropdown');
+  if (searchEl) {
+    searchEl.value = denumire + (cod ? ' (' + cod + ')' : '');
+    searchEl.style.borderColor = 'var(--verde)';
+  }
+  if (hiddenEl) hiddenEl.value = id;
+  if (dropdown) dropdown.style.display = 'none';
+  // Focus pe valoare
+  const valEl = document.getElementById('new-valoare');
+  if (valEl) valEl.focus();
+}
+
+function ascundeAnalizeSearch() {
+  const dropdown = document.getElementById('new-analiza-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+}
+
 function inchideModalEdit() {
   const modal = document.getElementById('modal-edit-buletin');
   if (modal) modal.style.display = 'none';
@@ -2032,8 +2101,9 @@ async function inchideModalEditSiReincarca() {
       await new Promise(res => setTimeout(res, 400));
     } else {
       // Are valoare dar nu are tip selectat
-      showAddMsg('⚠️ Ai introdus o valoare dar nu ai selectat tipul de analiză! Selectează tipul sau șterge valoarea înainte de a închide.', true);
-      document.getElementById('new-analiza-id').focus();
+      showAddMsg('⚠️ Ai introdus o valoare dar nu ai selectat tipul de analiză! Caută și selectează tipul din lista de mai sus.', true);
+      const srch = document.getElementById('new-analiza-search');
+      if (srch) srch.focus();
       return; // Nu inchide modalul
     }
   }
