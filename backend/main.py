@@ -2033,12 +2033,12 @@ function filtreazaAnalizeSearch(query) {
   const lista = _analizeLista || [];
 
   const filtrate = q.length === 0
-    ? lista.slice(0, 40)  // primele 40 cand e gol
+    ? lista
     : lista.filter(a => {
         const den = (a.denumire_standard || '').toLowerCase();
         const cod = (a.cod_standard || '').toLowerCase();
         return den.includes(q) || cod.includes(q);
-      }).slice(0, 50);
+      });
 
   if (filtrate.length === 0) {
     dropdown.innerHTML = '<div style="padding:10px;color:#999;font-size:0.85rem">Niciun rezultat</div>';
