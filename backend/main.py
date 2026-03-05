@@ -509,17 +509,31 @@ async def get_buletin_rezultate(buletin_id: int, current_user: dict = Depends(ge
 
 @app.put("/rezultat/{rezultat_id}")
 async def edit_rezultat(rezultat_id: int, body: dict, current_user: dict = Depends(get_current_user)):
-    """Editeaza un rezultat existent: valoare, unitate, flag, analiza_standard_id."""
-    ok = update_rezultat(
-        rezultat_id=rezultat_id,
-        valoare=body.get("valoare"),
-        unitate=body.get("unitate"),
-        flag=body.get("flag"),
-        analiza_standard_id=body.get("analiza_standard_id"),
-    )
+    """Editeaza partial un rezultat existent: actualizeaza doar campurile trimise.
+    Daca se schimba analiza_standard_id, salveaza denumire_raw ca alias pentru invatare.
+    """
+    if not body:
+        raise HTTPException(status_code=422, detail="Body gol — nimic de actualizat.")
+    ok = update_rezultat(rezultat_id=rezultat_id, body=body)
     if not ok:
         raise HTTPException(status_code=404, detail="Rezultatul nu a fost gasit.")
-    return {"ok": True}
+
+    # Daca s-a schimbat tipul de analiza, inregistreaza denumire_raw ca alias
+    alias_salvat = False
+    new_std_id = body.get("analiza_standard_id")
+    if new_std_id:
+        from backend.database import get_cursor, _use_sqlite
+        with get_cursor(commit=False) as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"SELECT denumire_raw FROM rezultate_analize WHERE id = {ph}", (rezultat_id,))
+            row = cur.fetchone()
+            if row:
+                denumire = row[0] if _use_sqlite() else row['denumire_raw']
+                if denumire and denumire.strip():
+                    from backend.normalizer import adauga_alias_nou
+                    alias_salvat = adauga_alias_nou(denumire.strip(), int(new_std_id))
+
+    return {"ok": True, "alias_salvat": alias_salvat}
 
 
 @app.delete("/rezultat/{rezultat_id}")
@@ -1881,20 +1895,28 @@ async function saveRezultat(rzId) {
   const changes = _editPending[rzId];
   if (!changes) return;
   const {_timer, ...body} = changes;
+  if (Object.keys(body).length === 0) { delete _editPending[rzId]; return; }
+  const row = document.getElementById('erow-' + rzId);
   try {
     const r = await fetch('/rezultat/' + rzId, {
       method: 'PUT',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    const row = document.getElementById('erow-' + rzId);
-    if (r.ok && row) {
-      row.style.background = '#e8f5e9';
-      setTimeout(() => { if(row) row.style.background = ''; }, 1000);
+    if (r.ok) {
+      if (row) {
+        row.style.background = '#e8f5e9';
+        setTimeout(() => { if(row) row.style.background = ''; }, 1200);
+      }
+      delete _editPending[rzId];
+    } else {
+      const j = await r.json().catch(() => ({}));
+      showEditMsg('❌ Eroare salvare: ' + (j.detail || r.status), true);
+      if (row) { row.style.background = '#fdecea'; setTimeout(() => { if(row) row.style.background = ''; }, 2000); }
     }
-    delete _editPending[rzId];
   } catch(e) {
-    showEditMsg('Eroare salvare: ' + e.message, true);
+    showEditMsg('❌ Eroare rețea: ' + e.message, true);
+    if (row) { row.style.background = '#fdecea'; setTimeout(() => { if(row) row.style.background = ''; }, 2000); }
   }
 }
 

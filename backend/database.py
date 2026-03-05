@@ -564,19 +564,27 @@ def get_rezultate_buletin(buletin_id: int) -> list:
         return []
 
 
-def update_rezultat(rezultat_id: int, valoare: Optional[float], unitate: Optional[str],
-                    flag: Optional[str], analiza_standard_id: Optional[int]) -> bool:
-    """Actualizeaza un rezultat existent (editare manuala)."""
+def update_rezultat(rezultat_id: int, body: dict) -> bool:
+    """Actualizeaza partial un rezultat existent (editare manuala).
+    Actualizeaza DOAR campurile prezente in body, fara sa stearga celelalte.
+    """
+    CAMPURI_PERMISE = {'valoare', 'unitate', 'flag', 'analiza_standard_id'}
+    updates = {k: v for k, v in body.items() if k in CAMPURI_PERMISE}
+    if not updates:
+        return True  # nimic de actualizat
     try:
         with get_cursor() as cur:
             ph = "?" if _use_sqlite() else "%s"
-            cur.execute(f"""
-                UPDATE rezultate_analize
-                SET valoare={ph}, unitate={ph}, flag={ph}, analiza_standard_id={ph}
-                WHERE id={ph}
-            """, (valoare, unitate, flag or None, analiza_standard_id, rezultat_id))
+            set_clauses = ", ".join(f"{k} = {ph}" for k in updates)
+            values = list(updates.values()) + [rezultat_id]
+            cur.execute(
+                f"UPDATE rezultate_analize SET {set_clauses} WHERE id = {ph}",
+                values,
+            )
             return cur.rowcount > 0
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.error(f"update_rezultat error: {e}")
         return False
 
 
