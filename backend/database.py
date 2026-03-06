@@ -269,6 +269,22 @@ def get_all_analize_standard() -> list:
         return [_row_to_dict(r) for r in cur.fetchall()]
 
 
+def adauga_analiza_standard(denumire: str, cod: str) -> dict:
+    """Adauga o noua analiza standard. Returneaza analiza creata sau eroare."""
+    cod_norm = cod.upper().strip().replace(" ", "_")
+    with get_cursor(commit=True) as cur:
+        cur.execute("SELECT id FROM analiza_standard WHERE cod_standard = %s", (cod_norm,))
+        existing = cur.fetchone()
+        if existing:
+            raise ValueError(f"Codul '{cod_norm}' exista deja.")
+        cur.execute(
+            "INSERT INTO analiza_standard (cod_standard, denumire_standard) VALUES (%s, %s) RETURNING id, cod_standard, denumire_standard",
+            (cod_norm, denumire.strip())
+        )
+        row = cur.fetchone()
+        return _row_to_dict(row)
+
+
 # --- Istoric pentru un tip de analiza ---
 def get_historicul_analiza(analiza_standard_id: int) -> list:
     """Toate rezultatele pentru o analiza standard, grupate pe pacienti."""

@@ -37,6 +37,7 @@ from backend.database import (
     insert_buletin,
     insert_rezultat,
     add_rezultat_manual,
+    adauga_analiza_standard,
     search_pacienti,
     sterge_analiza_necunoscuta,
     update_rezultat,
@@ -498,6 +499,20 @@ async def get_pacient(cnp: str, current_user: dict = Depends(get_current_user)):
 async def lista_analize_standard(current_user: dict = Depends(get_current_user)):
     """Lista tuturor tipurilor de analize din baza de date."""
     return get_all_analize_standard()
+
+
+@app.post("/analize-standard")
+async def adauga_analiza_std(body: dict, current_user: dict = Depends(get_current_user)):
+    """Adauga o noua analiza standard (denumire + cod unic)."""
+    denumire = (body.get("denumire") or "").strip()
+    cod = (body.get("cod") or "").strip()
+    if not denumire or not cod:
+        raise HTTPException(status_code=400, detail="Denumirea si codul sunt obligatorii.")
+    try:
+        analiza = adauga_analiza_standard(denumire, cod)
+        return analiza
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @app.get("/buletin/{buletin_id}/rezultate")
@@ -1046,6 +1061,44 @@ async def index():
 
   <!-- TAB 3: Evolutie analiza pacient -->
   <div id="tab-analiza" class="sectiune">
+
+    <!-- Card: Adauga analiza standard noua -->
+    <div class="card" style="margin-bottom:20px">
+      <h2>➕ Adaugă tip de analiză nouă</h2>
+      <p style="font-size:0.85rem;color:var(--gri);margin-bottom:16px">
+        Dacă o analiză nu apare în lista de tipuri, o poți adăuga aici.<br>
+        <strong>Codul</strong> trebuie să fie unic (ex: CALCIU_IONIC, TSH, HGB).
+      </p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <div style="font-size:0.78rem;color:var(--gri);margin-bottom:4px">Denumire analiză *</div>
+          <input type="text" id="new-std-denumire" placeholder="ex: Calciu ionic (Ca2+)"
+            style="padding:8px 10px;width:260px;font-size:0.9rem;border:1.5px solid #ccc;border-radius:6px" />
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--gri);margin-bottom:4px">Cod unic *</div>
+          <input type="text" id="new-std-cod" placeholder="ex: CALCIU_IONIC"
+            style="padding:8px 10px;width:160px;font-size:0.9rem;border:1.5px solid #ccc;border-radius:6px;text-transform:uppercase" />
+        </div>
+        <button class="btn btn-primary" onclick="adaugaAnalizaStandard()" style="padding:8px 18px">
+          ➕ Adaugă
+        </button>
+      </div>
+      <div id="msg-new-std" style="margin-top:10px;font-size:0.85rem"></div>
+
+      <!-- Lista analize standard existente -->
+      <div style="margin-top:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="font-size:0.9rem">Analize standard existente (<span id="cnt-std">0</span>)</strong>
+          <input type="text" id="cauta-std" placeholder="🔍 caută..." oninput="filtreazaStd(this.value)"
+            style="padding:5px 10px;font-size:0.82rem;border:1.5px solid #ccc;border-radius:6px;width:200px" />
+        </div>
+        <div id="lista-std" style="max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px">
+          <p style="padding:12px;color:var(--gri)">Se încarcă…</p>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Evoluție analiză – pentru un pacient</h2>
 
@@ -1479,6 +1532,7 @@ function schimbTab(id) {
   if (id === 'pacient') incarcaListaPacienti('');
   if (id === 'alias') incarcaNecunoscute();
   if (id === 'setari') incarcaSetari();
+  if (id === 'analiza') incarcaAnalizeleStandard();
 }
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
@@ -2314,6 +2368,72 @@ function resetTabAnaliza() {
   document.getElementById('q-analiza-pacient').value = '';
   document.getElementById('lista-pacienti-analiza').innerHTML = '';
   document.getElementById('rezult-analiza').innerHTML = '';
+}
+
+// ─── Tab 3b: Gestionare analize standard ─────────────────────────────────────
+let _analize_std_toate = [];
+
+async function incarcaAnalizeleStandard() {
+  const r = await fetch('/analize-standard', { headers: getAuthHeaders() });
+  const lista = await r.json();
+  _analize_std_toate = lista;
+  document.getElementById('cnt-std').textContent = lista.length;
+  afiseazaListaStd(lista);
+}
+
+function filtreazaStd(q) {
+  const qlow = q.trim().toLowerCase();
+  const filtrate = qlow
+    ? _analize_std_toate.filter(a =>
+        (a.denumire_standard || '').toLowerCase().includes(qlow) ||
+        (a.cod_standard || '').toLowerCase().includes(qlow))
+    : _analize_std_toate;
+  afiseazaListaStd(filtrate);
+}
+
+function afiseazaListaStd(lista) {
+  const el = document.getElementById('lista-std');
+  if (!lista.length) {
+    el.innerHTML = '<p style="padding:12px;color:var(--gri)">Niciun rezultat.</p>';
+    return;
+  }
+  el.innerHTML = lista.map(a =>
+    '<div style="padding:7px 12px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;font-size:0.85rem">' +
+    '<span>' + escHtml(a.denumire_standard) + '</span>' +
+    '<span style="color:#999;font-family:monospace">' + escHtml(a.cod_standard) + '</span>' +
+    '</div>'
+  ).join('');
+}
+
+async function adaugaAnalizaStandard() {
+  const denumire = document.getElementById('new-std-denumire').value.trim();
+  const cod = document.getElementById('new-std-cod').value.trim().toUpperCase();
+  const msg = document.getElementById('msg-new-std');
+  if (!denumire || !cod) {
+    msg.textContent = 'Completează denumirea și codul.';
+    msg.style.color = 'var(--rosu)';
+    return;
+  }
+  const r = await fetch('/analize-standard', {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ denumire, cod })
+  });
+  const j = await r.json();
+  if (r.ok) {
+    msg.textContent = 'Adăugat: ' + j.denumire_standard + ' (' + j.cod_standard + ')';
+    msg.style.color = 'var(--verde)';
+    document.getElementById('new-std-denumire').value = '';
+    document.getElementById('new-std-cod').value = '';
+    await incarcaAnalizeleStandard();
+    // Reincarca si lista din dropdown editare
+    _analizeLista = null;
+    incarcaAnalizeLista();
+  } else {
+    msg.textContent = j.detail || 'Eroare.';
+    msg.style.color = 'var(--rosu)';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 4000);
 }
 
 // ─── Tab 4: Analize necunoscute ───────────────────────────────────────────────
