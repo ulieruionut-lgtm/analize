@@ -41,7 +41,7 @@ _LINII_EXCLUSE = re.compile(
     r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
     r"Data\s+nasterii|Spectrofotome|CITOMETRIE|Raspuns\s+rapid|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
-    r"Bacteriurie|Corpi\s+cetonici|Nitri[ti]|Leucociturie|"
+    r"Bacteriurie\s*[:(]|Leucociturie\s*[:(]|"
     r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
     r"Punct\s+de\s+lucru|Cod\s+de\s+bare|Cod:|Coad:|PD\s+\d|"
     r"Data\s+-\s+ora\s+recolt|ora\s+recoltare|Data\s+recoltare|"
@@ -56,6 +56,18 @@ _LINII_EXCLUSE = re.compile(
 )
 
 _LINIE_NOTA = re.compile(r"^\(|^\s*\(")
+
+# Valori text frecvente in analizele medicale (sumar urina, culturi, etc.)
+_VALOARE_TEXT_RE = re.compile(
+    r"^(negativ[ae]?|pozitiv[ae]?|absent[ae]?|prezent[ae]?|rar[ae]?|normal[ae]?|"
+    r"crescut[ae]?|scazut[ae]?|reactiv[ae]?|nedecelabil[ae]?|nedetectabil[ae]?|"
+    r"epitelii\s+\w+|leucocite\s+\w+|hematii\s+\w+|cilindri\s+\w+|"
+    r"cristale\s+\w+|bacterii\s+\w+|mucus\s+\w+|"
+    r"galben[ae]?|incolor[ae]?|tulbure|limpede|clar[ae]?|"
+    r"urme|trace[s]?|uro\s*\d*|"
+    r"[<>]\s*\d+[\.,]?\d*\s*\w*)",
+    re.IGNORECASE,
+)
 
 # Format Bioclinica: valoare+unitate + interval in paranteza
 RE_VALOARE_LINIE = re.compile(
@@ -204,7 +216,34 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
         linie
     )
     if not m_val:
-        return None
+        # Incearca sa gaseasca o valoare TEXT (negativ, pozitiv, absent etc.)
+        # Format: "NUME ANALIZA [,] VALOARE_TEXT"
+        m_text = re.search(
+            r"[\s,\.]+(_VALOARE_TEXT_)$".replace(
+                "_VALOARE_TEXT_",
+                r"(?:negativ[ae]?|pozitiv[ae]?|absent[ae]?|prezent[ae]?|rar[ae]?|"
+                r"normal[ae]?|crescut[ae]?|scazut[ae]?|reactiv[ae]?|nedecelabil[ae]?|"
+                r"nedetectabil[ae]?|epitelii\s+\w+|leucocite\s+\w+|hematii\s+\w+|"
+                r"cilindri\s+\w+|cristale\s+\w+|bacterii\s+\w+|mucus\s+\w+|"
+                r"galben[ae]?|incolor[ae]?|tulbure|limpede|clar[ae]?|"
+                r"urme|trace[s]?|\<\s*\d[\d\.,]*\s*\w*|\>\s*\d[\d\.,]*\s*\w*)"
+            ),
+            linie,
+            re.IGNORECASE,
+        )
+        if not m_text:
+            return None
+        name = linie[:m_text.start()].strip().strip(",.")
+        name = re.sub(r'^["\'\*%\s]+', '', name).strip()
+        if not name or len(name) < 2 or re.match(r'^\d+[.,]?\d*\s*$', name):
+            return None
+        valoare_text = m_text.group(1).strip()
+        return RezultatParsat(
+            denumire_raw=name,
+            valoare=None,
+            valoare_text=valoare_text,
+            unitate=None,
+        )
 
     name = linie[:m_val.start()].strip()
     if not name or len(name) < 2:
@@ -300,7 +339,8 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     def _add(r: Optional[RezultatParsat]) -> None:
         if r is None:
             return
-        key = (r.denumire_raw[:80].lower(), round(r.valoare, 3))
+        val_key = round(r.valoare, 3) if r.valoare is not None else (r.valoare_text or "")
+        key = (r.denumire_raw[:80].lower(), val_key)
         if key not in seen:
             seen.add(key)
             results.append(r)
@@ -310,6 +350,30 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         linie_val = lines[i]
         if not linie_val:
             continue
+
+        # Sub-cazul 1b: linia a doua e o valoare TEXT (negativ, pozitiv etc.)
+        m_text_linie = _VALOARE_TEXT_RE.match(linie_val.strip())
+        if m_text_linie:
+            denumire = ""
+            for j in range(i - 1, max(i - 4, -1), -1):
+                cand = lines[j].strip()
+                if not cand or _LINIE_NOTA.match(cand):
+                    continue
+                if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
+                    denumire = cand
+                break
+            if denumire:
+                val_key = (denumire[:80].lower(), linie_val.strip().lower())
+                if val_key not in seen:
+                    seen.add(val_key)
+                    results.append(RezultatParsat(
+                        denumire_raw=denumire,
+                        valoare=None,
+                        valoare_text=linie_val.strip(),
+                        unitate=None,
+                    ))
+            continue
+
         m = RE_VALOARE_LINIE.match(linie_val)
         if not m:
             continue
