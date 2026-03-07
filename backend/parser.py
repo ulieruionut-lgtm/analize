@@ -168,38 +168,58 @@ def extract_cnp(text: str) -> Optional[str]:
     return None
 
 
+# Cuvinte-cheie dupa care taiem (nu fac parte din numele pacientului)
+_NUME_TAIERE = re.compile(
+    r"\s+(?:Medic\s+trimitaro?r?|Medic|Data|Cabinet|Sex|Varsta|Cod|Adresa|Telefon|"
+    r"Punctul|Punct|pacient\s*:|Pra\s+pacient|Beneficiar)\s*[:\s]",
+    re.IGNORECASE,
+)
+
+
+def _curata_nume(raw: str) -> str:
+    """Extrage doar numele din text care poate contine 'Medic trimitator:', 'Varsta:', etc."""
+    if not raw or not raw.strip():
+        return raw or ""
+    s = raw.strip()
+    # Taie la primul cuvant-cheie care nu face parte din nume
+    parts = _NUME_TAIERE.split(s, maxsplit=1)
+    s = parts[0].strip()
+    # Curata artefacte OCR de la sfarsit
+    s = re.sub(r"\s+[a-z]{1,2}\s*$", "", s).strip()
+    s = re.sub(r"\s+[FM]\s*[|]\s*$", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\s*\|\s*$", "", s).strip()
+    return s
+
+
 def extract_nume(text: str) -> tuple[str, Optional[str]]:
     """
-    Incearca mai intai formatele explicite 'Nume:' + 'Prenume:' (MedLife, Synevo etc.).
+    Incearca mai intai formatele explicite 'Nume pacient:', 'Nume:' (MedLife, Synevo etc.).
     Dupa aceea cauta backward de la CNP (format Bioclinica).
     """
-    # --- Varianta 1: linii explicite Nume: / Prenume: ---
+    # --- Varianta 1a: "Nume pacient:" (format cu eticheta completa) ---
+    m_np = re.search(r"(?:^|\n)\s*Nume\s+pacient\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    if m_np:
+        raw_n = _curata_nume(m_np.group(1))
+        if raw_n and len(raw_n) >= 2:
+            parts = raw_n.split(None, 1)
+            if len(parts) >= 2:
+                return parts[0], parts[1]  # nume, prenume -> afisat "NUME PRENUME"
+            return raw_n, None
+
+    # --- Varianta 1b: "Nume:" (format scurt) ---
     m_n = re.search(r"(?:^|\n)\s*Nume\s*:\s*([^\n]+)", text, re.IGNORECASE)
     m_p = re.search(r"(?:^|\n)\s*Prenume\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if m_n:
-        raw_n = m_n.group(1).strip()
-        # Taie la primul cuvant-cheie care nu face parte din nume
-        raw_n = re.split(
-            r"\s+(?:Medic|Data|Cabinet|Sex|Varsta|Cod|Adresa|Telefon|Punctul|Punct)\s*[:\s]",
-            raw_n, maxsplit=1, flags=re.IGNORECASE
-        )[0].strip()
-        # Curata artefacte OCR de la sfarsit (ex. "ol", "cl" etc.)
-        raw_n = re.sub(r"\s+[a-z]{1,2}\s*$", "", raw_n).strip()
-
+        raw_n = _curata_nume(m_n.group(1))
+        if not raw_n:
+            raw_n = m_n.group(1).strip()  # fallback fara curatare
         prenume = None
         if m_p:
-            raw_p = m_p.group(1).strip()
-            raw_p = re.split(
-                r"\s+(?:Medic|Data|Cabinet|Sex|Varsta|Cod|Adresa|Telefon|Punctul|Punct)\s*[:\s]",
-                raw_p, maxsplit=1, flags=re.IGNORECASE
-            )[0].strip()
-            # Curata artefact OCR "ol" de la sfarsit
-            raw_p = re.sub(r"\s+ol\s*$", "", raw_p, flags=re.IGNORECASE).strip()
-            raw_p = re.sub(r"\s+[a-z]{1,2}\s*$", "", raw_p).strip()
+            raw_p = _curata_nume(m_p.group(1))
+            raw_p = re.sub(r"\s+ol\s*$", "", raw_p or "", flags=re.IGNORECASE).strip()
             prenume = raw_p if raw_p else None
-            if prenume:
-                return f"{raw_n} {prenume}", prenume
-
+            if prenume and prenume != raw_n:
+                return f"{raw_n} {prenume}".strip(), prenume
         return raw_n, prenume
 
     # --- Varianta 2: backward de la CNP (format Bioclinica) ---
@@ -213,7 +233,8 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
             if _LINII_EXCLUSE.match(linie):
                 continue
             clean = re.sub(r"\s+[FM],\s*\d+\s*(luni|ani)\s*$", "", linie, flags=re.IGNORECASE).strip()
-            if re.search(r"\b[A-ZȘȚĂÂÎ]{2,}", clean):
+            clean = _curata_nume(clean)  # taie Medic trimitator, Varsta etc.
+            if clean and re.search(r"\b[A-ZȘȚĂÂÎ]{2,}", clean):
                 parts = clean.split(None, 1)
                 return clean, parts[1] if len(parts) >= 2 else None
 
@@ -221,9 +242,10 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
     for pat in [r"(?:Pacient|Beneficiar)\s*[:\-]\s*([^\n]+)"]:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
-            raw = m.group(1).strip()
-            parts = raw.split(None, 1)
-            return raw, parts[1] if len(parts) >= 2 else None
+            raw = _curata_nume(m.group(1))
+            if raw:
+                parts = raw.split(None, 1)
+                return raw, parts[1] if len(parts) >= 2 else None
 
     return "Necunoscut", None
 
@@ -516,11 +538,18 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
 
     ordine_contor = [0]  # folosim lista pt a putea modifica in nested func
 
+    def _key_denumire(raw: str) -> str:
+        """Cheie normalizata pentru deduplicare - evita duplicate la variatii OCR (umar->Numar)."""
+        s = (raw or "")[:80].lower().strip()
+        s = re.sub(r"\bumar\s+de\b", "numar de", s)
+        s = re.sub(r"\s*:\s*$", "", s)
+        return s
+
     def _add(r: Optional[RezultatParsat], categorie: Optional[str] = None) -> None:
         if r is None:
             return
         val_key = round(r.valoare, 3) if r.valoare is not None else (r.valoare_text or "")
-        key = (r.denumire_raw[:80].lower(), val_key)
+        key = (_key_denumire(r.denumire_raw or ""), val_key)
         if key not in seen:
             seen.add(key)
             r.categorie = categorie
@@ -557,7 +586,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                         denumire = cand
                         cat_linie = line_sectiune[j]
             if denumire:
-                val_key = (denumire[:80].lower(), linie_val.strip().lower())
+                val_key = (_key_denumire(denumire), linie_val.strip().lower())
                 if val_key not in seen:
                     seen.add(val_key)
                     r = RezultatParsat(

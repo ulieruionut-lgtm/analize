@@ -25,9 +25,15 @@ from backend.models import RezultatParsat
 # ─── Normalizare text ─────────────────────────────────────────────────────────
 
 def _curata_artefacte(text: str) -> str:
-    """Elimina artefacte de laborator si OCR: asteriscuri, <, >, # etc."""
+    """Elimina artefacte de laborator si OCR: asteriscuri, <, >, #, blocuri [...], etc."""
     # Sterge asteriscuri, semne <> la inceput/sfarsit, artefacte comune OCR
     text = re.sub(r'[\*\<\>\#\~\^]+', ' ', text)
+    # Sterge blocuri [valoare unitate] - OCR garbage (ex: "[197.52 wo/a]" lipit de denumire)
+    text = re.sub(r'\s*\[\d+[.,]?\d*\s*[\w/]+\]\s*', ' ', text)
+    # Sterge trailing " :" sau ":" (artefact OCR de la sfarsitul denumirii)
+    text = re.sub(r'\s*:\s*$', '', text)
+    # Corectare OCR frecventa: "umar" -> "Numar" (N citit gresit ca u)
+    text = re.sub(r'\bumar\s+de\b', 'Numar de', text, flags=re.IGNORECASE)
     # Sterge spatii multiple si trimeaza
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -132,6 +138,11 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     # 4. Match fara paranteze + normalizat
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
+
+    # 4b. Corectie OCR comuna: "umar" -> "Numar" (N citit gresit ca u)
+    raw_ocr_fix = re.sub(r'\bumar\b', 'numar', raw_norm, flags=re.IGNORECASE)
+    if raw_ocr_fix != raw_norm and raw_ocr_fix in cache_norm:
+        return cache_norm[raw_ocr_fix]
 
     # 5. Match dupa primele 2 cuvinte semnificative (mai conservator)
     cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', raw_norm) if len(w) >= 3 and not w.isdigit()]
