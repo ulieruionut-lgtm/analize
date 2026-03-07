@@ -50,8 +50,31 @@ _LINII_EXCLUSE = re.compile(
     r"Optim\s*:|Normal\s*:|Diabet\s+|Glicemie\s+bazala|"
     r"trimestrul|trimester\s+[I]|20-40\s+ani|peste\s+40\s+ani|"
     r"eGFR:\s*[<>]|G1\s+=|G2\s+=|G3|G4|G5|"
+    r"eGFR:\s*\d|eGFR:\s*\d{2,}|eGFR:\s*[≥≤]|"
+    # Linii de clasificare CKD/eGFR cu numar (ex: "eGFR: 2", "eGFR: 60 -")
+    r"eGFR:\s*\d+\s*[-–]?|"
+    # Linii de interpretare cu valori inglobate (format: ANALIZA valoare UM <comparator interp)
+    # ex: "HDL COLESTEROL 68.2 mg/dL > 60 enma V", "TRIGLICERIDE 112 mg/dL <150 ME)"
+    r"Scazut\s*\(risc|risc\s+scazut|risc\s+crescut|risc\s+moderat|"
+    r"Interpretare\s+valori|Interpretare\s+rezultat|"
+    r"posibil\s+deficit|posibila\s+intol|incidenta\s+scazuta|"
+    r"intoleranta\s+la\s+histamina|"
+    r"3-10\s+U/ml|U/ml\s+posibila|U/ml\s+intoleranta|"
+    r"<\s*\d+\s*U/ml|>\s*\d+\s*U/ml|"
+    # Note explicative lungi (>80 chars cu cuvinte comune)
+    r"testare\s+corecta|obligatoriu\s+pe\s+nemancate|absenta\s+oricarei|"
+    r"medicatii\s+\(clasice|clasice\s+sau\s+naturiste|"
+    # Linii administrative Regina Maria / alte lab
+    r"REȚEAUA\s+PRIVATĂ|SĂNĂTATE\s+Data|Data\s+-\s+ora|"
+    r"MICROBIOLOGIE|UROCULTURA|"
     # Linii scurte care incep cu punct/doua puncte/spatiu (artefacte tabele)
-    r":\s*[a-z]\s+[a-z]|^\s*[:\.\-]\s)",
+    r":\s*[a-z]\s+[a-z]|^\s*[:\.\-]\s|"
+    # Linii care incep cu ghilimele tipografice OCR sau simboluri speciale
+    r"^[\u201e\u201c\u201d\u00ab\u00bb\*\#\~\^\|\\\/]+|"
+    # Linii de interpretare cu valoare+UM+comparator inglobate
+    # ex: "HDL COLESTEROL 68.2 mg/dL > 60 enma V", "TRIGLICERIDE 112 mg/dL <150 ME)"
+    # ex: "FOLATI SERICI 7.64 ng/mL >5.38 De A", "crescute 2 126.0 mg/dl"
+    r"crescute?\s+\d|Normal\s*[:<>]\s*\d|Optim\s*[:<>]\s*\d)",
     re.IGNORECASE,
 )
 
@@ -205,6 +228,44 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
     return "Necunoscut", None
 
 
+def _este_gunoi_ocr(linie: str) -> bool:
+    """
+    Detecteaza linii de gunoi OCR: siruri de litere/silabe fara sens, separate prin spatii.
+    Semne: mai mult de 40% din 'cuvinte' au sub 2 litere, sau linia are aspectul unui tabel
+    OCR-izat prost (multe litere unice, silabe scurte, fara niciun cuvant medical real).
+    """
+    linie = linie.strip()
+    if not linie:
+        return False
+    # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi
+    _CUVINTE_MEDICALE = re.compile(
+        r"\b(hemoglobin|eritrocit|leucocit|trombocit|hematocrit|neutrofil|limfocit|"
+        r"monocit|eozinofi|bazofil|creatinin|glucoz|glicemi|colesterol|triglicerid|"
+        r"bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|"
+        r"proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|"
+        r"insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|"
+        r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT)\b",
+        re.IGNORECASE,
+    )
+    if _CUVINTE_MEDICALE.search(linie):
+        return False
+    # Imparte in cuvinte (secvente ne-spatiu)
+    cuvinte = linie.split()
+    if len(cuvinte) < 4:
+        return False
+    # Numara cuvintele scurte (1-2 litere)
+    scurte = sum(1 for c in cuvinte if len(re.sub(r'[^a-zA-ZăâîșțĂÂÎȘȚ]', '', c)) <= 2)
+    # Daca >55% sunt silabe scurte => gunoi OCR
+    if scurte / len(cuvinte) > 0.55:
+        return True
+    # Daca linia contine secvente de litere unice separate prin spatiu (tabel degradat)
+    # ex: "i CR CE SERE De E Oa nea" - mai mult de 5 litere unice consecutive
+    litere_unice = re.findall(r'\b[a-zA-ZăâîșțĂÂÎȘȚ]\b', linie)
+    if len(litere_unice) >= 5 and len(litere_unice) / len(cuvinte) > 0.4:
+        return True
+    return False
+
+
 def _este_linie_parametru(linie: str) -> bool:
     if not linie or len(linie) > 150:
         return False
@@ -220,11 +281,13 @@ def _este_linie_parametru(linie: str) -> bool:
     if re.match(r'^["\'\[\]\{\}:;|\\]', linie):
         return False
     # Linii de clasificare/referinta: "Ceva: < 60", "eGFR: = 142", "k = 0.7"
-    # Detecteaza pattern: text_scurt ':' optional_spatiu operator_sau_numar
     if re.search(r':\s*[<>=≤≥]\s*\d', linie):
         return False
     # Linii cu text foarte scurt si ambiguu (< 4 caractere utile)
     if len(re.sub(r'[^a-zA-Z]', '', linie)) < 3:
+        return False
+    # Detecteaza gunoi OCR (tabele degradate, siruri de silabe fara sens)
+    if _este_gunoi_ocr(linie):
         return False
     # Linii care incep cu numar de linie (ex: "9.3 Alfa2-globuline%", "1. Hemoglobina")
     # dar NU linii care incep cu valori medicale cunoscute (ex: "25-OH Vitamina D")
@@ -252,6 +315,38 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     # Elimina prefix numeric de linie (ex: "9.3 Alfa2-globuline%" -> "Alfa2-globuline%")
     linie = re.sub(r'^\d+\.\d+\s+\*?\s*', '', linie).strip()
     if not linie:
+        return None
+
+    # Detecteaza valoarea reala inglobata in paranteze patrate in denumire
+    # ex: "CALCIU SERIC [10.66 mg/dL]" -> valoare=10.66, unitate=mg/dL
+    # ex: "FIER SERIC (SIDEREMIE) [197.52 ug/dL]" -> valoare=197.52
+    m_inglobat = re.search(r'\[(\d+[.,]\d+)\s*([a-zA-Z/%µμg·²³]+(?:[/\.][a-zA-Z²³]+)?)\s*\]', linie)
+    if m_inglobat:
+        # Extrage valoarea corecta din paranteze
+        try:
+            valoare_reala = float(m_inglobat.group(1).replace(',', '.'))
+            unitate_reala = m_inglobat.group(2).strip()
+            # Curata denumirea (scoate paranteza cu valoarea din ea)
+            denumire = re.sub(r'\s*\[[\d.,]+\s*[^\]]*\]', '', linie).strip()
+            denumire = re.sub(r'^["\'\*%\s]+', '', denumire).strip()
+            if denumire and len(denumire) >= 2 and not re.match(r'^\d+[.,]?\d*\s*$', denumire):
+                return RezultatParsat(
+                    denumire_raw=denumire,
+                    valoare=valoare_reala,
+                    unitate=unitate_reala,
+                )
+        except ValueError:
+            pass
+
+    # Gaseste primul numar izolat (valoarea) - nu face parte din nume
+    # Linii de clasificare: "HDL COLESTEROL 68.2 mg/dL > 60 Normal" sau "TRIGLICERIDE 112 mg/dL <150 mg"
+    # Acestea contin ANALIZA + valoare + UM + comparator + clasificare => NU sunt rezultate simple
+    _CLASIFICARE_RE = re.compile(
+        r'\d+[.,]?\d*\s+[a-zA-Z/%µμg·²³]+.*(?:normal|scazut|crescut|optim|borderline|risc|acceptable|'
+        r'deficit|toxic|diabet|patolog|referinta|recomandat)',
+        re.IGNORECASE
+    )
+    if _CLASIFICARE_RE.search(linie):
         return None
 
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
@@ -333,7 +428,7 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
             interval_min = interval_max = None
 
     # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 citit ca 99)
-    valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max)
+    valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, name)
 
     # Flag H/L — mai intai explicit din text, apoi calculat din interval
     flag = None
@@ -357,19 +452,43 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     )
 
 
-def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max) -> float:
+# Parametri cu intervale tipice cunoscute (pentru corectie zecimal fara interval in PDF)
+# (pattern_substring_in_denumire, valoare_max_tipica) - daca valoare > max*5, incercam /10
+_CORECTIE_FARA_INTERVAL = [
+    ("rdw", 20.0),       # RDW-CV tipic 11-15%
+    ("mpv", 15.0),       # MPV tipic 7-12 fL
+    ("pdw", 20.0),       # PDW tipic 9-14 fL
+    ("vem", 120.0),      # MCV tipic 80-100 fL
+    ("mch", 40.0),       # MCH tipic 27-33 pg
+    ("mchc", 40.0),     # MCHC tipic 32-36 g/dL
+]
+
+
+def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denumire_raw: str = "") -> float:
     """
-    Corecteaza erori OCR de tipul '9.9 -> 99' (punct zecimal pierdut).
-    Daca valoarea e > 10x intervalul_max si valoarea/10 e in interval,
-    inseamna ca OCR a omis punctul zecimal.
+    Corecteaza erori OCR de tipul '9.9 -> 99' sau '12.4 -> 124' (punct zecimal pierdut).
+    Strategii:
+    1. Cu interval: daca valoarea e > 10x intervalul_max si valoarea/10 e in interval => divide by 10
+    2. Fara interval: euristici pentru RDW, MPV etc. - daca valoare > max_tipic*5, incercam /10
     """
-    if interval_max is None or interval_max <= 0:
+    # Strategie 1: cu interval
+    if interval_max is not None and interval_max > 0:
+        if valoare > 10 * interval_max:
+            v10 = valoare / 10
+            if v10 <= 2 * interval_max:
+                return v10
+            v100 = valoare / 100
+            if v100 <= 2 * interval_max:
+                return v100
         return valoare
-    if valoare > 10 * interval_max:
-        v_corectat = valoare / 10
-        # Valoarea corectata trebuie sa fie cel mult de 2x interval_max
-        if v_corectat <= 2 * interval_max:
-            return v_corectat
+
+    # Strategie 2: fara interval - euristici pentru parametri cunoscuti
+    den_lower = (denumire_raw or "").lower()
+    for sub, max_tipic in _CORECTIE_FARA_INTERVAL:
+        if sub in den_lower and valoare > max_tipic * 5:
+            v10 = valoare / 10
+            if v10 <= max_tipic * 2:
+                return v10
     return valoare
 
 
@@ -418,16 +537,25 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         # Sub-cazul 1b: linia a doua e o valoare TEXT (negativ, pozitiv etc.)
         m_text_linie = _VALOARE_TEXT_RE.match(linie_val.strip())
         if m_text_linie:
+            # Nu trata ca valoare text daca linia e parte dintr-o nota explicativa
+            _NOTE_EXCLUSE_VAL = re.compile(
+                r"absenta\s+oricarei|clasice\s+sau|pe\s+nemancate|medicatii|naturiste|"
+                r"intoleranta\s+la|posibila\s+intol|posibil\s+deficit|incidenta\s+scazuta",
+                re.IGNORECASE
+            )
+            if _NOTE_EXCLUSE_VAL.search(linie_val):
+                continue
+            # Doar linia IMEDIAT precedenta (i-1) - evita swap-uri Param1/Val1 cu Param2/Val2
+            # cand OCR/tabel extrage in ordine gresita (ex: Mucus->Rar in loc de Leucocite->Rar)
             denumire = ""
             cat_linie = line_sectiune[i]
-            for j in range(i - 1, max(i - 4, -1), -1):
+            j = i - 1
+            if j >= 0:
                 cand = lines[j].strip()
-                if not cand or _LINIE_NOTA.match(cand):
-                    continue
-                if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
-                    denumire = cand
-                    cat_linie = line_sectiune[j]
-                break
+                if cand and not _LINIE_NOTA.match(cand):
+                    if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
+                        denumire = cand
+                        cat_linie = line_sectiune[j]
             if denumire:
                 val_key = (denumire[:80].lower(), linie_val.strip().lower())
                 if val_key not in seen:
@@ -473,7 +601,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         if not denumire:
             continue
         # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 fL citit ca 99)
-        valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max)
+        valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, denumire)
         flag_calc = None
         if interval_min is not None and interval_max is not None:
             if valoare > interval_max:
