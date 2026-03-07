@@ -821,6 +821,28 @@ async def index():
   .badge-L { background: #e8f0fe; color: #1a73e8; }
   .badge-norm { background: #e6f4ea; color: #137333; }
 
+  /* Lista simpla pacienti */
+  .lista-pacienti-simpla {
+    list-style: none; padding: 0; margin: 0;
+  }
+  .lista-pacienti-simpla li {
+    border-bottom: 1px solid var(--border);
+  }
+  .lista-pacienti-simpla li:last-child {
+    border-bottom: none;
+  }
+  .btn-pacient-link {
+    display: block; width: 100%;
+    background: none; border: none; cursor: pointer;
+    text-align: left; padding: 10px 4px;
+    font-size: 1rem; font-weight: 600;
+    color: var(--text);
+    transition: color 0.15s;
+  }
+  .btn-pacient-link:hover {
+    color: var(--albastru);
+  }
+
   /* Pacient card */
   .pacient-header {
     display: flex; align-items: flex-start;
@@ -1739,16 +1761,11 @@ async function incarcaListaPacienti(q) {
       el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">Niciun pacient găsit.</p>';
       return;
     }
-    el.innerHTML = `<div class="tabel-container"><table>
-      <thead><tr><th>Nume</th><th>CNP</th><th>Buletine</th><th>Acțiune</th></tr></thead>
-      <tbody>` +
-      lista.map(p => `<tr>
-        <td><strong>${escHtml(p.nume||'')}</strong>${p.prenume?' <span style="color:var(--gri);font-size:0.82rem">'+escHtml(p.prenume)+'</span>':''}</td>
-        <td style="font-family:monospace">${escHtml(p.cnp)}</td>
-        <td><span class="badge badge-norm">${p.nr_buletine||0} buletin${p.nr_buletine==1?'':'e'}</span></td>
-        <td><button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82rem" onclick="veziPacient('${escHtml(p.cnp)}')">👤 Analize</button></td>
-      </tr>`).join('') +
-      '</tbody></table></div>';
+    el.innerHTML = '<ul class="lista-pacienti-simpla">' +
+      lista.map(p => `<li>
+        <button class="btn-pacient-link" onclick="veziPacient('${escHtml(p.cnp)}')">${escHtml(p.nume||'')}${p.prenume?' '+escHtml(p.prenume):''}</button>
+      </li>`).join('') +
+      '</ul>';
   } catch(e) {
     el.innerHTML = '<p style="color:red">Eroare: ' + e.message + '</p>';
   }
