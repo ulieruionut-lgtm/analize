@@ -67,6 +67,23 @@ _LINII_EXCLUSE = re.compile(
     # Linii administrative Regina Maria / alte lab
     r"REȚEAUA\s+PRIVATĂ|SĂNĂTATE\s+Data|Data\s+-\s+ora|"
     r"MICROBIOLOGIE|UROCULTURA|"
+    # Footer/disclaimer Regina Maria (OCR: BOBEICA, BCBEIEZA = nume medic)
+    r"BOBEICA|BCBEIEZA|Testele cu marcajul\s+\*\*|Aceste rezultate pot fi folosite|"
+    r"doza\s+\(0\.5\s+g\s+amoxicillin|A1\s+<\s*30:\s*albuminurie|"
+    # Gunoi OCR: linii care incep cu 1-2 litere + spatiu + numar (ex: "ti = 7", "Li = 7")
+    r"^(ti|Li)\s+[=:]?\s*\d|"
+    # Footer/disclaimer Regina Maria (nume medic + "Testele cu marcajul", "Pagina X din")
+    r"BOBEICA\s+ANA|BCBEIEZA\s+ANA|Testele\s+cu\s+marcajul|"
+    r"Aceste\s+rezultate\s+pot\s+fi\s+folosite\s+pentru\s+uz\s+personal|"
+    r"doza\s+\(0\.5\s+g\s+amoxicillin|"
+    r"A1\s+<\s*30\s*:\s*albuminurie|"
+    # Organisme urocultura "X spp -" (absent) - fragment tabel, nu parametru
+    r"Enterococcus\s+spp\s+-|Streptococcus\s+spp\s+-|Staphylococcus\s+spp\s+-|"
+    r"Pseudomonas\s+spp\s+-|Enterobacteriaceae\s+-|Candida\s+spp\s+-|"
+    r"micologic.*antibiograma.*Streptococ|nevoie\s+Candida\s+spp|"
+    # Gunoi OCR scurt (1-2 litere) si organisme urocultura
+    r"^\s*ti\s*$|^\s*Li\s*$|Enterococcus\s+spp\s+-|Streptococcus\s+spp\s+-|"
+    r"Staphylococcus\s+spp\s+-|Pseudomonas\s+spp\s+-|Enterobacteriaceae\s+-|"
     # Linii scurte care incep cu punct/doua puncte/spatiu (artefacte tabele)
     r":\s*[a-z]\s+[a-z]|^\s*[:\.\-]\s|"
     # Linii care incep cu ghilimele tipografice OCR sau simboluri speciale
@@ -288,10 +305,23 @@ def _este_gunoi_ocr(linie: str) -> bool:
     return False
 
 
+# Substring-uri care indica gunoi OCR / footer (Regina Maria etc.) - oriunde in linie
+_GUNOI_SUBSTR = (
+    "BOBEICA", "BCBEIEZA", "Testele cu marcajul", "Aceste rezultate pot fi folosite",
+    "doza (0.5 g amoxicillin", "A1 <30: albuminurie", "Pagina ", " din ",
+    " spp -", "Enterobacteriaceae -", "micologic", "antibiograma", "nevoie Candida",
+    "in 05.01.2026", "in 06.01.2026", "in 22.12.2025",  # disclaimer cu data
+)
+
+
 def _este_linie_parametru(linie: str) -> bool:
     if not linie or len(linie) > 150:
         return False
     if _LINII_EXCLUSE.match(linie):
+        return False
+    # Footer/disclaimer - exclude oriunde in linie
+    linie_upper = linie.upper()
+    if any(g.upper() in linie_upper for g in _GUNOI_SUBSTR):
         return False
     if _LINIE_NOTA.match(linie):
         return False

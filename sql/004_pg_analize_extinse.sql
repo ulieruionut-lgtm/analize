@@ -180,7 +180,14 @@ INSERT INTO analiza_standard (cod_standard, denumire_standard) VALUES
 INSERT INTO analiza_standard (cod_standard, denumire_standard) VALUES
 ('URINA_SUMAR',   'Sumar urina (examen complet)'),
 ('MICROALBUMIN',  'Microalbuminurie'),
-('CREAT_URINA',   'Creatinina urinara') ON CONFLICT (cod_standard) DO NOTHING;
+('CREAT_URINA',   'Creatinina urinara'),
+('CRISTALE_URINA','Cristale urina'),
+('FLORA_URINA',   'Flora microbiana urina') ON CONFLICT (cod_standard) DO NOTHING;
+
+-- Alias Regina Maria / Vladasel (format sediment urinar)
+INSERT INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Flora microbiana' FROM analiza_standard WHERE cod_standard='FLORA_URINA' ON CONFLICT (alias) DO NOTHING;
+INSERT INTO analiza_alias (analiza_standard_id, alias) SELECT id, '1.2.12 Flora microbiana' FROM analiza_standard WHERE cod_standard='FLORA_URINA' ON CONFLICT (alias) DO NOTHING;
+INSERT INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Alte' FROM analiza_standard WHERE cod_standard='CRISTALE_URINA' ON CONFLICT (alias) DO NOTHING;
 
 -- ─── ALIAS-URI ────────────────────────────────────────────────────────────────
 -- Format: INSERT INTO analiza_alias (analiza_standard_id, alias)
