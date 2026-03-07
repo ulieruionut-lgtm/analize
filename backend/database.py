@@ -185,23 +185,24 @@ def insert_buletin(pacient_id: int, data_buletin=None, laborator: Optional[str] 
 # --- Rezultate analize ---
 def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumire_raw: Optional[str],
                     valoare=None, valoare_text: Optional[str] = None, unitate: Optional[str] = None,
-                    interval_min=None, interval_max=None, flag: Optional[str] = None) -> dict:
+                    interval_min=None, interval_max=None, flag: Optional[str] = None,
+                    ordine: Optional[int] = None, categorie: Optional[str] = None) -> dict:
     with get_cursor() as cur:
         if _use_sqlite():
             cur.execute(
-                """INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag),
+                """INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
             )
-            cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
+            cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
             return dict(cur.fetchone())
         cur.execute(
             """
-            INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, created_at
+            INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at
             """,
-            (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag),
+            (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
         )
         return dict(cur.fetchone())
 
@@ -378,15 +379,15 @@ def get_pacient_cu_analize(cnp: str) -> Optional[dict]:
         with get_cursor() as cur:
             if _use_sqlite():
                 cur.execute(
-                    """SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.created_at, a.cod_standard, a.denumire_standard
-                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = ? ORDER BY a.denumire_standard, r.denumire_raw""",
+                    """SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
+                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = ? ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard, r.denumire_raw""",
                     (b["id"],),
                 )
             else:
                 cur.execute(
                     """
-                    SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.created_at, a.cod_standard, a.denumire_standard
-                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = %s ORDER BY a.denumire_standard, r.denumire_raw
+                    SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
+                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = %s ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw
                     """,
                     (b["id"],),
                 )
@@ -565,14 +566,14 @@ def get_rezultate_buletin(buletin_id: int) -> list:
         with get_cursor(commit=False) as cur:
             ph = "?" if _use_sqlite() else "%s"
             cur.execute(f"""
-                SELECT r.id, r.denumire_raw, r.valoare, r.unitate, r.flag,
+                SELECT r.id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.flag,
                        r.interval_min, r.interval_max,
-                       r.analiza_standard_id,
+                       r.analiza_standard_id, r.ordine, r.categorie,
                        a.denumire_standard, a.cod_standard
                 FROM rezultate_analize r
                 LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id
                 WHERE r.buletin_id = {ph}
-                ORDER BY a.denumire_standard NULLS LAST, r.denumire_raw
+                ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw
             """, (buletin_id,))
             rows = cur.fetchall()
             return [_row_to_dict(r) for r in rows] if rows else []

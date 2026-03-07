@@ -74,6 +74,8 @@ class RezultatParsat(BaseModel):
     interval_min: Optional[float] = None
     interval_max: Optional[float] = None
     flag: Optional[str] = None
+    categorie: Optional[str] = None   # sectiunea din buletin (ex: Hemoleucograma, Biochimie)
+    ordine: Optional[int] = None      # pozitia in PDF (pentru sortare in ordinea originala)
 
 
 class PatientParsed(BaseModel):

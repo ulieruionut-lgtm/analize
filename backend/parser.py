@@ -57,6 +57,53 @@ _LINII_EXCLUSE = re.compile(
 
 _LINIE_NOTA = re.compile(r"^\(|^\s*\(")
 
+# ─── Recunoastere sectiuni (categorii) din buletine ──────────────────────────
+# Mapare: pattern regex -> denumire categorie normalizata
+_SECTIUNI = [
+    (re.compile(r"HEMATOLOGIE|HEMOLEUCOGRAMA|FORMULA\s+LEUCOCITAR|HEMOGRAM", re.IGNORECASE),
+     "Hemoleucograma"),
+    (re.compile(r"BIOCHIMIE\s+URIN|EXAMEN\s+COMPLET\s+DE\s+URIN|SUMAR\s+URIN|SUMAR\s+SI\s+SEDIMENT|SEDIMENT\s+URINAR|BIOCHIMIE\s*URINA|URIN[AĂ]", re.IGNORECASE),
+     "Examen urina"),
+    (re.compile(r"BIOCHIMIE|BIOCHIMIA|BIOCHIM", re.IGNORECASE),
+     "Biochimie"),
+    (re.compile(r"LIPIDOGRAM|PROFIL\s+LIPIDIC|LIPIDE", re.IGNORECASE),
+     "Lipidograma"),
+    (re.compile(r"ELECTROFOREZ", re.IGNORECASE),
+     "Electroforeza"),
+    (re.compile(r"IMUNOLOGIE\s+SI\s+SEROLOGIE|IMUNOLOGIE|SEROLOGIE", re.IGNORECASE),
+     "Imunologie si Serologie"),
+    (re.compile(r"HORMONI\s+TIROID|TIROID", re.IGNORECASE),
+     "Hormoni tiroidieni"),
+    (re.compile(r"HORMONI|ENDOCRIN", re.IGNORECASE),
+     "Hormoni"),
+    (re.compile(r"COAGULARE|HEMOSTAZ", re.IGNORECASE),
+     "Coagulare"),
+    (re.compile(r"MARKERI\s+TUMOR|ONCOLOGIC", re.IGNORECASE),
+     "Markeri tumorali"),
+    (re.compile(r"MINERALE|ELECTROLITI|OLIGOELEMENTE", re.IGNORECASE),
+     "Minerale si electroliti"),
+    (re.compile(r"INFLAMATIE|REACTANTI\s+DE\s+FAZ|VSH|CRP", re.IGNORECASE),
+     "Inflamatie"),
+    (re.compile(r"PROTEINA\s+C\s+REACTIV", re.IGNORECASE),
+     "Inflamatie"),
+    (re.compile(r"RAPORT\s+ALBUMIN|MICROALBUMIN", re.IGNORECASE),
+     "Examen urina"),
+]
+
+def _detecteaza_sectiune(linie: str) -> Optional[str]:
+    """Returneaza numele sectiunii daca linia este un antet de sectiune, altfel None."""
+    linie = linie.strip()
+    # Antetele de sectiune sunt de obicei scurte (< 80 chars) si fara valori numerice
+    if not linie or len(linie) > 100:
+        return None
+    # Nu trebuie sa contina valori numerice (nu e un rezultat)
+    if re.search(r"\d+[.,]\d+|\s\d+\s", linie):
+        return None
+    for pattern, categorie in _SECTIUNI:
+        if pattern.search(linie):
+            return categorie
+    return None
+
 # Valori text frecvente in analizele medicale (sumar urina, culturi, etc.)
 _VALOARE_TEXT_RE = re.compile(
     r"^(negativ[ae]?|pozitiv[ae]?|absent[ae]?|prezent[ae]?|rar[ae]?|normal[ae]?|"
@@ -331,18 +378,35 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     Extrage analizele din text. Suporta:
     - Format Bioclinica (2 linii): parametru pe linia i, valoare+UM+interval pe linia i+1
     - Format MedLife/generic (1 linie): parametru + valoare + UM + interval pe aceeasi linie
+    Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
+    fiecarui rezultat impreuna cu ordinea din PDF.
     """
     lines = [l.strip() for l in text.replace("\r", "\n").split("\n")]
     results: list[RezultatParsat] = []
     seen: set = set()
 
-    def _add(r: Optional[RezultatParsat]) -> None:
+    # Urmareste sectiunea curenta pe linii
+    # line_sectiune[i] = categoria activa la linia i
+    line_sectiune: list[Optional[str]] = [None] * len(lines)
+    sectiune_curenta: Optional[str] = None
+    for i, linie in enumerate(lines):
+        sec = _detecteaza_sectiune(linie)
+        if sec:
+            sectiune_curenta = sec
+        line_sectiune[i] = sectiune_curenta
+
+    ordine_contor = [0]  # folosim lista pt a putea modifica in nested func
+
+    def _add(r: Optional[RezultatParsat], categorie: Optional[str] = None) -> None:
         if r is None:
             return
         val_key = round(r.valoare, 3) if r.valoare is not None else (r.valoare_text or "")
         key = (r.denumire_raw[:80].lower(), val_key)
         if key not in seen:
             seen.add(key)
+            r.categorie = categorie
+            r.ordine = ordine_contor[0]
+            ordine_contor[0] += 1
             results.append(r)
 
     # --- Pasul 1: format doua linii Bioclinica ---
@@ -355,23 +419,29 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         m_text_linie = _VALOARE_TEXT_RE.match(linie_val.strip())
         if m_text_linie:
             denumire = ""
+            cat_linie = line_sectiune[i]
             for j in range(i - 1, max(i - 4, -1), -1):
                 cand = lines[j].strip()
                 if not cand or _LINIE_NOTA.match(cand):
                     continue
                 if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
                     denumire = cand
+                    cat_linie = line_sectiune[j]
                 break
             if denumire:
                 val_key = (denumire[:80].lower(), linie_val.strip().lower())
                 if val_key not in seen:
                     seen.add(val_key)
-                    results.append(RezultatParsat(
+                    r = RezultatParsat(
                         denumire_raw=denumire,
                         valoare=None,
                         valoare_text=linie_val.strip(),
                         unitate=None,
-                    ))
+                        categorie=cat_linie,
+                        ordine=ordine_contor[0],
+                    )
+                    ordine_contor[0] += 1
+                    results.append(r)
             continue
 
         m = RE_VALOARE_LINIE.match(linie_val)
@@ -391,12 +461,14 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         except ValueError:
             interval_min = interval_max = None
         denumire = ""
+        cat_linie = line_sectiune[i]
         for j in range(i - 1, max(i - 4, -1), -1):
             cand = lines[j].strip()
             if not cand or _LINIE_NOTA.match(cand):
                 continue
             if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
                 denumire = cand
+                cat_linie = line_sectiune[j]
             break
         if not denumire:
             continue
@@ -415,13 +487,14 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             interval_min=interval_min,
             interval_max=interval_max,
             flag=flag_calc,
-        ))
+        ), categorie=cat_linie)
 
     # --- Pasul 2: format un singur rand (MedLife, Synevo etc.) ---
-    for linie in lines:
+    for idx_linie, linie in enumerate(lines):
         if not _este_linie_parametru(linie):
             continue
-        _add(_parse_oneline(linie))
+        r = _parse_oneline(linie)
+        _add(r, categorie=line_sectiune[idx_linie])
 
     return results
 

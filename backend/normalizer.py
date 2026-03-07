@@ -13,6 +13,7 @@ Strategii de matching (in ordine, se opreste la primul match):
 Daca nu gaseste nimic: salveaza in analiza_necunoscuta pentru aprobare manuala.
 """
 import difflib
+import logging
 import re
 import time
 import unicodedata
@@ -184,8 +185,11 @@ def _log_necunoscuta(denumire_raw: str) -> None:
                            updated_at = NOW()""",
                     (denumire_raw.strip(),)
                 )
-    except Exception:
-        pass  # Nu blocam upload-ul pentru o eroare de logging
+    except Exception as e:
+        raw_preview = (denumire_raw or "")[:80]
+        if len(denumire_raw or "") > 80:
+            raw_preview += "..."
+        logging.error(f"analiza_necunoscuta INSERT failed for '{raw_preview}': {e}")
 
 
 def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
