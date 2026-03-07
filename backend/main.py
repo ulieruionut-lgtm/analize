@@ -842,6 +842,19 @@ async def index():
   .btn-pacient-link:hover {
     color: var(--albastru);
   }
+  .btn-sterge-pacient {
+    display: none;
+    background: none; border: none; cursor: pointer;
+    color: var(--gri); font-size: 0.85rem; padding: 4px 8px;
+    border-radius: 4px; flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .lista-pacienti-simpla li:hover .btn-sterge-pacient {
+    display: inline-block;
+  }
+  .btn-sterge-pacient:hover {
+    color: var(--rosu); background: #fff0f0;
+  }
 
   /* Pacient card */
   .pacient-header {
@@ -1764,6 +1777,7 @@ async function incarcaListaPacienti(q) {
     el.innerHTML = '<ul class="lista-pacienti-simpla">' +
       lista.map(p => `<li>
         <button class="btn-pacient-link" onclick="veziPacient('${escHtml(p.cnp)}')">${escHtml(p.nume||'')}${p.prenume?' '+escHtml(p.prenume):''}</button>
+        <button class="btn-sterge-pacient" onclick="stergePacientDinLista(${p.id},'${escHtml(p.nume||'')}','${escHtml(p.cnp)}')" title="Șterge pacient">✕</button>
       </li>`).join('') +
       '</ul>';
   } catch(e) {
@@ -2259,6 +2273,22 @@ async function inchideModalEditSiReincarca() {
   if (_editCnp) {
     delete _tabPacienti[_editCnp];
     await veziPacient(_editCnp);
+  }
+}
+
+async function stergePacientDinLista(pacientId, numePacient, cnp) {
+  if (!confirm('Ștergi pacientul "' + numePacient + '" cu TOATE buletinele și analizele lui? Acțiunea nu poate fi anulată!')) return;
+  try {
+    const r = await fetch('/pacient/' + pacientId, { method: 'DELETE', headers: getAuthHeaders() });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      if (_tabPacienti[cnp]) inchideTabPacient(cnp);
+      incarcaListaPacienti('');
+    } else {
+      alert('Eroare: ' + (j.detail || 'Nu s-a putut șterge pacientul.'));
+    }
+  } catch(e) {
+    alert('Eroare: ' + e.message);
   }
 }
 

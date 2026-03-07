@@ -554,7 +554,9 @@ def delete_pacient(pacient_id: int) -> bool:
                 cur.execute("DELETE FROM buletine WHERE pacient_id = %s", (pacient_id,))
                 cur.execute("DELETE FROM pacienti WHERE id = %s", (pacient_id,))
             return cur.rowcount > 0
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.error(f"delete_pacient({pacient_id}) error: {e}")
         return False
 
 
