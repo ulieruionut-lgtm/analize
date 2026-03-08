@@ -29,7 +29,8 @@ _LINII_EXCLUSE = re.compile(
     r"Acceptabil\s*:|Borderline|Crescut\s*[:\(]|Foarte\s+crescut|"
     r"Usor\s+crescut|Moderat\s+crescut|crescute?\s*[>:]|"
     r"Normal\s*:|Optim\s*:|Risc\s*:|Deficit\s+|Nivel\s+toxic|"
-    # Note cu varsta/trimestru
+    # Note cu varsta/trimestru + sex cu varsta (ex: F, 28 ani, M, 1 an)
+    r"^[MF]\s*,\s*\d+\s*(?:ani|luni)|"
     r"\d{1,3}-\d{1,3}\s+ani|peste\s+\d+\s+ani|trimest|"
     r"persoanelor|persoane\s+varst|"
     # Note diagnostice
@@ -359,7 +360,7 @@ def _este_gunoi_ocr(linie: str) -> bool:
 # Substring-uri care indica gunoi OCR / footer - oriunde in linie
 _GUNOI_SUBSTR = (
     "Răspuns rapid", "Răspuns lent", "Răspuns bifazic", "Răspuns absent",  # interpretare CRP
-    "M, 1 an", ", 1 an", ", 2 ani",  # sex + varsta (NITU MATEI M, 1 an)
+    "M, 1 an", "F, 28 ani", ", 1 an", ", 28 ani",  # sex + varsta
     "BOBEICA", "BCBEIEZA", "Testele cu marcajul", "Aceste rezultate pot fi folosite",
     "doza (0.5 g amoxicillin", "A1 <30: albuminurie", "Pagina ", " din ",
     " spp -", "Enterobacteriaceae -", "micologic", "antibiograma", "nevoie Candida",
@@ -801,12 +802,25 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             cand = lines[j].strip()
             if not cand or _LINIE_NOTA.match(cand):
                 continue
+            # NU folosi ca parametru o linie care arata ca "Param Val UM (interval)" pe aceeasi linie
+            # (format Bioclinica oneline) - altfel riscam: Trombocite pe linia 1, Leucocite pe 2,
+            # valoare 267.000 pe 3 -> asociem gresit Leucocite cu 267.000
+            if RE_BIOCLINICA_ONELINE.search(cand) or RE_BIOCLINICA_REF_SINGULAR.search(cand):
+                continue  # cand e deja param+val pe o linie, nu e "param gol" pentru format 2 linii
             if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
                 denumire = cand
                 cat_linie = line_sectiune[j]
             break
         if not denumire:
             continue
+        # Validare: evita swap Trombocite <-> Leucocite (Trombocite 150k-400k, Leucocite 4k-12k)
+        den_lower = denumire.lower()
+        if "trombocite" in den_lower or "plt" in den_lower:
+            if valoare < 50000 and (interval_max is None or interval_max < 50000):
+                continue  # valoarea e pentru Leucocite, nu Trombocite - nu asocia
+        if "leucocite" in den_lower:
+            if valoare > 50000 or (interval_max is not None and interval_max > 50000):
+                continue  # valoarea e pentru Trombocite, nu Leucocite - nu asocia
         denumire = _strip_prefix_numar_linie(denumire)
         # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 fL citit ca 99)
         valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, denumire)
