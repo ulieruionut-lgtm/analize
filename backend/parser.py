@@ -130,6 +130,17 @@ _SECTIUNI = [
      "Examen urina"),
 ]
 
+def _strip_prefix_numar_linie(raw: str) -> str:
+    """Elimina prefixe Nr. din format Regina Maria: 1.1.4, 1:2, 1-3, ai:, $.1.11"""
+    s = (raw or "").strip()
+    m = re.match(r'^((?:ai\s*:\s*)?\$?[\d\.\,\:\-]+\s*\*?\s*)', s, re.IGNORECASE)
+    if m:
+        rest = s[m.end():].strip()
+        if len(rest) >= 2:
+            return rest
+    return s
+
+
 def _detecteaza_sectiune(linie: str) -> Optional[str]:
     """Returneaza numele sectiunii daca linia este un antet de sectiune, altfel None."""
     linie = linie.strip()
@@ -440,6 +451,7 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
         )
 
     name = linie[:m_val.start()].strip()
+    name = _strip_prefix_numar_linie(name)
     if not name or len(name) < 2:
         return None
 
@@ -481,6 +493,8 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
 
     # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 citit ca 99)
     valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, name)
+    # Corecteaza HGB/HCT cu valori 4.x (cifra pierduta)
+    valoare = _corecteaza_valoare_hematologie(valoare, unitate, name)
 
     # Flag H/L — mai intai explicit din text, apoi calculat din interval
     flag = None
@@ -514,6 +528,27 @@ _CORECTIE_FARA_INTERVAL = [
     ("mch", 40.0),       # MCH tipic 27-33 pg
     ("mchc", 40.0),     # MCHC tipic 32-36 g/dL
 ]
+
+
+def _corecteaza_valoare_hematologie(valoare: float, unitate: Optional[str], denumire_raw: str) -> float:
+    """
+    Corecteaza valori evident eronate din OCR (cifra pierduta) pentru HGB si HCT.
+    - HCT 4.1% -> 44.1% (punct zecimal deplasat)
+    - HGB 4.0 g/dL -> 14.0 g/dL (cifra 1 pierduta)
+    """
+    if valoare is None:
+        return valoare
+    den = (denumire_raw or "").lower()
+    u = (unitate or "").lower()
+    # HCT: valorile tipice 35-55%. Daca avem 4.x% => probabil 44.x
+    if "hct" in den or "hematocrit" in den:
+        if u in ("%",) and 3.5 <= valoare <= 5.5:
+            return valoare * 10
+    # HGB: valorile tipice 12-18 g/dL. Daca avem 4.x g/dL => probabil 14.x (1 pierdut)
+    if "hgb" in den or "hemoglobin" in den:
+        if "g/dl" in u and 4.0 <= valoare <= 4.5:
+            return valoare + 10
+    return valoare
 
 
 def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denumire_raw: str = "") -> float:
@@ -659,8 +694,10 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             break
         if not denumire:
             continue
+        denumire = _strip_prefix_numar_linie(denumire)
         # Corecteaza erori OCR punct zecimal pierdut (ex: 9.9 fL citit ca 99)
         valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, denumire)
+        valoare = _corecteaza_valoare_hematologie(valoare, unitate, denumire)
         flag_calc = None
         if interval_min is not None and interval_max is not None:
             if valoare > interval_max:

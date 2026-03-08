@@ -66,6 +66,25 @@ def _cuvinte_cheie(text: str) -> set:
     return {w for w in re.split(r'[\s\-/\(\)]+', text) if len(w) >= 3 and not w.isdigit()}
 
 
+def _strip_prefix_regina_maria(raw: str) -> str:
+    """
+    Elimina prefixele numerice din formatul Regina Maria (Nr. denumire test).
+    Ex: "1.1.4 Glucoza Negativ mg/dL" -> "Glucoza Negativ mg/dL"
+        "1.2.4" -> "" (doar nr, nu e parametru)
+        "1:2 HGB (Hemoglobina) 13.2" -> "HGB (Hemoglobina) 13.2"
+        "1-3 HCT% (Hematocrit)" -> "HCT% (Hematocrit)"
+    """
+    s = raw.strip()
+    # Pattern: inceput cu cifre, punct/virgula/doua puncte/liniuta, eventual mai multe grupuri
+    # ex: 1.1.4, 1.2.4, 1:2, 1-3, 4:18, 11,13, $.1.11, 1,2:5, ai: RDW%
+    m = re.match(r'^((?:ai\s*:\s*)?\$?[\d\.\,\:\-]+\s*\*?\s*)', s, re.IGNORECASE)
+    if m:
+        rest = s[m.end():].strip()
+        if len(rest) >= 2:  # ramane ceva util
+            return rest
+    return s
+
+
 # Cache in-memory cu TTL de 3 minute - se reincarc automat din DB
 # Astfel aliasurile adaugate direct in DB sunt preluate rapid, fara restart
 _CACHE: Optional[dict] = None
@@ -117,6 +136,8 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
         return None
 
     raw = raw.strip()
+    # Elimina prefixe Regina Maria (1.1.4, 1:2, 1-3, ai:, $.1.11) inainte de matching
+    raw = _strip_prefix_regina_maria(raw)
     # Curata artefactele de laborator (*, <, >, etc.) inainte de matching
     raw_curat = _curata_artefacte(raw)
     raw_lower = raw_curat.lower()
