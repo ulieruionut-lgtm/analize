@@ -22,8 +22,8 @@ _LINII_EXCLUSE = re.compile(
     r"Probele biologice|acreditat|Policlinica|Laborator de|eMail|Corp Central|"
     r"Aripa de|Jud\.|Loc\.|Telefon program|Punct recoltare|Adresa:|Telefon:|"
     r"Cod client|Cod proba|Cod caz|Varsta|Sex:|Prenume:|Nume:|Medic:|Cabinet|"
-    # Antete sectiuni laborator
-    r"HEMOLEUCOGRAMA|BIOCHIMIE|IMUNOLOGIE|HORMONI|SUMAR URINA|COAGULARE|"
+    # Antete sectiuni laborator (inclusiv cu diacritice: Hemoleucogramă, Formula leucocitară)
+    r"HEMOLEUCOGRAMA|Hemoleucogramă|Formula\s+leucocitară|BIOCHIMIE|IMUNOLOGIE|HORMONI|SUMAR URINA|COAGULARE|"
     r"LIPIDOGRAMA|ELECTROFOREZA|SEROLOGIE|MARKERI|MINERALE|"
     # Note de clasificare (ex: "Crescut : 160-189", "Acceptabil: < 110")
     r"Acceptabil\s*:|Borderline|Crescut\s*[:\(]|Foarte\s+crescut|"
@@ -179,6 +179,46 @@ RE_VALOARE_PARTIAL = re.compile(
     re.IGNORECASE,
 )
 
+# Format Bioclinica: Parametru Valoare UM (min - max) toate pe aceeasi linie
+# ex: "Hematii 4.650.000 /mm³ (3.700.000 - 5.150.000)" sau "Hemoglobină 13,3 g/dL (10,2 - 13,4)"
+RE_BIOCLINICA_ONELINE = re.compile(
+    r"\s+([\d.,]+)\s+([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
+    re.IGNORECASE,
+)
+
+# Format cu referinta singulara: Valoare UM (≤ X) sau (≥ X) - ex: "2,260 mg/dL (≤ 0,33)"
+RE_BIOCLINICA_REF_SINGULAR = re.compile(
+    r"\s+([\d.,]+)\s+([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*[≤≥<>]\s*([\d.,]+)\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _parse_european_number(s: str) -> Optional[float]:
+    """
+    Parseaza numere in format european: 13,3 (virgula=zecimal), 4.650.000 (punct=mii).
+    Returneaza float sau None daca nu poate parsa.
+    """
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        if "," in s:
+            # Virgula = zecimal: "13,3", "0,27" -> 13.3, 0.27
+            # Punct = mii: "4.650.000,5" (rar) - stergem punctele, virgula->punct
+            cleaned = s.replace(".", "").replace(",", ".")
+            return float(cleaned)
+        # Fara virgula: "4.650.000" sau "3.980" sau "81.9"
+        cleaned = s.replace(",", ".")
+        # Daca are forma d.ddd sau d.ddd.ddd (grupuri de 3 cifre) = mii
+        digits_only = re.sub(r"[^0-9]", "", s)
+        if len(digits_only) >= 4 and "." in s:
+            # Probabil mii: 4.650.000, 323.000, 3.980
+            cleaned = s.replace(".", "")
+            return float(cleaned)
+        return float(cleaned)
+    except ValueError:
+        return None
+
 
 def validare_cnp(cnp: str) -> bool:
     if not re.match(r"^[1-8]\d{12}$", cnp):
@@ -316,8 +356,10 @@ def _este_gunoi_ocr(linie: str) -> bool:
     return False
 
 
-# Substring-uri care indica gunoi OCR / footer (Regina Maria etc.) - oriunde in linie
+# Substring-uri care indica gunoi OCR / footer - oriunde in linie
 _GUNOI_SUBSTR = (
+    "Răspuns rapid", "Răspuns lent", "Răspuns bifazic", "Răspuns absent",  # interpretare CRP
+    "M, 1 an", ", 1 an", ", 2 ani",  # sex + varsta (NITU MATEI M, 1 an)
     "BOBEICA", "BCBEIEZA", "Testele cu marcajul", "Aceste rezultate pot fi folosite",
     "doza (0.5 g amoxicillin", "A1 <30: albuminurie", "Pagina ", " din ",
     " spp -", "Enterobacteriaceae -", "micologic", "antibiograma", "nevoie Candida",
@@ -362,6 +404,59 @@ def _este_linie_parametru(linie: str) -> bool:
     return True
 
 
+def _parse_bioclinica_oneline(linie: str) -> Optional[RezultatParsat]:
+    """
+    Format Bioclinica: Parametru Valoare UM (min - max) sau Valoare UM (≤ X) pe aceeasi linie.
+    ex: "Hematii 4.650.000 /mm³ (3.700.000 - 5.150.000)", "Proteina C reactivă 2,260 mg/dL (≤ 0,33)"
+    """
+    m = RE_BIOCLINICA_ONELINE.search(linie)
+    if m:
+        val_raw, unitate_raw = m.group(1), m.group(2)
+        interval_min = _parse_european_number(m.group(3))
+        interval_max = _parse_european_number(m.group(4))
+    else:
+        m = RE_BIOCLINICA_REF_SINGULAR.search(linie)
+        if not m:
+            return None
+        val_raw, unitate_raw = m.group(1), m.group(2)
+        ref = _parse_european_number(m.group(3))
+        interval_min = 0 if ref is not None else None
+        interval_max = ref
+
+    param_part = linie[: m.start()].strip()
+    if not param_part or len(param_part) < 2:
+        return None
+    if _LINII_EXCLUSE.match(param_part):
+        return None
+
+    valoare = _parse_european_number(val_raw)
+    if valoare is None:
+        return None
+    if interval_min is not None and interval_max is not None and interval_min >= interval_max:
+        interval_min = interval_max = None
+
+    unitate = unitate_raw.strip() or None
+    if unitate:
+        unitate = re.sub(r"['\"]", "", unitate).strip() or None
+
+    valoare = _corecteaza_decimal_pierdut(valoare, interval_min, interval_max, param_part)
+    valoare = _corecteaza_valoare_hematologie(valoare, unitate, param_part)
+    flag = None
+    if interval_min is not None and interval_max is not None:
+        if valoare > interval_max:
+            flag = "H"
+        elif valoare < interval_min:
+            flag = "L"
+    return RezultatParsat(
+        denumire_raw=param_part,
+        valoare=valoare,
+        unitate=unitate,
+        interval_min=interval_min,
+        interval_max=interval_max,
+        flag=flag,
+    )
+
+
 def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     """
     Parseaza o linie de forma:  NumeAnaliza  Valoare  UM  [Min-Max [UM]] [flag]
@@ -370,6 +465,7 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
       Hematocrit 49.1 % 40-50%
       CRP cantitativ 187 mg/L 0-5 mgii
       RDW-CV 144 % 11.5-145%
+    Suporta si format Bioclinica: Param Valoare UM (min - max) pe o linie.
     """
     linie = linie.strip()
     if not linie:
@@ -380,16 +476,26 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if not linie:
         return None
 
+    # Încearca format Bioclinica: Param Valoare UM (min - max)
+    r_bioclinica = _parse_bioclinica_oneline(linie)
+    if r_bioclinica is not None:
+        r_bioclinica.denumire_raw = _strip_prefix_numar_linie(r_bioclinica.denumire_raw or "")
+        if r_bioclinica.denumire_raw and len(r_bioclinica.denumire_raw) >= 2:
+            return r_bioclinica
+
     # Detecteaza valoarea reala inglobata in paranteze patrate in denumire
     # ex: "CALCIU SERIC [10.66 mg/dL]" -> valoare=10.66, unitate=mg/dL
     # ex: "FIER SERIC (SIDEREMIE) [197.52 ug/dL]" -> valoare=197.52
     m_inglobat = re.search(r'\[(\d+[.,]\d+)\s*([a-zA-Z/%µμg·²³]+(?:[/\.][a-zA-Z²³]+)?)\s*\]', linie)
     if m_inglobat:
-        # Extrage valoarea corecta din paranteze
-        try:
-            valoare_reala = float(m_inglobat.group(1).replace(',', '.'))
+        valoare_reala = _parse_european_number(m_inglobat.group(1))
+        if valoare_reala is None:
+            try:
+                valoare_reala = float(m_inglobat.group(1).replace(",", "."))
+            except ValueError:
+                valoare_reala = None
+        if valoare_reala is not None:
             unitate_reala = m_inglobat.group(2).strip()
-            # Curata denumirea (scoate paranteza cu valoarea din ea)
             denumire = re.sub(r'\s*\[[\d.,]+\s*[^\]]*\]', '', linie).strip()
             denumire = re.sub(r'^["\'\*%\s]+', '', denumire).strip()
             if denumire and len(denumire) >= 2 and not re.match(r'^\d+[.,]?\d*\s*$', denumire):
@@ -398,8 +504,6 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                     valoare=valoare_reala,
                     unitate=unitate_reala,
                 )
-        except ValueError:
-            pass
 
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
     # Linii de clasificare: "HDL COLESTEROL 68.2 mg/dL > 60 Normal" sau "TRIGLICERIDE 112 mg/dL <150 mg"
@@ -465,10 +569,12 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if re.match(r'^\d+[.,]?\d*\s*$', name):
         return None
 
-    try:
-        valoare = float(m_val.group(1).replace(",", "."))
-    except ValueError:
-        return None
+    valoare = _parse_european_number(m_val.group(1))
+    if valoare is None:
+        try:
+            valoare = float(m_val.group(1).replace(",", "."))
+        except ValueError:
+            return None
 
     unitate = m_val.group(2) or None
     # Curata unitati cu artefacte OCR (ex. g/'dL → g/dL)
@@ -480,11 +586,14 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     m_interval = re.search(r"([\d.,]+)\s*[-–]\s*([\d.,]+)", rest)
     interval_min = interval_max = None
     if m_interval:
-        try:
-            interval_min = float(m_interval.group(1).replace(",", "."))
-            interval_max = float(m_interval.group(2).replace(",", "."))
-        except ValueError:
-            pass
+        interval_min = _parse_european_number(m_interval.group(1))
+        interval_max = _parse_european_number(m_interval.group(2))
+        if interval_min is None or interval_max is None:
+            try:
+                interval_min = float(m_interval.group(1).replace(",", "."))
+                interval_max = float(m_interval.group(2).replace(",", "."))
+            except ValueError:
+                interval_min = interval_max = None
 
     # Valideaza interval (interval_min trebuie < interval_max)
     if interval_min is not None and interval_max is not None:
@@ -669,18 +778,22 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         m = RE_VALOARE_LINIE.match(linie_val)
         if not m:
             continue
-        try:
-            valoare = float(m.group(1).replace(",", "."))
-        except ValueError:
-            continue
+        valoare = _parse_european_number(m.group(1))
+        if valoare is None:
+            try:
+                valoare = float(m.group(1).replace(",", "."))
+            except ValueError:
+                continue
         unitate = m.group(2).strip().replace(" ", "") or None
-        try:
-            interval_min = float(m.group(3).replace(",", "."))
-            interval_max = float(m.group(4).replace(",", "."))
-            # Valideaza intervalul (min trebuie sa fie < max)
-            if interval_min >= interval_max:
+        interval_min = _parse_european_number(m.group(3))
+        interval_max = _parse_european_number(m.group(4))
+        if interval_min is None or interval_max is None:
+            try:
+                interval_min = float(m.group(3).replace(",", "."))
+                interval_max = float(m.group(4).replace(",", "."))
+            except ValueError:
                 interval_min = interval_max = None
-        except ValueError:
+        if interval_min is not None and interval_max is not None and interval_min >= interval_max:
             interval_min = interval_max = None
         denumire = ""
         cat_linie = line_sectiune[i]
