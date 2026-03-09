@@ -737,13 +737,48 @@ _RE_INTERVAL_PARANTEZE = re.compile(
 
 def _combina_linii_bioclinica(lines: list) -> list:
     """
-    Pre-proceseaza: combina perechile consecutive 'VALOARE UM' + '(min - max)'
-    intr-o singura linie 'VALOARE UM (min - max)' pentru RE_VALOARE_LINIE.
-    Bioclinica pune valoarea si intervalul pe linii separate in unele PDF-uri.
+    Pre-proceseaza textul Bioclinica care pune valoarea si intervalul pe linii separate.
+
+    Caz 1 (2 linii): 'VALOARE UM' + '(min - max)' -> 'VALOARE UM (min - max)'
+    Caz 2 (4 linii - formula leucocitara):
+        'VAL_ABS UM_ABS' + 'VAL_PCT %' + '(min-max)UM_ABS' + '(min-max)%'
+        -> 'VAL_ABS UM_ABS (min-max)'     (valoarea absoluta)
+        -> '{PARAM_PRECEDENT} %'           (duplica parametrul cu sufix %)
+        -> 'VAL_PCT % (min-max)'           (valoarea procentuala)
     """
     result = []
     i = 0
     while i < len(lines):
+        # Caz 2: bloc cu 4 linii (val_abs, val_pct, interval_abs, interval_pct)
+        # Forma: "2.260 /mm³" / "56,78 %" / "(1.500 - 8.700)/mm³" / "(22,00 - 63,00)%"
+        if i + 3 < len(lines):
+            mv1 = _RE_VAL_UM_SIMPLU.match(lines[i])
+            mv2 = _RE_VAL_UM_SIMPLU.match(lines[i + 1])
+            mi1 = _RE_INTERVAL_PARANTEZE.match(lines[i + 2])
+            mi2 = _RE_INTERVAL_PARANTEZE.match(lines[i + 3])
+            if mv1 and mv2 and mi1 and mi2:
+                # Verifica ca val2 e procentuala (%) si val1 nu e
+                um1 = mv1.group(2).strip()
+                um2 = mv2.group(2).strip()
+                if um2 == "%" and um1 != "%":
+                    # Emite val absoluta combinata
+                    result.append(f"{lines[i]} ({mi1.group(1)} - {mi1.group(2)})")
+                    # Insereaza parametrul duplicat cu sufix % (look-back in result)
+                    param_precedent = ""
+                    for prev in reversed(result[:-1]):
+                        if prev and not _LINII_EXCLUSE.match(prev):
+                            if not RE_VALOARE_LINIE.match(prev) and not _RE_VAL_UM_SIMPLU.match(prev):
+                                if len(re.sub(r'[^a-zA-Z]', '', prev)) >= 3:
+                                    param_precedent = prev
+                                    break
+                    if param_precedent:
+                        result.append(f"{param_precedent} %")
+                    # Emite val procentuala combinata
+                    result.append(f"{lines[i + 1]} ({mi2.group(1)} - {mi2.group(2)})")
+                    i += 4
+                    continue
+
+        # Caz 1: pereche simpla 'VALOARE UM' + '(min - max)'
         if i + 1 < len(lines):
             m_val = _RE_VAL_UM_SIMPLU.match(lines[i])
             m_int = _RE_INTERVAL_PARANTEZE.match(lines[i + 1])
@@ -751,6 +786,7 @@ def _combina_linii_bioclinica(lines: list) -> list:
                 result.append(f"{lines[i]} ({m_int.group(1)} - {m_int.group(2)})")
                 i += 2
                 continue
+
         result.append(lines[i])
         i += 1
     return result
