@@ -29,8 +29,10 @@ _LINII_EXCLUSE = re.compile(
     r"Acceptabil\s*:|Borderline|Crescut\s*[:\(]|Foarte\s+crescut|"
     r"Usor\s+crescut|Moderat\s+crescut|crescute?\s*[>:]|"
     r"Normal\s*:|Optim\s*:|Risc\s*:|Deficit\s+|Nivel\s+toxic|"
-    # Note cu varsta/trimestru + sex cu varsta (ex: F, 28 ani, M, 1 an)
-    r"^[MF]\s*,\s*\d+\s*(?:ani|luni)|"
+    # Note cu varsta/trimestru + sex cu varsta
+    # ex: "F, 28 ani", "M, 1 an", "NITU MATEI    M, 1 an"
+    r"^[MF]\s*,\s*\d+\s*(?:ani?|luni?)|"
+    r".*\s[MF]\s*,\s*\d+\s*(?:ani?|luni?)|"
     r"\d{1,3}-\d{1,3}\s+ani|peste\s+\d+\s+ani|trimest|"
     r"persoanelor|persoane\s+varst|"
     # Note diagnostice
@@ -41,6 +43,12 @@ _LINII_EXCLUSE = re.compile(
     r"Cod\s+Cerere|Cod\s+Proba|Formular:|Act:\s+[A-Z]|Cont:\s+RO|"
     r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
     r"Data\s+nasterii|Spectrofotome|CITOMETRIE|Raspuns\s+rapid|"
+    # Header Bioclinica repetat pe fiecare pagina (CNP/Adresa/Trimis/Recoltat etc.)
+    r"ANTECEDENT|DATA\s+NA[SȘŞsşș]TERII|^ADRES[AĂ]$|^TRIMIS\s+DE$|"
+    r"^RECOLTAT$|^LUCRAT$|^GENERAT$|^CNP$|^NUME$|^PRENUME$|"
+    r"^STR\s+|^Str\.\s+|^B-dul\s+|^Calea\s+|"
+    r"^medic\s+[A-ZĂÂÎȘȚa-zăâîșț]|^MEDIC\s+[A-ZĂÂÎȘȚ]|"
+    r"^\d{5}\s+Laborator|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
     r"Bacteriurie\s*[:(]|Leucociturie\s*[:(]|"
     r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
@@ -92,7 +100,24 @@ _LINII_EXCLUSE = re.compile(
     # Linii de interpretare cu valoare+UM+comparator inglobate
     # ex: "HDL COLESTEROL 68.2 mg/dL > 60 enma V", "TRIGLICERIDE 112 mg/dL <150 ME)"
     # ex: "FOLATI SERICI 7.64 ng/mL >5.38 De A", "crescute 2 126.0 mg/dl"
-    r"crescute?\s+\d|Normal\s*[:<>]\s*\d|Optim\s*[:<>]\s*\d)",
+    r"crescute?\s+\d|Normal\s*[:<>]\s*\d|Optim\s*[:<>]\s*\d|"
+    # Gunoi OCR Benchea: linii de interpretare inglobate in text
+    r"E\s+Moderat\s+crescut|Interpretare\s+valori\s+glicemie|"
+    r"TRIGLICERIDE\s+\d+\s+mg|Bilirubina\s+Negativ\s*:|"
+    r"Eritrocite\s+Absente|Leucocite\s+Foarte\s+rare|"
+    r"Culoare\*|Claritate\*|Aspect\*|Mucus\s+Absent|"
+    r"^\s*rare\s*$|^\s*rara\s*$|^\s*deschis\s*$|^\s*Alte\s*$|"
+    r"k\s*=\s*$|k\s*=\s*\d|eGFR:\s*\d+\s*-|"
+    # Gunoi OCR Iancu: linii de interpretare si artefacte
+    r"Metoda:\s+Reflectometrie|Metoda:\s+Calcul|Metoda:\s+Spectrofotometrie|"
+    r"Tip\s+proba:\s+Urina|Tip\s+proba:\s+Ser|"
+    r"era,\s*\|\s*negativ|a\)\s*<\s*45\s*-\s*risc|"
+    r"Albumina\s+%.*PA\s+E|_Globuline\s+alfa|_UROBILINOGEN,|"
+    r"Paisie:|NITRITI,\s*[\"']?negativ|"
+    r"30-300\s+crestere\s+moderata|200-240\s+mg|"
+    # Linii care sunt footer de pagina cu data embedded
+    r"Aceste\s+rezultate\s+pot\s+fi\s+folosite.*Pagina|"
+    r"in\s+\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2})",
     re.IGNORECASE,
 )
 
@@ -250,13 +275,24 @@ def _curata_nume(raw: str) -> str:
     if not raw or not raw.strip():
         return raw or ""
     s = raw.strip()
-    # Taie la primul cuvant-cheie care nu face parte din nume
+    # Elimina duplicari "Nume pacient: " / "pacient: " la inceput (format Regina Maria)
+    while True:
+        s2 = re.sub(r"^(?:Nume\s+pacient|pacient)\s*:\s*", "", s, count=1, flags=re.IGNORECASE).strip()
+        if s2 == s:
+            break
+        s = s2
+    # Taie la primul "Medic" (trimitaror) - inainte de "pacient:" care ar taia gresit "Nume"
+    s = re.split(r"\s+Medic\s+trimitaro?r?\s*", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    # Taie si la alte cuvinte-cheie (Varsta, Cabinet etc.)
     parts = _NUME_TAIERE.split(s, maxsplit=1)
     s = parts[0].strip()
     # Curata artefacte OCR de la sfarsit
     s = re.sub(r"\s+[a-z]{1,2}\s*$", "", s).strip()
     s = re.sub(r"\s+[FM]\s*[|]\s*$", "", s, flags=re.IGNORECASE).strip()
     s = re.sub(r"\s*\|\s*$", "", s).strip()
+    # Corecteaza erori OCR frecvente la inceput de cuvant
+    # 'I' citit ca 'l' la inceput (ex: lancu -> Iancu)
+    s = re.sub(r"\blancu\b", "IANCU", s)
     return s
 
 
@@ -689,15 +725,49 @@ def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denu
     return valoare
 
 
+_RE_VAL_UM_SIMPLU = re.compile(
+    r"^([\d.,]+)\s+([a-zA-Z%µμg·²³\u00b3/][a-zA-Z0-9%µμg·²³\u00b3/²³]*)\s*$",
+    re.IGNORECASE,
+)
+_RE_INTERVAL_PARANTEZE = re.compile(
+    # Permite sufixe dupa ')' ca "/mm³", "%", "/L" etc. (format Bioclinica formula leucocitara)
+    r"^\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)[^\d\n]*$"
+)
+
+
+def _combina_linii_bioclinica(lines: list) -> list:
+    """
+    Pre-proceseaza: combina perechile consecutive 'VALOARE UM' + '(min - max)'
+    intr-o singura linie 'VALOARE UM (min - max)' pentru RE_VALOARE_LINIE.
+    Bioclinica pune valoarea si intervalul pe linii separate in unele PDF-uri.
+    """
+    result = []
+    i = 0
+    while i < len(lines):
+        if i + 1 < len(lines):
+            m_val = _RE_VAL_UM_SIMPLU.match(lines[i])
+            m_int = _RE_INTERVAL_PARANTEZE.match(lines[i + 1])
+            if m_val and m_int:
+                result.append(f"{lines[i]} ({m_int.group(1)} - {m_int.group(2)})")
+                i += 2
+                continue
+        result.append(lines[i])
+        i += 1
+    return result
+
+
 def extract_rezultate(text: str) -> list[RezultatParsat]:
     """
     Extrage analizele din text. Suporta:
     - Format Bioclinica (2 linii): parametru pe linia i, valoare+UM+interval pe linia i+1
+    - Format Bioclinica (3 linii): parametru / valoare UM / (min - max) pe linii separate
     - Format MedLife/generic (1 linie): parametru + valoare + UM + interval pe aceeasi linie
     Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
-    lines = [l.strip() for l in text.replace("\r", "\n").split("\n")]
+    lines_raw = [l.strip() for l in text.replace("\r", "\n").split("\n")]
+    # Combina perechile 'VALOARE UM' + '(min - max)' intr-o singura linie
+    lines = _combina_linii_bioclinica(lines_raw)
     results: list[RezultatParsat] = []
     seen: set = set()
 
@@ -798,19 +868,26 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             interval_min = interval_max = None
         denumire = ""
         cat_linie = line_sectiune[i]
-        for j in range(i - 1, max(i - 4, -1), -1):
+        # Fereastra extinsa (30 linii) pentru a traversa headerele de pagina Bioclinica
+        # care se intercaleaza intre parametru (pagina N) si valoare (pagina N+1)
+        for j in range(i - 1, max(i - 30, -1), -1):
             cand = lines[j].strip()
             if not cand or _LINIE_NOTA.match(cand):
+                continue
+            # Sarim peste linii de header/footer de pagina (nu suntem "blocati")
+            if _LINII_EXCLUSE.match(cand):
                 continue
             # NU folosi ca parametru o linie care arata ca "Param Val UM (interval)" pe aceeasi linie
             # (format Bioclinica oneline) - altfel riscam: Trombocite pe linia 1, Leucocite pe 2,
             # valoare 267.000 pe 3 -> asociem gresit Leucocite cu 267.000
             if RE_BIOCLINICA_ONELINE.search(cand) or RE_BIOCLINICA_REF_SINGULAR.search(cand):
-                continue  # cand e deja param+val pe o linie, nu e "param gol" pentru format 2 linii
+                break  # e un alt parametru complet - ne oprim
             if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
                 denumire = cand
                 cat_linie = line_sectiune[j]
-            break
+                break  # parametru valid gasit
+            # Linie non-exclusa dar nu e parametru valid (data, text descriptiv, etc.)
+            # Continuam cautarea inapoi - poate parametrul e mai departe
         if not denumire:
             continue
         # Validare: evita swap Trombocite <-> Leucocite (Trombocite 150k-400k, Leucocite 4k-12k)
