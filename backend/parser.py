@@ -733,6 +733,10 @@ _RE_INTERVAL_PARANTEZE = re.compile(
     # Permite sufixe dupa ')' ca "/mm³", "%", "/L" etc. (format Bioclinica formula leucocitara)
     r"^\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)[^\d\n]*$"
 )
+_RE_INTERVAL_SINGULAR = re.compile(
+    # Format Bioclinica cu referinta singulara: (≤ X) sau (≥ X) sau (< X) sau (> X)
+    r"^\(\s*([≤≥<>])\s*([\d.,]+)\s*\)\s*$"
+)
 
 
 def _combina_linii_bioclinica(lines: list) -> list:
@@ -778,12 +782,18 @@ def _combina_linii_bioclinica(lines: list) -> list:
                     i += 4
                     continue
 
-        # Caz 1: pereche simpla 'VALOARE UM' + '(min - max)'
+        # Caz 1a: pereche simpla 'VALOARE UM' + '(min - max)'
         if i + 1 < len(lines):
             m_val = _RE_VAL_UM_SIMPLU.match(lines[i])
             m_int = _RE_INTERVAL_PARANTEZE.match(lines[i + 1])
             if m_val and m_int:
                 result.append(f"{lines[i]} ({m_int.group(1)} - {m_int.group(2)})")
+                i += 2
+                continue
+            # Caz 1b: pereche 'VALOARE UM' + '(≤ X)' / '(≥ X)' - ex: Proteina C reactiva
+            m_sing = _RE_INTERVAL_SINGULAR.match(lines[i + 1]) if m_val else None
+            if m_val and m_sing:
+                result.append(f"{lines[i]} ({m_sing.group(1)} {m_sing.group(2)})")
                 i += 2
                 continue
 
@@ -883,25 +893,38 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             continue
 
         m = RE_VALOARE_LINIE.match(linie_val)
+        # Daca nu e format min-max, incearca format singular (≤ X) - ex: Proteina C reactiva
+        m_sing = None
         if not m:
+            m_sing = RE_BIOCLINICA_REF_SINGULAR.match(linie_val)
+        if not m and not m_sing:
             continue
-        valoare = _parse_european_number(m.group(1))
-        if valoare is None:
-            try:
-                valoare = float(m.group(1).replace(",", "."))
-            except ValueError:
-                continue
-        unitate = m.group(2).strip().replace(" ", "") or None
-        interval_min = _parse_european_number(m.group(3))
-        interval_max = _parse_european_number(m.group(4))
-        if interval_min is None or interval_max is None:
-            try:
-                interval_min = float(m.group(3).replace(",", "."))
-                interval_max = float(m.group(4).replace(",", "."))
-            except ValueError:
+        if m:
+            valoare = _parse_european_number(m.group(1))
+            if valoare is None:
+                try:
+                    valoare = float(m.group(1).replace(",", "."))
+                except ValueError:
+                    continue
+            unitate = m.group(2).strip().replace(" ", "") or None
+            interval_min = _parse_european_number(m.group(3))
+            interval_max = _parse_european_number(m.group(4))
+            if interval_min is None or interval_max is None:
+                try:
+                    interval_min = float(m.group(3).replace(",", "."))
+                    interval_max = float(m.group(4).replace(",", "."))
+                except ValueError:
+                    interval_min = interval_max = None
+            if interval_min is not None and interval_max is not None and interval_min >= interval_max:
                 interval_min = interval_max = None
-        if interval_min is not None and interval_max is not None and interval_min >= interval_max:
-            interval_min = interval_max = None
+        else:
+            # Format singular (≤ X): valoare si limita superioara
+            valoare = _parse_european_number(m_sing.group(1))
+            if valoare is None:
+                continue
+            unitate = m_sing.group(2).strip().replace(" ", "") or None
+            interval_min = None
+            interval_max = _parse_european_number(m_sing.group(3))
         denumire = ""
         cat_linie = line_sectiune[i]
         # Fereastra extinsa (30 linii) pentru a traversa headerele de pagina Bioclinica
