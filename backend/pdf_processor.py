@@ -322,14 +322,20 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
     text_tabele = _extrage_tabele_pdfplumber(pdf_path)
     text_plumber = text_normal + ("\n" + text_tabele if text_tabele else "").strip()
 
-    # Alege sursa: prefera pymupdf daca are cel putin la fel de mult text
-    # (layout pymupdf e mai potrivit pentru parserul Bioclinica)
-    if len(text_fitz) >= len(text_plumber) and len(text_fitz) >= min_chars:
-        text_combinat = text_fitz
-        extractor_used = "pymupdf"
-    else:
-        text_combinat = text_plumber if text_plumber else text_fitz
-        extractor_used = "pdfplumber" if text_plumber else "pymupdf"
+    # COMBINĂ textul din ambele surse pentru a maximiza analizele extrase.
+    # pdfplumber și pymupdf au layout-uri diferite - unele analize apar doar într-o sursă
+    # (ex: TGO valoare pe pg.2 după header - una o extrage, cealaltă nu).
+    # Parserul are deduplicare, deci nu vom avea duplicate.
+    extractor_used = "pymupdf"
+    text_combinat = (text_fitz or "").strip()
+    text_plumber_clean = (text_plumber or "").strip()
+    if text_plumber_clean:
+        if text_combinat:
+            text_combinat = text_combinat + "\n" + text_plumber_clean
+            extractor_used = "pymupdf+pdfplumber"
+        else:
+            text_combinat = text_plumber_clean
+            extractor_used = "pdfplumber"
 
     contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
     if len(text_combinat) >= min_chars and contine_numar:
