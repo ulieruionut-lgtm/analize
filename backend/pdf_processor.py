@@ -322,12 +322,14 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
     text_tabele = _extrage_tabele_pdfplumber(pdf_path)
     text_plumber = text_normal + ("\n" + text_tabele if text_tabele else "").strip()
 
-    # Alege sursa: prefera pymupdf daca are suficiente caractere (layout mai potrivit pentru parser)
-    extractor_used = "pymupdf" if len(text_fitz) >= min_chars else "pdfplumber"
-    text_combinat = text_fitz if len(text_fitz) >= min_chars else text_plumber
-    if not text_combinat and text_plumber:
-        text_combinat = text_plumber
-        extractor_used = "pdfplumber"
+    # Alege sursa: prefera pymupdf daca are cel putin la fel de mult text
+    # (layout pymupdf e mai potrivit pentru parserul Bioclinica)
+    if len(text_fitz) >= len(text_plumber) and len(text_fitz) >= min_chars:
+        text_combinat = text_fitz
+        extractor_used = "pymupdf"
+    else:
+        text_combinat = text_plumber if text_plumber else text_fitz
+        extractor_used = "pdfplumber" if text_plumber else "pymupdf"
 
     contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
     if len(text_combinat) >= min_chars and contine_numar:
