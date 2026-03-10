@@ -42,7 +42,11 @@ _LINII_EXCLUSE = re.compile(
     # Linii administrative laborator
     r"Cod\s+Cerere|Cod\s+Proba|Formular:|Act:\s+[A-Z]|Cont:\s+RO|"
     r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
-    r"Data\s+nasterii|Spectrofotome|CITOMETRIE|Raspuns\s+rapid|"
+    r"Data\s+nasterii|Spectrofotome|CITOMETRIE|"
+    r"R[ăa]spuns\s+rapid|R[ăa]spuns\s+lent|R[ăa]spuns\s+bifazic|R[ăa]spuns\s+absent|"
+    r"Evaluarea\s+r[ăa]spunsului|CRP.ratio|Interpretare:|"
+    r"Conform\s+studiilor|favorabil\s+la\s+terapia|tratament\.\s*$|"
+    r"Conform\s+studiu|"
     # Header Bioclinica repetat pe fiecare pagina (CNP/Adresa/Trimis/Recoltat etc.)
     r"ANTECEDENT|DATA\s+NA[SȘŞsşș]TERII|^ADRES[AĂ]$|^TRIMIS\s+DE$|"
     r"^RECOLTAT$|^LUCRAT$|^GENERAT$|^CNP$|^NUME$|^PRENUME$|"
