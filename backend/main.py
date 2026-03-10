@@ -69,7 +69,7 @@ async def get_current_user(
 
 @app.on_event("startup")
 async def startup_event():
-    """La pornire: creeaza utilizatorul admin daca nu exista niciun user."""
+    """La pornire: admin default + corectare nume pacienti corupte (Vladasel etc.)."""
     try:
         print("[STARTUP] Verificare/Creare utilizator admin...")
         result = ensure_default_admin()
@@ -81,6 +81,14 @@ async def startup_event():
         print(f"[STARTUP] ✗ Eroare la creare admin: {e}")
         import traceback
         traceback.print_exc()
+
+    try:
+        from backend.database import fix_pacienti_nume_cunoscuti
+        corectati = fix_pacienti_nume_cunoscuti()
+        if corectati:
+            print(f"[STARTUP] ✓ Nume corectate pentru {len(corectati)} pacienti: {[c['nume']+' '+c['prenume'] for c in corectati]}")
+    except Exception as e:
+        print(f"[STARTUP] Eroare la corectare nume (ignorat): {e}")
 
 
 def _raspuns_eroare(status: int, mesaj: str):
@@ -304,7 +312,11 @@ async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_curre
 
 
 @app.post("/upload")
-async def upload_pdf(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    debug: bool = Query(False, description="Returneaza info diagnostic (text extras, analize parse)"),
+    current_user: dict = Depends(get_current_user),
+):
     """Primeste PDF, extrage text (sau OCR), parseaza CNP + nume + analize, salveaza in DB."""
     tmp_path = None
     try:
@@ -315,6 +327,28 @@ async def upload_pdf(file: UploadFile = File(...), current_user: dict = Depends(
             tmp.write(content)
             tmp_path = tmp.name
         text, tip, ocr_err, colored_tokens = extract_text_from_pdf(tmp_path)
+        if debug and text:
+            # In mod debug, returnam doar diagnostic (fara salvare) pentru verificare
+            parsed_dbg = parse_full_text(text)
+            if parsed_dbg:
+                from backend.normalizer import normalize_rezultate
+                normalize_rezultate(parsed_dbg.rezultate)
+                analize_list = [
+                    {"denumire": r.denumire_raw, "valoare": r.valoare, "unitate": r.unitate}
+                    for r in parsed_dbg.rezultate
+                ]
+                return {
+                    "debug": True,
+                    "tip_extragere": tip,
+                    "lungime_text": len(text),
+                    "text_primele_1500": text[:1500] + ("..." if len(text) > 1500 else ""),
+                    "cnp": parsed_dbg.cnp,
+                    "nume": parsed_dbg.nume,
+                    "prenume": parsed_dbg.prenume,
+                    "numar_analize": len(parsed_dbg.rezultate),
+                    "analize": analize_list,
+                }
+            return {"debug": True, "eroare": "CNP nespecificat", "lungime_text": len(text)}
         if not text or len(text.strip()) < 10:
             detail = "Nu s-a putut extrage text din PDF (gol sau prea scurt)."
             if ocr_err:
@@ -1125,6 +1159,10 @@ async def index():
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple>
       <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem;color:var(--gri)">
+          <input type="checkbox" id="chk-debug-upload">
+          Verificare (fără salvare) — afișează doar ce s-ar importa
+        </label>
         <button class="btn btn-primary" id="btn-upload" onclick="trimite()" disabled>
           <span id="btn-text">Procesează PDF</span>
         </button>
@@ -1450,7 +1488,10 @@ async function incarcaSetari() {
       card.style.display = 'none';
       if (cardBackup) cardBackup.style.display = 'none';
     }
-  } catch { card.style.display = 'none'; if (cardBackup) cardBackup.style.display = 'none'; }
+  } catch {
+    card.style.display = 'none';
+    if (cardBackup) cardBackup.style.display = 'none';
+  }
 }
 
 async function exportBackup(btnEl) {
@@ -1680,9 +1721,11 @@ async function trimite() {
 
     const fd = new FormData();
     fd.append('file', f);
+    const debugMode = document.getElementById('chk-debug-upload') && document.getElementById('chk-debug-upload').checked;
+    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      const r = await fetch('/upload', { method: 'POST', body: fd, headers: getAuthHeaders() });
+      const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
       const txt = await r.text();
       let j;
       try { j = JSON.parse(txt); } catch {
@@ -1695,11 +1738,28 @@ async function trimite() {
       }
       if (r.ok) {
         reusit++;
-        pacientInfo = j.pacient || {};
-        mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
-          + ' (CNP: ' + escHtml(pacientInfo.cnp||'') + ')'
-          + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
-          + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
+        if (j.debug) {
+          pacientInfo = { cnp: j.cnp, nume: j.nume, prenume: j.prenume };
+          mesaj = '[VERIFICARE] ' + escHtml(j.nume||'') + ' ' + escHtml(j.prenume||'')
+            + ' · CNP: ' + escHtml(j.cnp||'')
+            + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
+            + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
+          if (j.analize && j.analize.length) {
+            mesaj += '<br><details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.85rem">Lista analize (' + j.analize.length + ')</summary><ul style="margin:8px 0 0 16px;font-size:0.82rem;max-height:200px;overflow-y:auto">'
+              + j.analize.map(a => '<li>' + escHtml(a.denumire||'') + ' = ' + escHtml(String(a.valoare||'')) + ' ' + escHtml(a.unitate||'') + '</li>').join('')
+              + '</ul></details>';
+          }
+          if (j.text_primele_1500) {
+            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Text extras (primele 1500 caractere)</summary><pre style="margin:6px 0 0;font-size:0.75rem;max-height:150px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml(j.text_primele_1500) + '</pre></details>';
+          }
+          if (j.eroare) mesaj = '[EROARE] ' + escHtml(j.eroare);
+        } else {
+          pacientInfo = j.pacient || {};
+          mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
+            + ' (CNP: ' + escHtml(pacientInfo.cnp||'') + ')'
+            + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
+            + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
+        }
       } else {
         esuat++;
         status = 'err';
@@ -1944,7 +2004,8 @@ async function editBuletin(buletinId, cnp) {
   // Construieste tabel rezultate
   let rows = '';
   rezultate.forEach(rz => {
-    const selOpts = opts.replace(`value="${rz.analiza_standard_id}"`, `value="${rz.analiza_standard_id}" selected`);
+    const v = rz.analiza_standard_id ?? '';
+    const selOpts = opts.replace(`value="${v}"`, `value="${v}" selected`);
     rows += `<tr id="erow-${rz.id}">
       <td style="min-width:200px">
         <select style="width:100%;font-size:0.8rem;padding:3px" onchange="editField(${rz.id},'analiza_standard_id',this.value||null)">
@@ -2066,9 +2127,13 @@ async function saveRezultat(rzId) {
       body: JSON.stringify(body)
     });
     if (r.ok) {
+      const j = await r.json().catch(() => ({}));
       if (row) {
         row.style.background = '#e8f5e9';
         setTimeout(() => { if(row) row.style.background = ''; }, 1200);
+      }
+      if (j.alias_salvat) {
+        showEditMsg('✅ Salvat. Sistemul a învățat această asociație și o va recunoaște automat la upload-uri viitoare.', false);
       }
       delete _editPending[rzId];
     } else {
