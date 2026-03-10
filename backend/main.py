@@ -1159,12 +1159,11 @@ async def index():
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple>
       <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.88rem;color:var(--gri)">
-          <input type="checkbox" id="chk-debug-upload">
-          Verificare (fără salvare) — afișează doar ce s-ar importa
-        </label>
-        <button class="btn btn-primary" id="btn-upload" onclick="trimite()" disabled>
+        <button class="btn btn-primary" id="btn-upload" onclick="trimite(false)" disabled>
           <span id="btn-text">Procesează PDF</span>
+        </button>
+        <button class="btn btn-secondary" id="btn-verificare" onclick="trimite(true)" disabled title="Afișează ce s-ar importa, fără a salva">
+          🔍 Verificare (fără salvare)
         </button>
         <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
       </div>
@@ -1697,16 +1696,19 @@ function selecteazaFisiere(files) {
   if (nonPdf > 0) info += ' · <span style="color:var(--rosu)">' + nonPdf + ' ignorate (nu sunt PDF)</span>';
   document.getElementById('file-name').innerHTML = info;
   document.getElementById('btn-upload').disabled = false;
+  document.getElementById('btn-verificare').disabled = false;
   document.getElementById('btn-text').textContent = pdfs.length === 1 ? 'Procesează PDF' : 'Procesează ' + pdfs.length + ' PDF-uri';
   document.getElementById('upload-out').innerHTML = '';
 }
 
-async function trimite() {
+async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
   const btnText = document.getElementById('btn-text');
   const prog = document.getElementById('prog');
+  const btnVerif = document.getElementById('btn-verificare');
   btn.disabled = true;
+  if (btnVerif) btnVerif.disabled = true;
   const out = document.getElementById('upload-out');
   out.innerHTML = '';
 
@@ -1721,7 +1723,6 @@ async function trimite() {
 
     const fd = new FormData();
     fd.append('file', f);
-    const debugMode = document.getElementById('chk-debug-upload') && document.getElementById('chk-debug-upload').checked;
     const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
@@ -1794,6 +1795,8 @@ async function trimite() {
 
   incarcaRecenti();
   btn.disabled = false;
+  const bv = document.getElementById('btn-verificare');
+  if (bv) bv.disabled = false;
   btnText.textContent = total === 1 ? 'Procesează PDF' : 'Procesează ' + total + ' PDF-uri';
   prog.textContent = '';
   fisierSelectat = [];
