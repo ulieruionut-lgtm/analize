@@ -273,7 +273,7 @@ def extract_colored_tokens(pdf_path: str) -> set:
     return colored
 
 
-def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set]:
+def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str]:
     """
     Extrage text din PDF. Returneaza (text, tip, eroare_sau_None, colored_tokens).
     - tip = 'text'  → PDF cu text direct (nu e nevoie de OCR)
@@ -287,17 +287,26 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set]:
     """
     min_chars = getattr(settings, "pdf_text_min_chars", 200)
 
-    # Pas 1: PyMuPDF (fitz) - produce layout cu o linie per element, potrivit pentru Bioclinica
+    # Pas 1: PyMuPDF - produce layout cu o linie per element, potrivit pentru Bioclinica
+    # Folosim "import pymupdf" explicit pentru a evita conflictul cu pachetul vechi "fitz" de pe PyPI
     text_fitz = ""
     try:
-        import fitz
-        doc = fitz.open(pdf_path)
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
         for page in doc:
             text_fitz += page.get_text() + "\n"
         doc.close()
         text_fitz = (text_fitz or "").strip()
     except Exception:
-        pass
+        try:
+            import fitz  # fallback: pymupdf se exporta si ca fitz
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                text_fitz += page.get_text() + "\n"
+            doc.close()
+            text_fitz = (text_fitz or "").strip()
+        except Exception:
+            pass
 
     # Pas 2: pdfplumber (fallback) - extract_text + tabele
     text_normal = ""
@@ -313,17 +322,19 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set]:
     text_tabele = _extrage_tabele_pdfplumber(pdf_path)
     text_plumber = text_normal + ("\n" + text_tabele if text_tabele else "").strip()
 
-    # Alege sursa: prefera fitz daca are suficiente caractere (layout mai potrivit pentru parser)
+    # Alege sursa: prefera pymupdf daca are suficiente caractere (layout mai potrivit pentru parser)
+    extractor_used = "pymupdf" if len(text_fitz) >= min_chars else "pdfplumber"
     text_combinat = text_fitz if len(text_fitz) >= min_chars else text_plumber
     if not text_combinat and text_plumber:
         text_combinat = text_plumber
+        extractor_used = "pdfplumber"
 
     contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
     if len(text_combinat) >= min_chars and contine_numar:
         colored = extract_colored_tokens(pdf_path)
-        return text_combinat, "text", None, colored
+        return text_combinat, "text", None, colored, extractor_used
 
     # Pas 3: PDF scanat - PyMuPDF + Tesseract cu preprocesare
     ocr_text, ocr_err = _run_ocr_pymupdf(pdf_path)
     combined = (text_combinat + "\n" + ocr_text).strip() if text_combinat else ocr_text.strip()
-    return combined, "ocr", ocr_err, set()
+    return combined, "ocr", ocr_err, set(), "ocr"

@@ -326,7 +326,7 @@ async def upload_pdf(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-        text, tip, ocr_err, colored_tokens = extract_text_from_pdf(tmp_path)
+        text, tip, ocr_err, colored_tokens, extractor = extract_text_from_pdf(tmp_path)
         if debug and text:
             # In mod debug, returnam doar diagnostic (fara salvare) pentru verificare
             parsed_dbg = parse_full_text(text)
@@ -340,6 +340,7 @@ async def upload_pdf(
                 return {
                     "debug": True,
                     "tip_extragere": tip,
+                    "extractor": extractor,
                     "lungime_text": len(text),
                     "text_primele_1500": text[:1500] + ("..." if len(text) > 1500 else ""),
                     "cnp": parsed_dbg.cnp,
@@ -397,6 +398,7 @@ async def upload_pdf(
         return {
             "message": "PDF procesat cu succes.",
             "tip_extragere": tip,
+            "extractor": extractor,
             "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
             "buletin_id": buletin["id"],
             "data_buletin": buletin.get("data_buletin"),
@@ -1759,6 +1761,7 @@ async function trimite(debugMode) {
           mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
             + ' (CNP: ' + escHtml(pacientInfo.cnp||'') + ')'
             + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
+            + (j.extractor ? ' · ' + escHtml(j.extractor) : '')
             + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
         }
       } else {
