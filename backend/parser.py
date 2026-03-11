@@ -203,6 +203,12 @@ RE_VALOARE_LINIE = re.compile(
     re.IGNORECASE,
 )
 
+# Format valoare + referinta singulara (≤ X) la inceputul liniei - ex: "2,260mg/dL (<= 0,33)"
+RE_VALOARE_REF_SINGULAR = re.compile(
+    r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
+    re.IGNORECASE,
+)
+
 # Format valoare simpla fara interval
 RE_VALOARE_PARTIAL = re.compile(
     r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\s/m]+?)$",
@@ -210,15 +216,16 @@ RE_VALOARE_PARTIAL = re.compile(
 )
 
 # Format Bioclinica: Parametru Valoare UM (min - max) toate pe aceeasi linie
-# ex: "Hematii 4.650.000 /mm³ (3.700.000 - 5.150.000)" sau "Hemoglobină 13,3 g/dL (10,2 - 13,4)"
+# ex: "Hematii 4.650.000 /mm³ (3.700.000 - 5.150.000)" sau "Hematii 4.650.000/mm3 (3.700.000 - 5.150.000)"
+# pdfplumber: valoare lipita de unitate (4.650.000/mm3), unitate cu cifre (mm3)
 RE_BIOCLINICA_ONELINE = re.compile(
-    r"\s+([\d.,]+)\s+([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
+    r"\s+([\d.,]+)\s*([a-zA-Z0-9/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
-# Format cu referinta singulara: Valoare UM (≤ X) sau (≥ X) - ex: "2,260 mg/dL (≤ 0,33)"
+# Format cu referinta singulara: Valoare UM (≤ X) - ex: "2,260 mg/dL (≤ 0,33)" sau "2,260mg/dL (<= 0,33)"
 RE_BIOCLINICA_REF_SINGULAR = re.compile(
-    r"\s+([\d.,]+)\s+([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*[≤≥<>]\s*([\d.,]+)\s*\)",
+    r"\s+([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
@@ -742,6 +749,13 @@ _RE_INTERVAL_SINGULAR = re.compile(
     r"^\(\s*([≤≥<>])\s*([\d.,]+)\s*\)\s*$"
 )
 
+# Format pdfplumber formula leucocitara: "Param NUM1 UM1 NUM2 % (INT1)suffix" + urmatoarea "(INT2)%"
+# Unitatea poate fi /mm3, /mm³, etc.
+_RE_FORMULA_PDFPLUMBER = re.compile(
+    r"^([A-Za-zăâîșțĂÂÎȘȚ]+)\s+([\d.,]+)\s*([\/\w³·0-9]+?)\s+([\d.,]+)\s*%\s+\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
+    re.IGNORECASE,
+)
+
 
 def _combina_linii_bioclinica(lines: list) -> list:
     """
@@ -757,7 +771,19 @@ def _combina_linii_bioclinica(lines: list) -> list:
     result = []
     i = 0
     while i < len(lines):
-        # Caz 2: bloc cu 4 linii (val_abs, val_pct, interval_abs, interval_pct)
+        # Caz 2a: format pdfplumber formula leucocitara (2 linii)
+        # "Neutrofile 2.260/mm³ 56,78 % (1.500 - 8.700)/mm³" + "(22,00 - 63,00)%"
+        if i + 1 < len(lines):
+            mf = _RE_FORMULA_PDFPLUMBER.match(lines[i])
+            mi2 = _RE_INTERVAL_PARANTEZE.match(lines[i + 1])
+            if mf and mi2:
+                param, n1, u1, n2, mn, mx = mf.group(1), mf.group(2), mf.group(3), mf.group(4), mf.group(5), mf.group(6)
+                result.append(f"{param} {n1} {u1} ({mn} - {mx})")
+                result.append(f"{param} % {n2} % ({mi2.group(1)} - {mi2.group(2)})")
+                i += 2
+                continue
+
+        # Caz 2b: bloc cu 4 linii (val_abs, val_pct, interval_abs, interval_pct)
         # Forma: "2.260 /mm³" / "56,78 %" / "(1.500 - 8.700)/mm³" / "(22,00 - 63,00)%"
         if i + 3 < len(lines):
             mv1 = _RE_VAL_UM_SIMPLU.match(lines[i])
@@ -897,10 +923,10 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             continue
 
         m = RE_VALOARE_LINIE.match(linie_val)
-        # Daca nu e format min-max, incearca format singular (≤ X) - ex: Proteina C reactiva
+        # Daca nu e format min-max, incearca format singular (≤ X) - ex: "2,260mg/dL (<= 0,33)"
         m_sing = None
         if not m:
-            m_sing = RE_BIOCLINICA_REF_SINGULAR.match(linie_val)
+            m_sing = RE_VALOARE_REF_SINGULAR.match(linie_val) or RE_BIOCLINICA_REF_SINGULAR.match(linie_val)
         if not m and not m_sing:
             continue
         if m:
