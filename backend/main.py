@@ -1167,14 +1167,18 @@ async def index():
         <div id="file-name"></div>
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple>
-      <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-        <button class="btn btn-primary" id="btn-upload" onclick="trimite(false)" disabled>
-          <span id="btn-text">Procesează PDF</span>
-        </button>
-        <button class="btn btn-secondary" id="btn-verificare" onclick="trimite(true)" disabled title="Afișează ce s-ar importa, fără a salva">
-          🔍 Verificare (fără salvare)
-        </button>
-        <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
+      <div style="margin-top:16px;">
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-upload" onclick="trimite(false)" disabled>
+            <span id="btn-text">Procesează PDF</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-verificare" onclick="trimite(true)" disabled title="Afișează ce s-ar importa, fără a salva"
+            style="border:1.5px solid #0a7ea4;color:#0a7ea4;background:#fff;font-weight:500">
+            🔍 Verificare (fără salvare)
+          </button>
+          <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
+        </div>
+        <p style="margin-top:6px;font-size:0.78rem;color:var(--gri)">Verificare = previzualizare fără salvare. Scroll dacă nu vezi ambele butoane.</p>
       </div>
       <div id="upload-out"></div>
     </div>
