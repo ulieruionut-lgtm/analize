@@ -337,7 +337,6 @@ async def upload_pdf(
             parsed_dbg = parse_full_text(text)
             lines_raw = [l.strip() for l in text.replace("\r", "\n").split("\n") if l.strip()]
             if parsed_dbg:
-                from backend.normalizer import normalize_rezultate
                 normalize_rezultate(parsed_dbg.rezultate)
                 analize_list = [
                     {"denumire": r.denumire_raw, "valoare": r.valoare, "unitate": r.unitate}
