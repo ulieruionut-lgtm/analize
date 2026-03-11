@@ -69,7 +69,31 @@ async def get_current_user(
 
 @app.on_event("startup")
 async def startup_event():
-    """La pornire: admin default + corectare nume pacienti corupte (Vladasel etc.)."""
+    """La pornire: migrare ordine/categorie, admin default, corectare nume pacienti."""
+    # Migrare 007: ordine + categorie pe PostgreSQL (daca lipsesc)
+    try:
+        from backend.config import settings
+        url = (settings.database_url or "").strip()
+        if url and url.lower().startswith("postgresql"):
+            import psycopg2
+            from pathlib import Path
+            sql_path = Path(__file__).resolve().parent.parent / "sql" / "007_ordine_categorie.sql"
+            if sql_path.exists():
+                conn = psycopg2.connect(url)
+                conn.autocommit = False
+                try:
+                    cur = conn.cursor()
+                    cur.execute(sql_path.read_text(encoding="utf-8"))
+                    conn.commit()
+                    print("[STARTUP] ✓ Migrare 007 (ordine, categorie) aplicata")
+                except Exception as e:
+                    conn.rollback()
+                    if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
+                        print(f"[STARTUP] Migrare 007: {e}")
+                finally:
+                    conn.close()
+    except Exception as e:
+        print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     try:
         print("[STARTUP] Verificare/Creare utilizator admin...")
         result = ensure_default_admin()

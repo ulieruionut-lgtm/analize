@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS rezultate_analize (
     interval_min REAL,
     interval_max REAL,
     flag TEXT,
+    ordine INTEGER,
+    categorie TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
