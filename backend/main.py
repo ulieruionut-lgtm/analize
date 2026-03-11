@@ -1136,7 +1136,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub">Panou medic – v03.03.2026 | <span id="user-display"></span></div>
+    <div class="sub">Panou medic – v11.03.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none">📥 Export backup</button>
@@ -1168,17 +1168,19 @@ async def index():
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple>
       <div style="margin-top:16px;">
-        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-          <button class="btn btn-primary" id="btn-upload" onclick="trimite(false)" disabled>
-            <span id="btn-text">Procesează PDF</span>
-          </button>
-          <button class="btn btn-secondary" id="btn-verificare" onclick="trimite(true)" disabled title="Afișează ce s-ar importa, fără a salva"
-            style="border:1.5px solid #0a7ea4;color:#0a7ea4;background:#fff;font-weight:500">
-            🔍 Verificare (fără salvare)
-          </button>
-          <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btn-upload" onclick="trimite(false)" disabled>
+              <span id="btn-text">Procesează PDF</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-verificare" onclick="trimite(true)" disabled title="Previzualizare fără salvare în DB"
+              style="border:2px solid #0a7ea4;color:#0a7ea4;background:#e8f4f8;font-weight:600;padding:10px 16px">
+              🔍 Verificare (fără salvare)
+            </button>
+            <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
+          </div>
+          <p style="font-size:0.8rem;color:#0a7ea4;margin:0">« Verificare: vezi ce analize s-ar extrage, fără să salvezi în baza de date.</p>
         </div>
-        <p style="margin-top:6px;font-size:0.78rem;color:var(--gri)">Verificare = previzualizare fără salvare. Scroll dacă nu vezi ambele butoane.</p>
       </div>
       <div id="upload-out"></div>
     </div>
