@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # OCR Tesseract: PSM 3=auto table, OEM 2=LSTM+legacy, ron+eng pentru termeni medicali
     ocr_lang: str = "ron+eng"
     ocr_psm: int = 3   # 3=auto segmentare (bun pt tabele), 4=coloană, 6=bloc, 11=sparse
-    ocr_oem: int = 2   # 1=LSTM, 2=LSTM+legacy, 3=default
+    ocr_oem: int = 2   # 1=LSTM, 2=LSTM+legacy (tessdata full are ambele)
     ocr_psm_fallback: int = 4   # retry cu acest PSM dacă rezultat < ocr_min_chars
     ocr_min_chars: int = 100    # prag pentru retry cu PSM fallback
     # TESSDATA_PREFIX: setează în .env pt tessdata_best (mai precis, mai lent). Ex: /usr/share/tessdata_best

@@ -1432,6 +1432,10 @@ function getAuthHeaders() {
   const t = getToken();
   return t ? { 'Authorization': 'Bearer ' + t } : {};
 }
+function handle401(r) {
+  if (r && r.status === 401) { clearToken(); location.reload(); return true; }
+  return false;
+}
 
 async function checkAuth() {
   const token = getToken();
@@ -1445,10 +1449,20 @@ async function checkAuth() {
       document.getElementById('user-display').textContent = 'Logat: ' + (u.username || '');
       const btnBackup = document.getElementById('btn-header-backup');
       if (btnBackup) btnBackup.style.display = (u.username || '').toLowerCase() === 'admin' ? 'inline-block' : 'none';
+      incarcaRecenti();
+      (async () => {
+        try {
+          const r = await fetch('/analize-necunoscute', { headers: getAuthHeaders() });
+          if (handle401(r)) return;
+          const lista = r.ok ? await r.json() : [];
+          const badge = document.getElementById('badge-nec');
+          if (lista.length > 0 && badge) { badge.textContent = lista.length; badge.style.display = ''; }
+        } catch {}
+      })();
       return;
     }
+    if (r.status === 401) clearToken();
   } catch {}
-  clearToken();
   document.getElementById('login-screen').style.display = 'block';
   document.getElementById('app-container').style.display = 'none';
 }
@@ -1744,6 +1758,7 @@ async function trimite(debugMode) {
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
       const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
+      if (handle401(r)) return;
       const txt = await r.text();
       let j;
       try { j = JSON.parse(txt); } catch {
@@ -1829,7 +1844,8 @@ async function trimite(debugMode) {
 async function incarcaRecenti() {
   try {
     const r = await fetch('/pacienti', { headers: getAuthHeaders() });
-    const lista = await r.json();
+    if (r.status === 401) { clearToken(); location.reload(); return; }
+    const lista = r.ok ? await r.json() : [];
     if (!lista.length) return;
     document.getElementById('card-pacienti-recenti').style.display = '';
     const top5 = lista.slice(0,5);
@@ -1854,7 +1870,8 @@ async function incarcaListaPacienti(q) {
   try {
     const url = q ? '/pacienti?q=' + encodeURIComponent(q) : '/pacienti';
     const r = await fetch(url, { headers: getAuthHeaders() });
-    const lista = await r.json();
+    if (handle401(r)) return;
+    const lista = r.ok ? await r.json() : [];
     if (!lista.length) {
       el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">Niciun pacient găsit.</p>';
       return;
@@ -1883,7 +1900,8 @@ async function veziPacient(cnp) {
     '<div class="card"><p style="color:var(--gri)">Se încarcă datele pacientului…</p></div>');
 
   try {
-    const r = await fetch('/pacient/' + encodeURIComponent(cnp) + '/evolutie-matrice', { headers: getAuthHeaders() });
+    const r = await fetch('/pacient/' + encodeURIComponent(String(cnp)) + '/evolutie-matrice', { headers: getAuthHeaders() });
+    if (handle401(r)) return;
     if (!r.ok) {
       deschideTabPacient(cnp, cnp,
         '<div class="card"><p style="color:red">Pacientul nu a fost găsit.</p></div>');
@@ -2654,10 +2672,10 @@ async function incarcaNecunoscute() {
   const el = document.getElementById('lista-necunoscute');
   el.innerHTML = '<p style="color:var(--gri)">Se încarcă…</p>';
   try {
-    const [nec, std] = await Promise.all([
-      fetch('/analize-necunoscute', { headers: getAuthHeaders() }).then(r => r.json()),
-      incarcaStandardeCache()
-    ]);
+    const rNec = await fetch('/analize-necunoscute', { headers: getAuthHeaders() });
+    if (handle401(rNec)) return;
+    const nec = rNec.ok ? await rNec.json() : [];
+    const std = await incarcaStandardeCache();
 
     // Actualizeaza badge
     const badge = document.getElementById('badge-nec');
@@ -2788,17 +2806,7 @@ function afiseazaMesaj(containerId, tip, html) {
   document.getElementById(containerId).innerHTML = `<div class="mesaj ${tip}">${html}</div>`;
 }
 
-// La incarcare initiala
-incarcaRecenti();
-// Verifica daca exista analize necunoscute si actualizeaza badge
-(async () => {
-  try {
-    const r = await fetch('/analize-necunoscute', { headers: getAuthHeaders() });
-    const lista = await r.json();
-    const badge = document.getElementById('badge-nec');
-    if (lista.length > 0) { badge.textContent = lista.length; badge.style.display = ''; }
-  } catch {}
-})();
+// incarcaRecenti si badge analize-necunoscute se apeleaza din checkAuth() dupa login
 </script>
 
 </div><!-- /app-container -->

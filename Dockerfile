@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /tessdata \
     && wget -q -O /tessdata/ron.traineddata \
-       https://github.com/tesseract-ocr/tessdata_fast/raw/main/ron.traineddata \
+       https://github.com/tesseract-ocr/tessdata/raw/main/ron.traineddata \
     && wget -q -O /tessdata/eng.traineddata \
-       https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
+       https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
 
 # Spune Tesseract unde sa gaseasca datele lingvistice
 ENV TESSDATA_PREFIX=/tessdata
@@ -21,4 +21,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}
+ENV PORT=8000
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
