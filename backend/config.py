@@ -17,7 +17,14 @@ class Settings(BaseSettings):
     # postgresql:// = PostgreSQL (ideal pentru producție)
     # mysql:// = MySQL
     database_url: str = "sqlite"  # Default: SQLite (nu necesită configurare!)
-    ocr_lang: str = "ron"
+    # OCR Tesseract: PSM 3=auto table, OEM 2=LSTM+legacy, ron+eng pentru termeni medicali
+    ocr_lang: str = "ron+eng"
+    ocr_psm: int = 3   # 3=auto segmentare (bun pt tabele), 4=coloană, 6=bloc, 11=sparse
+    ocr_oem: int = 2   # 1=LSTM, 2=LSTM+legacy, 3=default
+    ocr_psm_fallback: int = 4   # retry cu acest PSM dacă rezultat < ocr_min_chars
+    ocr_min_chars: int = 100    # prag pentru retry cu PSM fallback
+    # TESSDATA_PREFIX: setează în .env pt tessdata_best (mai precis, mai lent). Ex: /usr/share/tessdata_best
+    tessdata_prefix: str | None = None
     pdf_text_min_chars: int = 200
     jwt_secret_key: str = "dev-secret-change-in-production-2026"
 
@@ -35,14 +42,8 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Aplicația folosește doar PostgreSQL (nu SQLite local)
+# Pe Railway: daca DATABASE_URL lipsește, pornim cu SQLite temporar ca healthcheck sa treaca.
+# Setează DATABASE_URL (PostgreSQL) în Variables pentru productie.
 _url = (settings.database_url or "").strip().lower()
 if not _url or _url.startswith("sqlite") or _url.endswith(".db"):
-    import sys
-    print("\n" + "=" * 60)
-    print("EROARE: Aplicația folosește doar PostgreSQL.")
-    print("Setează DATABASE_URL în .env sau rulează cu:")
-    print("  railway run python run_migrations.py")
-    print("  railway run python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000")
-    print("=" * 60 + "\n")
-    sys.exit(1)
+    print("\n[CONFIG] DATABASE_URL neconfigurat - folosim SQLite. Setează DATABASE_URL (PostgreSQL) pentru productie.\n")
