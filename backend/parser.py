@@ -29,9 +29,9 @@ _LINII_EXCLUSE = re.compile(
     r"Acceptabil\s*:|Borderline|Crescut\s*[:\(]|Foarte\s+crescut|"
     r"Usor\s+crescut|Moderat\s+crescut|crescute?\s*[>:]|"
     r"Normal\s*:|Optim\s*:|Risc\s*:|Deficit\s+|Nivel\s+toxic|"
-    # Note cu varsta/trimestru + sex cu varsta
-    # ex: "F, 28 ani", "M, 1 an", "NITU MATEI    M, 1 an"
-    r"^[MF]\s*,\s*\d+\s*(?:ani?|luni?)|"
+    # Note cu sex+varsta: exclude din parametri ca sa nu ajunga "M, 1 an" sau "NITU MATEI M, 1 an" ca rezultat
+    # În extract_nume, liniile "NUME M, 1 an" sunt tratate special (nu se exclud din candidati)
+    r"^[MF]\s*,\s*\d+\s*(?:ani?|luni?)\s*$|"
     r".*\s[MF]\s*,\s*\d+\s*(?:ani?|luni?)|"
     r"\d{1,3}-\d{1,3}\s+ani|peste\s+\d+\s+ani|trimest|"
     r"persoanelor|persoane\s+varst|"
@@ -307,6 +307,20 @@ def _curata_nume(raw: str) -> str:
     return s
 
 
+def _looks_like_analysis(s: str) -> bool:
+    """Detecteaza daca textul arata ca denumire de analiza, nu nume pacient (ex: TGO (ASAT))."""
+    if not s or len(s) < 3:
+        return False
+    t = s.strip()
+    # Pattern tip analiza: "X (Y)" sau "TGO (ASAT)", "TGP (ALAT)"
+    if re.match(r"^[A-Za-z0-9]{2,15}\s*\([A-Za-z0-9/]+\)\s*$", t):
+        return True
+    # Denumiri scurte de analize (fara paranteze)
+    if t.upper() in ("TGO", "TGP", "ASAT", "ALAT", "CRP", "TSH", "MCV", "MCH", "MCHC", "RDW", "HDL", "LDL"):
+        return True
+    return False
+
+
 def extract_nume(text: str) -> tuple[str, Optional[str]]:
     """
     Incearca mai intai formatele explicite 'Nume pacient:', 'Nume:' (MedLife, Synevo etc.).
@@ -343,14 +357,20 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
     if m_cnp:
         before = text[:m_cnp.start()].strip()
         lines_before = [l.strip() for l in before.split("\n") if l.strip()]
+        # Linii "NUME PRENUME M, 1 an" - nu le excludem din candidati (sunt nume pacient)
+        _LINIE_NUME_CU_VARSTA = re.compile(
+            r"^\w+\s+\w+.*\s+[MF]\s*,\s*\d+\s*(?:ani?|luni?)\s*$",
+            re.IGNORECASE,
+        )
         for linie in reversed(lines_before):
             if re.match(r"^[\d\(]", linie):
                 continue
-            if _LINII_EXCLUSE.match(linie):
+            # Nu excludem "NITU MATEI M, 1 an" - e nume pacient; restul raman excluse
+            if _LINII_EXCLUSE.match(linie) and not _LINIE_NUME_CU_VARSTA.match(linie):
                 continue
             clean = re.sub(r"\s+[FM],\s*\d+\s*(luni|ani)\s*$", "", linie, flags=re.IGNORECASE).strip()
             clean = _curata_nume(clean)  # taie Medic trimitator, Varsta etc.
-            if clean and re.search(r"\b[A-ZȘȚĂÂÎ]{2,}", clean):
+            if clean and re.search(r"\b[A-ZȘȚĂÂÎ]{2,}", clean) and not _looks_like_analysis(clean):
                 parts = clean.split(None, 1)
                 return clean, parts[1] if len(parts) >= 2 else None
 

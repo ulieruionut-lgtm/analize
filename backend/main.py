@@ -42,6 +42,7 @@ from backend.database import (
     sterge_analiza_necunoscuta,
     update_rezultat,
     update_user_password,
+    update_pacient_nume,
     upsert_pacient,
 )
 from backend.models import PatientParsed
@@ -92,6 +93,25 @@ async def startup_event():
                         print(f"[STARTUP] Migrare 007: {e}")
                 finally:
                     conn.close()
+            # Migrare 008: alias Bioclinica (Hematii, Proteina C reactivă)
+            sql_008 = Path(__file__).resolve().parent.parent / "sql" / "008_pg_alias_bioclinica.sql"
+            if url and sql_008.exists():
+                try:
+                    conn = psycopg2.connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_008.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] ✓ Migrare 008 (alias Bioclinica) aplicata")
+                    except Exception as ex:
+                        conn.rollback()
+                        if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
+                            print(f"[STARTUP] Migrare 008: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 008 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     try:
@@ -601,6 +621,21 @@ async def get_pacient(cnp: str, current_user: dict = Depends(get_current_user)):
     return result
 
 
+@app.patch("/pacient/{cnp}")
+async def actualizeaza_pacient_nume(cnp: str, body: dict, current_user: dict = Depends(get_current_user)):
+    """Actualizeaza numele si/sau prenumele unui pacient (corectie nume corupte ex: TGO ASAT)."""
+    nume = (body.get("nume") or "").strip()
+    prenume = (body.get("prenume"))
+    if prenume is not None:
+        prenume = str(prenume).strip() or None
+    if not nume:
+        raise HTTPException(status_code=400, detail="Numele nu poate fi gol.")
+    ok = update_pacient_nume(cnp, nume, prenume)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pacient negasit.")
+    return {"message": "Nume actualizat.", "pacient": get_pacient_cu_analize(cnp)}
+
+
 @app.get("/analize-standard")
 async def lista_analize_standard(current_user: dict = Depends(get_current_user)):
     """Lista tuturor tipurilor de analize din baza de date."""
@@ -911,15 +946,14 @@ async def index():
     color: var(--albastru);
   }
   .btn-sterge-pacient {
-    display: none;
     background: none; border: none; cursor: pointer;
     color: var(--gri); font-size: 0.85rem; padding: 4px 8px;
-    border-radius: 4px; flex-shrink: 0;
+    border-radius: 4px;
     transition: color 0.15s, background 0.15s;
   }
-  .lista-pacienti-simpla li:hover .btn-sterge-pacient {
-    display: inline-block;
-  }
+  .lista-pacienti-simpla li:hover .btn-sterge-pacient { display: inline-block; }
+  .tabel-container .btn-sterge-pacient { display: inline-block; opacity: 0.6; }
+  .tabel-container table tr:hover .btn-sterge-pacient { opacity: 1; }
   .btn-sterge-pacient:hover {
     color: var(--rosu); background: #fff0f0;
   }
@@ -1224,7 +1258,7 @@ async def index():
       </div>
       <div id="lista-pacienti"></div>
     </div>
-    <div id="detaliu-pacient" style="display:none"></div>
+    <div id="continut-pacienti-dinamici" style="display:none;margin-top:24px"></div>
   </div>
 
   <!-- TAB 3: Evolutie analiza pacient -->
@@ -1351,9 +1385,6 @@ async def index():
 
 </div><!-- /content -->
 
-<!-- Zona continut tab-uri dinamice pacienti -->
-<div id="continut-pacienti-dinamici" style="display:none"></div>
-
 <script>
 // ─── Tab-uri dinamice pacienti ───────────────────────────────────────────────
 const _tabPacienti = {};   // { cnp: { nume, html } }
@@ -1408,17 +1439,16 @@ function deschideTabPacient(cnp, nume, htmlContent) {
 function activeazaTabPacient(cnp) {
   const continutDinamic = document.getElementById('continut-pacienti-dinamici');
 
-  // Dezactiveaza tab-urile principale
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('activ'));
+  // Păstrăm tab-ul Pacient vizibil (listă + detaliu), nu îl ascundem
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('activ', ['upload','pacient','analiza','alias','setari'][i] === 'pacient'));
   document.querySelectorAll('.sectiune').forEach(s => s.classList.remove('activa'));
-  document.getElementById('continut-pacienti-dinamici').style.display = '';
+  document.getElementById('tab-pacient').classList.add('activa');
 
-  // Marcheaza tab-ul activ
+  continutDinamic.style.display = '';
   document.querySelectorAll('.tab-pacient-btn').forEach(b => b.classList.remove('activ'));
   const btn = document.querySelector('.tab-pacient-btn[data-cnp="' + cnp + '"]');
   if (btn) btn.classList.add('activ');
 
-  // Afiseaza continutul
   continutDinamic.innerHTML = _tabPacienti[cnp]?.html || '';
   _tabPacientActiv = cnp;
 }
@@ -1899,12 +1929,19 @@ async function incarcaListaPacienti(q) {
       el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">Niciun pacient găsit.</p>';
       return;
     }
-    el.innerHTML = '<ul class="lista-pacienti-simpla">' +
-      lista.map(p => `<li>
-        <button class="btn-pacient-link" onclick="veziPacient('${escHtml(p.cnp)}')">${escHtml(p.nume||'')}${p.prenume?' '+escHtml(p.prenume):''}</button>
-        <button class="btn-sterge-pacient" onclick="stergePacientDinLista(${p.id},'${escHtml(p.nume||'')}','${escHtml(p.cnp)}')" title="Șterge pacient">✕</button>
-      </li>`).join('') +
-      '</ul>';
+    const nrB = n => n === 1 ? '1 buletin' : (n || 0) + ' buletine';
+    el.innerHTML = '<div class="tabel-container"><table>' +
+      '<thead><tr><th>Nume</th><th>CNP</th><th>Buletine</th><th>Acțiune</th></tr></thead><tbody>' +
+      lista.map(p => `<tr>
+        <td><strong>${escHtml(p.nume||'')}</strong>${p.prenume?' '+escHtml(p.prenume):''}</td>
+        <td style="font-family:monospace;font-size:0.9rem">${escHtml(p.cnp)}</td>
+        <td><span class="badge badge-norm" style="cursor:default">${nrB(p.nr_buletine)}</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.82rem" onclick="veziPacient('${escHtml(p.cnp)}')" title="Vezi analize">👤 Analize</button>
+          <button class="btn-sterge-pacient" data-id="${p.id}" data-nume="${escHtml((p.nume||'')+(p.prenume?' '+p.prenume:''))}" data-cnp="${escHtml(p.cnp)}" onclick="stergePacientDinListaEl(this)" title="Șterge pacient" style="margin-left:4px">✕</button>
+        </td>
+      </tr>`).join('') +
+      '</tbody></table></div>';
   } catch(e) {
     el.innerHTML = '<p style="color:red">Eroare: ' + e.message + '</p>';
   }
@@ -1935,12 +1972,16 @@ async function veziPacient(cnp) {
     const numePacient = (data.pacient.nume||'') + (data.pacient.prenume ? ' ' + data.pacient.prenume : '');
     const initiale = (data.pacient.nume||'?').substring(0,1);
 
-    // Header pacient
+    // Header pacient (cu buton Editează nume pentru corectie nume corupte)
+    const numePrenumeJson = JSON.stringify({n: data.pacient.nume||'', p: data.pacient.prenume||''}).replace(/'/g,'&#39;');
     let html = `<div class="card">
       <div class="pacient-header">
         <div class="pacient-avatar">${escHtml(initiale)}</div>
         <div class="pacient-info">
-          <h3>${escHtml(data.pacient.nume||'')}${data.pacient.prenume?' '+escHtml(data.pacient.prenume):''}</h3>
+          <h3>${escHtml(data.pacient.nume||'')}${data.pacient.prenume?' '+escHtml(data.pacient.prenume):''}
+            <button data-cnp="${escHtml(cnp)}" data-pacient='${numePrenumeJson}' onclick="editeazaNumePacient(this)" title="Editează nume (ex: corectie TGO ASAT)"
+              style="background:none;border:none;cursor:pointer;color:var(--albastru);font-size:0.75rem;padding:2px 6px;margin-left:6px">✏️</button>
+          </h3>
           <p>CNP: <strong style="font-family:monospace">${escHtml(data.pacient.cnp)}</strong></p>
           <p>Buletine: <strong>${data.date_buletine.length}</strong> &nbsp;|&nbsp; Analize: <strong>${data.analize.length}</strong></p>
         </div>
@@ -2407,6 +2448,12 @@ async function inchideModalEditSiReincarca() {
   }
 }
 
+function stergePacientDinListaEl(btn) {
+  const id = btn.getAttribute('data-id');
+  const nume = btn.getAttribute('data-nume') || '';
+  const cnp = btn.getAttribute('data-cnp') || '';
+  stergePacientDinLista(parseInt(id), nume, cnp);
+}
 async function stergePacientDinLista(pacientId, numePacient, cnp) {
   if (!confirm('Ștergi pacientul "' + numePacient + '" cu TOATE buletinele și analizele lui? Acțiunea nu poate fi anulată!')) return;
   try {
@@ -2417,6 +2464,33 @@ async function stergePacientDinLista(pacientId, numePacient, cnp) {
       incarcaListaPacienti('');
     } else {
       alert('Eroare: ' + (j.detail || 'Nu s-a putut șterge pacientul.'));
+    }
+  } catch(e) {
+    alert('Eroare: ' + e.message);
+  }
+}
+
+async function editeazaNumePacient(btn) {
+  const cnp = btn.getAttribute('data-cnp');
+  let dat = {n:'', p:''};
+  try { dat = JSON.parse(btn.getAttribute('data-pacient')||'{}'); } catch {}
+  const n = prompt('Nume pacient (ex: POPESCU):', dat.n || '');
+  if (n === null) return;
+  const p = prompt('Prenume (optional, Enter pt gol):', dat.p || '');
+  if (p === null) return;
+  try {
+    const r = await fetch('/pacient/' + encodeURIComponent(cnp), {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nume: n.trim(), prenume: (p||'').trim() || null })
+    });
+    if (handle401(r)) return;
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      delete _tabPacienti[cnp];
+      await veziPacient(cnp);
+    } else {
+      alert('Eroare: ' + (j.detail || r.status));
     }
   } catch(e) {
     alert('Eroare: ' + e.message);

@@ -129,26 +129,79 @@ def _row_to_dict(row) -> dict:
 
 
 # --- Pacienti ---
+# Nume considerate invalide/corupte - la upload nou, NU le suprascriem pe cele deja valide
+def _nume_invalid(nume: Optional[str]) -> bool:
+    """Returneaza True daca numele e corupt sau necunoscut (se poate inlocui la upload)."""
+    import re
+    if not nume or not str(nume).strip():
+        return True
+    s = str(nume).strip()
+    if s == "Necunoscut":
+        return True
+    if len(s) > 80:
+        return True
+    low = s.lower()
+    if any(x in low for x in ("medic", "varsta", "pacient", "nume pacient", "beneficiar", "cod client")):
+        return True
+    # Nume tip analiză (ex: "TGO (ASAT)", "CRP (mg/L)") – parser OCR confundă uneori
+    if re.match(r"^[A-Za-z0-9]{2,20}\s*\([A-Za-z0-9/]+\)$", s, re.IGNORECASE):
+        return True
+    return False
+
+
 def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
+    """Insereaza sau actualizeaza pacient. NU suprascrie nume/prenume daca existentul e deja valid."""
+    # Nume tip analiza (ex: TGO (ASAT)) - considerate invalide pentru suprascriere
+    cond_invalid = (
+        "nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' "
+        "OR nume LIKE '%pacient%' OR LENGTH(nume) > 80 "
+        "OR (nume LIKE '% (%)' AND LENGTH(nume) < 35)"
+    )
     if _use_sqlite():
         with get_cursor() as cur:
             cur.execute(
-                "INSERT INTO pacienti (cnp, nume, prenume) VALUES (?, ?, ?) ON CONFLICT(cnp) DO UPDATE SET nume=excluded.nume, prenume=excluded.prenume",
+                f"""INSERT INTO pacienti (cnp, nume, prenume) VALUES (?, ?, ?)
+                ON CONFLICT(cnp) DO UPDATE SET
+                  nume = CASE WHEN {cond_invalid}
+                         THEN excluded.nume ELSE nume END,
+                  prenume = CASE WHEN {cond_invalid}
+                         THEN excluded.prenume ELSE prenume END""",
                 (cnp, nume, prenume or ""),
             )
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = ?", (cnp,))
             return dict(cur.fetchone())
+    cond_invalid_pg = cond_invalid.replace("nume", "pacienti.nume")
     with get_cursor() as cur:
         cur.execute(
-            """
+            f"""
             INSERT INTO pacienti (cnp, nume, prenume)
             VALUES (%s, %s, %s)
-            ON CONFLICT (cnp) DO UPDATE SET nume = EXCLUDED.nume, prenume = EXCLUDED.prenume
+            ON CONFLICT (cnp) DO UPDATE SET
+              nume = CASE WHEN {cond_invalid_pg}
+                   THEN EXCLUDED.nume ELSE pacienti.nume END,
+              prenume = CASE WHEN {cond_invalid_pg}
+                   THEN EXCLUDED.prenume ELSE pacienti.prenume END
             RETURNING id, cnp, nume, prenume, created_at
             """,
             (cnp, nume, prenume or ""),
         )
         return dict(cur.fetchone())
+
+
+def update_pacient_nume(cnp: str, nume: str, prenume: Optional[str] = None) -> bool:
+    """Actualizeaza numele și prenumele unui pacient. Returneaza True dacă s-a actualizat."""
+    with get_cursor() as cur:
+        if _use_sqlite():
+            cur.execute(
+                "UPDATE pacienti SET nume = ?, prenume = ? WHERE cnp = ?",
+                (nume.strip(), (prenume or "").strip() or None, cnp),
+            )
+        else:
+            cur.execute(
+                "UPDATE pacienti SET nume = %s, prenume = %s WHERE cnp = %s",
+                (nume.strip(), (prenume or "").strip() or None, cnp),
+            )
+        return cur.rowcount > 0
 
 
 def get_pacient_by_cnp(cnp: str) -> Optional[dict]:
@@ -159,6 +212,33 @@ def get_pacient_by_cnp(cnp: str) -> Optional[dict]:
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = %s", (cnp,))
         row = cur.fetchone()
         return _row_to_dict(row) if row else None
+
+
+# Pacienti cu nume cunoscut de corectat (cnp, nume, prenume)
+_PACIENTI_FIX_NUME = [
+    ("2470112080077", "VLADASEL", "ELENA"),
+    ("1461208080072", "VLADASEL", "AUREL-NICOLAE-SORIN"),
+    ("2540207080070", "PETREAN", "ANA"),
+    ("1420917080026", "IANCU", "GHEORGHE"),
+    ("2970424080038", "MANDACHE", "OANA ALEXANDRA"),
+    ("5240222080031", "NITU", "MATEI"),
+]
+
+
+def fix_pacienti_nume_cunoscuti() -> list:
+    """Corecteaza numele pacienților cunoscuți cu date corupte (doar cand numele curent e invalid)."""
+    rez = []
+    for cnp, nume, prenume in _PACIENTI_FIX_NUME:
+        pacient = get_pacient_by_cnp(cnp)
+        if not pacient or not _nume_invalid(pacient.get("nume")):
+            continue  # nu exista sau numele e deja corect
+        with get_cursor() as cur:
+            if _use_sqlite():
+                cur.execute("UPDATE pacienti SET nume = ?, prenume = ? WHERE cnp = ?", (nume, prenume, cnp))
+            else:
+                cur.execute("UPDATE pacienti SET nume = %s, prenume = %s WHERE cnp = %s", (nume, prenume, cnp))
+        rez.append({"cnp": cnp, "nume": nume, "prenume": prenume})
+    return rez
 
 
 # --- Buletine ---

@@ -197,6 +197,7 @@ INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Whi
 
 -- ── Eritrocite ─────────────────────────────────────────────────────────────
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Eritrocite' FROM analiza_standard WHERE cod_standard='RBC';
+INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Hematii' FROM analiza_standard WHERE cod_standard='RBC';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'RBC' FROM analiza_standard WHERE cod_standard='RBC';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Nr. eritrocite' FROM analiza_standard WHERE cod_standard='RBC';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Numar eritrocite' FROM analiza_standard WHERE cod_standard='RBC';
@@ -490,6 +491,7 @@ INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Ant
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'CRP' FROM analiza_standard WHERE cod_standard='CRP';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'CRP cantitativ' FROM analiza_standard WHERE cod_standard='CRP';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Proteina C reactiva' FROM analiza_standard WHERE cod_standard='CRP';
+INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Proteina C reactivă' FROM analiza_standard WHERE cod_standard='CRP';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'Proteina C reactiva (PCR)' FROM analiza_standard WHERE cod_standard='CRP';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'C-Reactive Protein' FROM analiza_standard WHERE cod_standard='CRP';
 INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) SELECT id, 'PCR cantitativ' FROM analiza_standard WHERE cod_standard='CRP';
