@@ -239,7 +239,7 @@ def _log_necunoscuta(denumire_raw: str) -> None:
                     """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii)
                        VALUES (%s, 1)
                        ON CONFLICT(denumire_raw) DO UPDATE SET
-                           aparitii = aparitii + 1,
+                           aparitii = analiza_necunoscuta.aparitii + EXCLUDED.aparitii,
                            updated_at = NOW()""",
                     (denumire_raw.strip(),)
                 )
