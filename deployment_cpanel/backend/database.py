@@ -121,11 +121,17 @@ def _row_to_dict(row) -> dict:
 
 
 # --- Pacienti ---
+# NU suprascrie nume/prenume daca existentul e deja valid (evita corupere la upload repetat)
 def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
     if _use_sqlite():
         with get_cursor() as cur:
             cur.execute(
-                "INSERT INTO pacienti (cnp, nume, prenume) VALUES (?, ?, ?) ON CONFLICT(cnp) DO UPDATE SET nume=excluded.nume, prenume=excluded.prenume",
+                """INSERT INTO pacienti (cnp, nume, prenume) VALUES (?, ?, ?)
+                ON CONFLICT(cnp) DO UPDATE SET
+                  nume = CASE WHEN nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' OR nume LIKE '%pacient%' OR LENGTH(nume) > 80
+                         THEN excluded.nume ELSE nume END,
+                  prenume = CASE WHEN nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' OR nume LIKE '%pacient%' OR LENGTH(nume) > 80
+                         THEN excluded.prenume ELSE prenume END""",
                 (cnp, nume, prenume or ""),
             )
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = ?", (cnp,))
@@ -135,7 +141,17 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
             """
             INSERT INTO pacienti (cnp, nume, prenume)
             VALUES (%s, %s, %s)
-            ON CONFLICT (cnp) DO UPDATE SET nume = EXCLUDED.nume, prenume = EXCLUDED.prenume
+            ON CONFLICT (cnp) DO UPDATE SET
+              nume = CASE WHEN pacienti.nume = '' OR pacienti.nume = 'Necunoscut'
+                         OR pacienti.nume LIKE '%%Medic%%' OR pacienti.nume LIKE '%%Varsta%%'
+                         OR pacienti.nume LIKE '%%pacient%%' OR pacienti.nume LIKE '%%beneficiar%%'
+                         OR LENGTH(pacienti.nume) > 80
+                   THEN EXCLUDED.nume ELSE pacienti.nume END,
+              prenume = CASE WHEN pacienti.nume = '' OR pacienti.nume = 'Necunoscut'
+                         OR pacienti.nume LIKE '%%Medic%%' OR pacienti.nume LIKE '%%Varsta%%'
+                         OR pacienti.nume LIKE '%%pacient%%' OR pacienti.nume LIKE '%%beneficiar%%'
+                         OR LENGTH(pacienti.nume) > 80
+                   THEN EXCLUDED.prenume ELSE pacienti.prenume END
             RETURNING id, cnp, nume, prenume, created_at
             """,
             (cnp, nume, prenume or ""),

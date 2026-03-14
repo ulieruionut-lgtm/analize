@@ -18,6 +18,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2Pas
 from backend.auth import create_access_token, decode_token, hash_password, verify_password
 from backend.config import settings
 from backend.database import (
+    get_laboratoare,
+    get_laborator_analize,
     create_user as db_create_user,
     delete_buletin,
     delete_pacient,
@@ -25,6 +27,7 @@ from backend.database import (
     delete_user_by_id,
     ensure_default_admin,
     export_backup_data,
+    restore_from_backup,
     get_all_analize_standard,
     get_all_pacienti,
     get_all_users,
@@ -71,13 +74,46 @@ async def get_current_user(
 @app.on_event("startup")
 async def startup_event():
     """La pornire: migrare ordine/categorie, admin default, corectare nume pacienti."""
-    # Migrare 007: ordine + categorie pe PostgreSQL (daca lipsesc)
     try:
         from backend.config import settings
         url = (settings.database_url or "").strip()
         if url and url.lower().startswith("postgresql"):
             import psycopg2
+            import time
             from pathlib import Path
+            sql_dir = Path(__file__).resolve().parent.parent / "sql"
+            conn = None
+            for attempt in range(5):
+                try:
+                    conn = psycopg2.connect(url)
+                    break
+                except Exception as e:
+                    print(f"[STARTUP] DB connect attempt {attempt+1}/5: {e}")
+                    time.sleep(2)
+            if conn:
+                conn.autocommit = False
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'pacienti'")
+                    if cur.fetchone() is None:
+                        for fname in ["001_schema.sql", "003_users_auth_postgres.sql", "004_pg_analize_extinse.sql", "005_pg_alias_fix.sql", "006_pg_alias_ocr.sql"]:
+                            path = sql_dir / fname
+                            if path.exists():
+                                try:
+                                    sql = path.read_text(encoding="utf-8")
+                                    cur.execute(sql)
+                                    conn.commit()
+                                    print(f"[STARTUP] ✓ Schema PG: {fname}")
+                                except Exception as ex:
+                                    conn.rollback()
+                                    print(f"[STARTUP] Schema PG {fname}: {ex}")
+                    cur.close()
+                except Exception as ex:
+                    if conn:
+                        conn.rollback()
+                    print(f"[STARTUP] Schema PG init: {ex}")
+                finally:
+                    conn.close()
             sql_path = Path(__file__).resolve().parent.parent / "sql" / "007_ordine_categorie.sql"
             if sql_path.exists():
                 conn = psycopg2.connect(url)
@@ -112,8 +148,75 @@ async def startup_event():
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 008 (ignorat): {ex}")
+            # Migrare 009: laboratoare + catalog analize
+            sql_009 = Path(__file__).resolve().parent.parent / "sql" / "009_pg_laboratoare_catalog.sql"
+            if url and sql_009.exists():
+                try:
+                    conn = psycopg2.connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_009.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] ✓ Migrare 009 (laboratoare, catalog) aplicata")
+                    except Exception as ex:
+                        conn.rollback()
+                        if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
+                            print(f"[STARTUP] Migrare 009: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 009 (ignorat): {ex}")
+            sql_010_pg = Path(__file__).resolve().parent.parent / "sql" / "010_pg_alias_laboratoare.sql"
+            if url and sql_010_pg.exists():
+                try:
+                    conn = psycopg2.connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_010_pg.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] ✓ Migrare 010 (alias laboratoare) aplicata")
+                    except Exception as ex:
+                        conn.rollback()
+                        if "duplicate" not in str(ex).lower():
+                            print(f"[STARTUP] Migrare 010: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 010 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
+    # Migrare 009 pentru SQLite (tabele laboratoare)
+    try:
+        from backend.database import get_connection, _use_sqlite
+        if _use_sqlite():
+            sql_009_sqlite = Path(__file__).resolve().parent.parent / "sql" / "009_laboratoare_catalog.sql"
+            if sql_009_sqlite.exists():
+                conn = get_connection()
+                try:
+                    conn.executescript(sql_009_sqlite.read_text(encoding="utf-8"))
+                    conn.commit()
+                    print("[STARTUP] ✓ Migrare 009 SQLite (laboratoare) aplicata")
+                except Exception as ex:
+                    if "already exists" not in str(ex).lower():
+                        print(f"[STARTUP] Migrare 009 SQLite: {ex}")
+                finally:
+                    conn.close()
+            sql_010 = Path(__file__).resolve().parent.parent / "sql" / "010_alias_laboratoare.sql"
+            if sql_010.exists():
+                try:
+                    conn = get_connection()
+                    conn.executescript(sql_010.read_text(encoding="utf-8"))
+                    conn.commit()
+                    print("[STARTUP] ✓ Migrare 010 SQLite (alias laboratoare) aplicata")
+                except Exception as ex:
+                    if "UNIQUE constraint" not in str(ex):
+                        print(f"[STARTUP] Migrare 010 SQLite: {ex}")
+                finally:
+                    conn.close()
+    except Exception as ex:
+        print(f"[STARTUP] Migrare 009 SQLite (ignorat): {ex}")
     try:
         print("[STARTUP] Verificare/Creare utilizator admin...")
         result = ensure_default_admin()
@@ -216,13 +319,68 @@ _PARSER_VERSION = "nitu-v3-20250222"
 async def health():
     """Returneaza 200 mereu - Railway healthcheck necesita 2xx ca deployment sa treaca."""
     try:
-        from backend.database import get_cursor
+        from backend.database import get_cursor, _use_sqlite
         with get_cursor() as cur:
             cur.execute("SELECT 1")
-        return {"status": "ok", "database": "connected", "parser_version": _PARSER_VERSION}
+        db_type = "sqlite" if _use_sqlite() else "postgresql"
+        return {
+            "status": "ok",
+            "database": "connected",
+            "database_type": db_type,
+            "parser_version": _PARSER_VERSION,
+        }
     except Exception as e:
         # 200 chiar daca DB esueaza - evitam "Healthcheck failure" pe Railway
         return {"status": "degraded", "database": str(e)[:150], "parser_version": _PARSER_VERSION}
+
+
+@app.get("/api/migrate")
+@app.post("/api/migrate")
+async def run_migrations():
+    """Rulează migrările PostgreSQL dacă tabelele lipsesc. Accesează în browser pentru setup inițial."""
+    from backend.config import settings
+    url = (settings.database_url or "").strip()
+    if not url or not url.lower().startswith("postgresql"):
+        return {"ok": False, "detail": "Nu folosești PostgreSQL."}
+    try:
+        import psycopg2
+        from pathlib import Path
+        sql_dir = Path(__file__).resolve().parent.parent / "sql"
+        conn = psycopg2.connect(url)
+        conn.autocommit = False
+        done = []
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'pacienti'")
+            if cur.fetchone() is None:
+                for fname in ["001_schema.sql", "003_users_auth_postgres.sql", "004_pg_analize_extinse.sql", "005_pg_alias_fix.sql", "006_pg_alias_ocr.sql", "007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql"]:
+                    path = sql_dir / fname
+                    if path.exists():
+                        try:
+                            cur.execute(path.read_text(encoding="utf-8"))
+                            conn.commit()
+                            done.append(fname)
+                        except Exception as ex:
+                            conn.rollback()
+                            return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
+            else:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql"]:
+                    path = sql_dir / fname
+                    if path.exists():
+                        try:
+                            cur.execute(path.read_text(encoding="utf-8"))
+                            conn.commit()
+                            done.append(fname)
+                        except Exception as ex:
+                            conn.rollback()
+                            if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
+                                return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
+            cur.close()
+            return {"ok": True, "detail": "Migrări aplicate.", "done": done}
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
 
 
 @app.post("/login")
@@ -339,6 +497,30 @@ async def backup_export(current_user: dict = Depends(get_current_user)):
         return JSONResponse(
             status_code=500,
             content={"detail": f"Eroare la export: {str(e)}"},
+        )
+
+
+@app.post("/api/restore")
+async def backup_restore(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Importa backup JSON. Doar admin. Adauga date peste existente."""
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Doar admin poate importa backup-ul.")
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Fișierul trebuie să fie JSON.")
+    try:
+        content = await file.read()
+        data = json.loads(content.decode("utf-8"))
+        rez = restore_from_backup(data)
+        return rez
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"JSON invalid: {e}")
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Eroare la import: {str(e)}"},
         )
 
 
@@ -636,6 +818,18 @@ async def actualizeaza_pacient_nume(cnp: str, body: dict, current_user: dict = D
     return {"message": "Nume actualizat.", "pacient": get_pacient_cu_analize(cnp)}
 
 
+@app.get("/laboratoare")
+async def lista_laboratoare(current_user: dict = Depends(get_current_user)):
+    """Lista laboratoare cu numar analize in catalog."""
+    return get_laboratoare()
+
+
+@app.get("/laboratoare/{laborator_id}/analize")
+async def catalog_laborator(laborator_id: int, current_user: dict = Depends(get_current_user)):
+    """Catalog analize pentru un laborator."""
+    return get_laborator_analize(laborator_id)
+
+
 @app.get("/analize-standard")
 async def lista_analize_standard(current_user: dict = Depends(get_current_user)):
     """Lista tuturor tipurilor de analize din baza de date."""
@@ -756,6 +950,14 @@ async def aproba_alias(body: dict, current_user: dict = Depends(get_current_user
     if ok:
         return {"ok": True, "mesaj": f"Alias '{raw}' asociat cu succes."}
     return JSONResponse(status_code=500, content={"detail": "Eroare la salvarea alias-ului."})
+
+
+@app.post("/invalideaza-cache-alias")
+async def invalideaza_cache_alias(current_user: dict = Depends(get_current_user)):
+    """Invalideaza cache-ul alias-urilor (dupa aprobari bulk) - asigura ca toate workerii invata."""
+    from backend.normalizer import invalideaza_cache
+    invalideaza_cache()
+    return {"ok": True, "mesaj": "Cache alias invalidat."}
 
 
 @app.delete("/analiza-necunoscuta/{id_nec}")
@@ -1198,7 +1400,7 @@ async def index():
     <div class="sub">Panou medic – v11.03.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none">📥 Export backup</button>
+    <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none" title="Exportă backup înainte de redeploy (Railway)">📥 Export backup</button>
     <button class="btn-logout" onclick="logout()">Ieșire</button>
   </div>
 </div>
@@ -1244,8 +1446,8 @@ async def index():
       <div id="upload-out"></div>
     </div>
     <div class="card" id="card-pacienti-recenti" style="display:none">
-      <h2>Pacienți procesați recent</h2>
-      <div id="lista-recenti"></div>
+      <h2>Pacienți încărcați</h2>
+      <div id="lista-recenti" style="max-height:400px;overflow-y:auto"></div>
     </div>
   </div>
 
@@ -1360,10 +1562,23 @@ async def index():
       </div>
       <p id="setari-msg-parola" style="margin-top:10px;font-size:0.88rem;display:none"></p>
     </div>
+    <div class="card">
+      <h2>Catalog laboratoare</h2>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Laboratoare cu analize înregistrate în catalog.</p>
+      <div id="lista-laboratoare"><p style="color:var(--gri)">Se încarcă…</p></div>
+    </div>
     <div class="card" id="card-backup" style="display:none">
       <h2>Backup baza de date</h2>
-      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Descarcă o copie de siguranță a pacienților, buletinelor și rezultatelor (fișier JSON).</p>
-      <button class="btn btn-primary" id="btn-export-backup" onclick="exportBackup(this)">Exportă backup</button>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Exportă backup înainte de redeploy (Railway). Descarcă o copie de siguranță a pacienților, buletinelor și rezultatelor (fișier JSON).</p>
+      <p id="setari-db-type" style="font-size:0.82rem;margin-bottom:12px;padding:6px 10px;background:#f0f7ff;border-radius:6px;display:none"></p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+        <button class="btn btn-primary" id="btn-export-backup" onclick="exportBackup(this)">Exportă backup</button>
+        <div>
+          <input type="file" id="input-restore" accept=".json" style="display:none" onchange="importBackup(this)">
+          <button class="btn btn-secondary" id="btn-import-backup" onclick="document.getElementById('input-restore').click()">Importă backup</button>
+        </div>
+      </div>
+      <p id="setari-msg-restore" style="font-size:0.88rem;display:none"></p>
     </div>
     <div class="card" id="card-user-management" style="display:none">
       <h2>Gestionare utilizatori</h2>
@@ -1567,6 +1782,19 @@ async function incarcaSetari() {
       card.style.display = 'block';
       if (cardBackup) cardBackup.style.display = 'block';
       incarcaListaUtilizatori();
+      (async function() {
+        try {
+          const h = await fetch('/health');
+          const d = await h.json();
+          const el = document.getElementById('setari-db-type');
+          if (el && d.database_type) {
+            el.style.display = '';
+            el.innerHTML = d.database_type === 'postgresql'
+              ? '✅ <strong>PostgreSQL</strong> – datele persistă la redeploy'
+              : '⚠️ <strong>SQLite</strong> – datele se pierd la redeploy. Adaugă PostgreSQL în Railway.';
+          }
+        } catch {}
+      })();
     } else {
       card.style.display = 'none';
       if (cardBackup) cardBackup.style.display = 'none';
@@ -1574,6 +1802,46 @@ async function incarcaSetari() {
   } catch {
     card.style.display = 'none';
     if (cardBackup) cardBackup.style.display = 'none';
+  }
+  incarcaLaboratoare();
+}
+
+async function incarcaLaboratoare() {
+  const el = document.getElementById('lista-laboratoare');
+  if (!el) return;
+  try {
+    const r = await fetch('/laboratoare', { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Eroare');
+    const labs = await r.json();
+    if (!labs || labs.length === 0) {
+      el.innerHTML = '<p style="color:var(--gri);font-size:0.88rem">Niciun laborator în catalog. Rulează: <code>python scripts/import_lab_data.py</code></p>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+    for (const lab of labs) {
+      html += '<div style="border:1px solid #e0e0e0;border-radius:6px;padding:10px 14px">';
+      html += '<strong>' + escHtml(lab.nume) + '</strong>';
+      if (lab.website) html += ' <a href="' + escHtml(lab.website) + '" target="_blank" style="font-size:0.8rem;color:var(--albastru)">site</a>';
+      html += ' <span style="font-size:0.8rem;color:var(--gri)">(' + (lab.nr_analize || 0) + ' analize)</span>';
+      html += '<button type="button" class="btn btn-secondary" style="margin-left:10px;padding:4px 10px;font-size:0.8rem" onclick="veziCatalogLaborator(' + lab.id + ',\'' + escHtml(lab.nume).replace(/'/g,"\\'") + '\')">Vezi catalog</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<p style="color:var(--rosu)">Eroare la încărcare.</p>';
+  }
+}
+
+async function veziCatalogLaborator(id, nume) {
+  try {
+    const r = await fetch('/laboratoare/' + id + '/analize', { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Eroare');
+    const analize = await r.json();
+    const lines = analize.map(a => escHtml(a.denumire_standard) + (a.cod_standard ? ' <span style="color:#999">(' + escHtml(a.cod_standard) + ')</span>' : ''));
+    alert('Catalog ' + nume + ':\\n\\n' + (lines.length ? lines.join('\\n') : '(gol)'));
+  } catch (e) {
+    alert('Eroare: ' + e.message);
   }
 }
 
@@ -1609,6 +1877,48 @@ async function exportBackup(btnEl) {
     alert('Eroare: ' + (e.message || ''));
   } finally {
     btns.forEach(b => { b.disabled = false; b.textContent = b._txt || 'Exportă backup'; });
+  }
+}
+
+async function importBackup(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  const msgEl = document.getElementById('setari-msg-restore');
+  const btnEl = document.getElementById('btn-import-backup');
+  msgEl.style.display = '';
+  msgEl.style.color = 'var(--gri)';
+  msgEl.textContent = 'Se importă…';
+  btnEl.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/restore', {
+      method: 'POST',
+      body: fd,
+      headers: getAuthHeaders()
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      msgEl.style.color = 'var(--rosu)';
+      msgEl.textContent = j.detail || 'Eroare ' + r.status;
+      return;
+    }
+    const parts = [];
+    if (j.pacienti) parts.push(j.pacienti + ' pacienți');
+    if (j.buletine) parts.push(j.buletine + ' buletine');
+    if (j.rezultate) parts.push(j.rezultate + ' rezultate');
+    msgEl.style.color = 'var(--verde)';
+    msgEl.textContent = 'Import reușit: ' + (parts.length ? parts.join(', ') : 'date adăugate');
+    if (j.erori && j.erori.length) {
+      msgEl.textContent += '. Avertismente: ' + j.erori.slice(0, 3).join('; ');
+    }
+    inputEl.value = '';
+    incarcaRecenti();
+  } catch (e) {
+    msgEl.style.color = 'var(--rosu)';
+    msgEl.textContent = 'Eroare: ' + (e.message || '');
+  } finally {
+    btnEl.disabled = false;
   }
 }
 
@@ -1744,7 +2054,12 @@ function schimbTab(id) {
   document.getElementById('continut-pacienti-dinamici').style.display = 'none';
   document.querySelectorAll('.tab-pacient-btn').forEach(b => b.classList.remove('activ'));
   _tabPacientActiv = null;
-  if (id === 'pacient') incarcaListaPacienti('');
+  if (id === 'pacient') {
+    clearTimeout(_cautaPacientTimer);
+    const inp = document.getElementById('q-pacient');
+    if (inp) inp.value = '';
+    afiseazaPlaceholderPacienti();
+  }
   if (id === 'alias') incarcaNecunoscute();
   if (id === 'setari') incarcaSetari();
   if (id === 'analiza') incarcaAnalizeleStandard();
@@ -1889,9 +2204,12 @@ async function trimite(debugMode) {
   if (bv) bv.disabled = false;
   btnText.textContent = total === 1 ? 'Procesează PDF' : 'Procesează ' + total + ' PDF-uri';
   prog.textContent = '';
-  fisierSelectat = [];
-  document.getElementById('file-name').innerHTML = '';
-  fileInput.value = '';
+  // La verificare (debug), nu ștergem fișierele – utilizatorul poate da apoi Procesare pentru a salva
+  if (!debugMode) {
+    fisierSelectat = [];
+    document.getElementById('file-name').innerHTML = '';
+    fileInput.value = '';
+  }
 }
 
 async function incarcaRecenti() {
@@ -1901,10 +2219,9 @@ async function incarcaRecenti() {
     const lista = r.ok ? await r.json() : [];
     if (!lista.length) return;
     document.getElementById('card-pacienti-recenti').style.display = '';
-    const top5 = lista.slice(0,5);
     document.getElementById('lista-recenti').innerHTML =
-      top5.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span><strong>${escHtml(p.nume||'')}</strong> <span style="color:var(--gri);font-size:0.82rem">CNP: ${escHtml(p.cnp)}</span></span>
+      lista.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span><strong>${escHtml(p.nume||'')}</strong>${(p.prenume?' '+escHtml(p.prenume):'')} <span style="color:var(--gri);font-size:0.82rem">CNP: ${escHtml(p.cnp)}</span></span>
         <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.8rem" onclick="veziPacient('${escHtml(p.cnp)}')">Vezi</button>
       </div>`).join('');
   } catch {}
@@ -1912,6 +2229,12 @@ async function incarcaRecenti() {
 
 // ─── Pacient ─────────────────────────────────────────────────────────────────
 let _cautaPacientTimer = null;
+const PLACEHOLDER_PACIENTI = '<p style="color:var(--gri);text-align:center;padding:24px;font-size:0.92rem">Introduceți CNP sau Nume pentru a căuta pacienți.</p>';
+
+function afiseazaPlaceholderPacienti() {
+  document.getElementById('lista-pacienti').innerHTML = PLACEHOLDER_PACIENTI;
+}
+
 function cautaPacient(q) {
   clearTimeout(_cautaPacientTimer);
   _cautaPacientTimer = setTimeout(() => incarcaListaPacienti(q), 320);
@@ -1919,9 +2242,14 @@ function cautaPacient(q) {
 
 async function incarcaListaPacienti(q) {
   const el = document.getElementById('lista-pacienti');
+  const termen = (q || '').trim();
+  if (!termen) {
+    el.innerHTML = PLACEHOLDER_PACIENTI;
+    return;
+  }
   el.innerHTML = '<span style="color:var(--gri);font-size:0.9rem">Se încarcă…</span>';
   try {
-    const url = q ? '/pacienti?q=' + encodeURIComponent(q) : '/pacienti';
+    const url = '/pacienti?q=' + encodeURIComponent(termen);
     const r = await fetch(url, { headers: getAuthHeaders() });
     if (handle401(r)) return;
     const lista = r.ok ? await r.json() : [];
@@ -2461,7 +2789,7 @@ async function stergePacientDinLista(pacientId, numePacient, cnp) {
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
       if (_tabPacienti[cnp]) inchideTabPacient(cnp);
-      incarcaListaPacienti('');
+      incarcaListaPacienti(document.getElementById('q-pacient')?.value || '');
     } else {
       alert('Eroare: ' + (j.detail || 'Nu s-a putut șterge pacientul.'));
     }
@@ -2504,7 +2832,7 @@ async function stergePacient(pacientId, numePacient, cnp) {
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
       inchideTabPacient(cnp);
-      incarcaListaPacienti('');
+      incarcaListaPacienti(document.getElementById('q-pacient')?.value || '');
     } else {
       alert('Eroare: ' + (j.detail || 'Nu s-a putut șterge pacientul.'));
     }
@@ -2849,6 +3177,8 @@ async function aprobaAlias(id, denumireRaw) {
           <span style="color:var(--verde)">✅ <strong>${escHtml(denumireRaw)}</strong> a fost asociat cu succes. Toate rezultatele existente au fost actualizate și va fi recunoscut automat la orice upload viitor.</span>
         </td>`;
       }
+      // Invalideaza cache alias pe toate workerii (Railway multi-worker)
+      fetch('/invalideaza-cache-alias', { method: 'POST', headers: getAuthHeaders() }).catch(() => {});
       // Actualizeaza badge
       const badge = document.getElementById('badge-nec');
       const cnt = parseInt(badge.textContent||'0') - 1;

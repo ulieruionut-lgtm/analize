@@ -74,6 +74,8 @@ railway up
 
 Vezi ghidul complet: [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 
+**Siguranța datelor (Railway):** [SIGURANTA_DATE.md](SIGURANTA_DATE.md) – PostgreSQL, backup/restore
+
 ## 🏗️ Arhitectură
 
 ```

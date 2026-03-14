@@ -90,7 +90,7 @@ def _strip_prefix_regina_maria(raw: str) -> str:
 _CACHE: Optional[dict] = None
 _CACHE_RAW: Optional[dict] = None
 _CACHE_TIMESTAMP: float = 0.0
-_CACHE_TTL_SECUNDE: int = 180  # 3 minute
+_CACHE_TTL_SECUNDE: int = 60  # 1 minut - invata rapid alias-urile aprobate (inclusiv cu multi-worker)
 
 
 def _incarca_cache() -> tuple[dict, dict]:
@@ -106,10 +106,17 @@ def _incarca_cache() -> tuple[dict, dict]:
         with get_cursor(commit=False) as cur:
             cur.execute("SELECT alias, analiza_standard_id FROM analiza_alias")
             for row in cur.fetchall():
-                alias = str(row[0] if _use_sqlite() else row['alias'])
-                aid = int(row[1] if _use_sqlite() else row['analiza_standard_id'])
-                cache_raw[alias.lower()] = aid
-                cache_norm[_normalizeaza(alias)] = aid
+                if row is None:
+                    continue
+                try:
+                    alias_val = row['alias'] if hasattr(row, 'keys') else row[0]
+                    aid_val = row['analiza_standard_id'] if hasattr(row, 'keys') else row[1]
+                    alias = str(alias_val)
+                    aid = int(aid_val)
+                    cache_raw[alias.lower()] = aid
+                    cache_norm[_normalizeaza(alias)] = aid
+                except (IndexError, KeyError, TypeError):
+                    continue
         _CACHE = cache_norm
         _CACHE_RAW = cache_raw
         _CACHE_TIMESTAMP = acum
@@ -160,8 +167,24 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
 
-    # 4b. Corectie OCR comuna: "umar" -> "Numar" (N citit gresit ca u)
-    raw_ocr_fix = re.sub(r'\bumar\b', 'numar', raw_norm, flags=re.IGNORECASE)
+    # 4b. Corectii OCR frecvente pentru termeni medicali români (eroare -> corect)
+    _OCR_FIXES = (
+        (r'\bumar\b', 'numar'),              # N citit gresit ca u
+        (r'\bcrealinin[ae]?\b', 'creatinina'),
+        (r'\bglu[o0]{2,}za\b', 'glucoza'),   # gluooza, glu0za
+        (r'\bhemoglo[b6]ina\b', 'hemoglobina'),
+        (r'\bh[ce]moglobina\b', 'hemoglobina'),  # hcmoglobina
+        (r'\bhemat[o0]crit\b', 'hematocrit'),
+        (r'\bleuc[o0]cite\b', 'leucocite'),
+        (r'\btr[o0]mbocite\b', 'trombocite'),
+        (r'\bferit[i1]na\b', 'feritina'),
+        (r'\bcolester[o0]l\b', 'colesterol'),
+        (r'\btriglicer[i1]de\b', 'trigliceride'),
+        (r'\berit[ro]cite\b', 'eritrocite'),
+    )
+    raw_ocr_fix = raw_norm
+    for pattern, repl in _OCR_FIXES:
+        raw_ocr_fix = re.sub(pattern, repl, raw_ocr_fix, flags=re.IGNORECASE)
     if raw_ocr_fix != raw_norm and raw_ocr_fix in cache_norm:
         return cache_norm[raw_ocr_fix]
 
@@ -276,7 +299,7 @@ def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
                 )
             else:
                 cur.execute(
-                    "INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    "INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s) ON CONFLICT (alias) DO NOTHING",
                     (analiza_standard_id, denumire_raw.strip())
                 )
                 cur.execute(

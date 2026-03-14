@@ -8,6 +8,8 @@ pdfplumber>=0.10
 pymupdf>=1.23          # convertire PDF la imagine, fara poppler
 pytesseract>=0.3       # OCR Tesseract (pentru PDF-uri scanate)
 Pillow>=10.2
+opencv-python-headless>=4.8  # deskew + threshold adaptiv pentru OCR imbunatatit
+numpy>=1.24            # folosit de pdf_processor + opencv
 
 # Database
 psycopg2-binary>=2.9   # PostgreSQL

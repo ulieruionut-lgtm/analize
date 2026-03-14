@@ -56,7 +56,7 @@ def _init_sqlite_if_needed():
         if cur.fetchone():
             _SQLITE_INIT_DONE = True
             return
-        for fname in ["schema_sqlite.sql", "seed_sqlite.sql", "002_analize_extinse.sql"]:
+        for fname in ["schema_sqlite.sql", "seed_sqlite.sql", "002_analize_extinse.sql", "009_laboratoare_catalog.sql"]:
             fpath = sql_dir / fname
             if fpath.exists():
                 conn.executescript(fpath.read_text(encoding="utf-8"))
@@ -323,24 +323,74 @@ def get_all_pacienti() -> list:
 
 def search_pacienti(q: str) -> list:
     q_like = f"%{q}%"
+    q_like_lower = f"%{q.lower()}%"
     with get_cursor(commit=False) as cur:
         if _use_sqlite():
             cur.execute(
                 "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
                 "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
-                "WHERE p.cnp LIKE ? OR LOWER(p.nume) LIKE LOWER(?) "
+                "WHERE p.cnp LIKE ? OR LOWER(COALESCE(p.nume,'') || ' ' || COALESCE(p.prenume,'')) LIKE ? "
                 "GROUP BY p.id ORDER BY p.nume",
-                (q_like, q_like),
+                (q_like, q_like_lower),
             )
         else:
             cur.execute(
                 "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
                 "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
-                "WHERE p.cnp LIKE %s OR LOWER(p.nume) LIKE LOWER(%s) "
+                "WHERE p.cnp LIKE %s OR LOWER(COALESCE(p.nume,'') || ' ' || COALESCE(p.prenume,'')) LIKE %s "
                 "GROUP BY p.id ORDER BY p.nume",
-                (q_like, q_like),
+                (q_like, q_like_lower),
             )
         return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+# --- Laboratoare + catalog analize ---
+def get_laboratoare() -> list:
+    """Lista laboratoare cu numar analize. Returneaza [] daca tabelul nu exista."""
+    try:
+        with get_cursor(commit=False) as cur:
+            if _use_sqlite():
+                cur.execute(
+                    """SELECT l.id, l.nume, l.website, l.retea,
+                              (SELECT COUNT(*) FROM laborator_analize la WHERE la.laborator_id = l.id) as nr_analize
+                       FROM laboratoare l ORDER BY l.nume"""
+                )
+            else:
+                cur.execute(
+                    """SELECT l.id, l.nume, l.website, l.retea,
+                              (SELECT COUNT(*) FROM laborator_analize la WHERE la.laborator_id = l.id)::int as nr_analize
+                       FROM laboratoare l ORDER BY l.nume"""
+                )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+    except Exception:
+        return []
+
+
+def get_laborator_analize(laborator_id: int) -> list:
+    """Catalog analize pentru un laborator. Returneaza lista cu denumire_standard, cod_standard."""
+    try:
+        with get_cursor(commit=False) as cur:
+            if _use_sqlite():
+                cur.execute(
+                    """SELECT a.id, a.cod_standard, a.denumire_standard
+                       FROM analiza_standard a
+                       JOIN laborator_analize la ON la.analiza_standard_id = a.id
+                       WHERE la.laborator_id = ?
+                       ORDER BY a.denumire_standard""",
+                    (laborator_id,),
+                )
+            else:
+                cur.execute(
+                    """SELECT a.id, a.cod_standard, a.denumire_standard
+                       FROM analiza_standard a
+                       JOIN laborator_analize la ON la.analiza_standard_id = a.id
+                       WHERE la.laborator_id = %s
+                       ORDER BY a.denumire_standard""",
+                    (laborator_id,),
+                )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+    except Exception:
+        return []
 
 
 # --- Lista analize standard ---
@@ -768,8 +818,154 @@ def export_backup_data() -> Dict[str, Any]:
         out["buletine"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
         cur.execute(
             """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
-                      unitate, interval_min, interval_max, flag, created_at
+                      unitate, interval_min, interval_max, flag, ordine, categorie, created_at
                FROM rezultate_analize ORDER BY id"""
         )
         out["rezultate_analize"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
     return out
+
+
+def _get_or_create_analiza_standard(cod: str, denumire: str) -> int:
+    """Returneaza id-ul analizei standard (existenta sau nou creata)."""
+    cod_norm = (cod or "").upper().strip().replace(" ", "_")
+    if not cod_norm:
+        raise ValueError("Cod analiza nu poate fi gol")
+    with get_cursor(commit=True) as cur:
+        ph = "?" if _use_sqlite() else "%s"
+        cur.execute(f"SELECT id FROM analiza_standard WHERE cod_standard = {ph}", (cod_norm,))
+        row = cur.fetchone()
+        if row:
+            return row[0] if _use_sqlite() else row["id"]
+        cur.execute(
+            f"INSERT INTO analiza_standard (cod_standard, denumire_standard) VALUES ({ph}, {ph})",
+            (cod_norm, (denumire or cod_norm).strip()),
+        )
+        if _use_sqlite():
+            rid = cur.lastrowid
+            if rid:
+                return rid
+        cur.execute(f"SELECT id FROM analiza_standard WHERE cod_standard = {ph}", (cod_norm,))
+        row = cur.fetchone()
+        return row[0] if _use_sqlite() else row["id"] if row else 0
+
+
+def _insert_alias_if_not_exists(analiza_standard_id: int, alias: str) -> None:
+    """Insereaza alias daca nu exista (ignora duplicate)."""
+    if not alias or not alias.strip():
+        return
+    with get_cursor(commit=True) as cur:
+        if _use_sqlite():
+            cur.execute(
+                "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
+                (analiza_standard_id, alias.strip()),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
+                   ON CONFLICT (alias) DO NOTHING""",
+                (analiza_standard_id, alias.strip()),
+            )
+
+
+def restore_from_backup(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Restaureaza date din backup JSON. Adauga peste datele existente (nu sterge).
+    Returneaza: {pacienti: n, analiza_standard: n, analiza_alias: n, buletine: n, rezultate: n, erori: []}
+    """
+    result = {"pacienti": 0, "analiza_standard": 0, "analiza_alias": 0, "buletine": 0, "rezultate": 0, "erori": []}
+    if not isinstance(data, dict):
+        result["erori"].append("Format invalid: nu este JSON valid")
+        return result
+
+    analize_map = {}  # old_id -> new_id
+    pacienti_map = {}  # old_id -> new_id
+    buletine_map = {}  # old_id -> new_id
+
+    # 1. analiza_standard
+    for a in data.get("analiza_standard") or []:
+        try:
+            cod = a.get("cod_standard")
+            denumire = a.get("denumire_standard", "")
+            if not cod:
+                continue
+            old_id = a.get("id")
+            new_id = _get_or_create_analiza_standard(cod, denumire)
+            if old_id is not None:
+                analize_map[old_id] = new_id
+            result["analiza_standard"] += 1
+        except Exception as e:
+            result["erori"].append(f"analiza_standard {a.get('cod_standard')}: {e}")
+
+    # 2. analiza_alias
+    for al in data.get("analiza_alias") or []:
+        try:
+            old_aid = al.get("analiza_standard_id")
+            new_aid = analize_map.get(old_aid) if old_aid is not None else None
+            if new_aid is None:
+                continue
+            _insert_alias_if_not_exists(new_aid, al.get("alias") or "")
+            result["analiza_alias"] += 1
+        except Exception as e:
+            result["erori"].append(f"analiza_alias: {e}")
+
+    # 3. pacienti
+    for p in data.get("pacienti") or []:
+        try:
+            cnp = (p.get("cnp") or "").strip()
+            if not cnp:
+                continue
+            upsert_pacient(cnp, p.get("nume") or "", p.get("prenume") or None)
+            new_p = get_pacient_by_cnp(cnp)
+            if new_p:
+                old_id = p.get("id")
+                if old_id is not None:
+                    pacienti_map[old_id] = new_p["id"]
+                result["pacienti"] += 1
+        except Exception as e:
+            result["erori"].append(f"pacient {p.get('cnp')}: {e}")
+
+    # 4. buletine
+    for b in data.get("buletine") or []:
+        try:
+            old_pid = b.get("pacient_id")
+            new_pid = pacienti_map.get(old_pid) if old_pid is not None else None
+            if new_pid is None:
+                continue
+            data_b = b.get("data_buletin")
+            laborator = b.get("laborator")
+            fisier = b.get("fisier_original")
+            new_b = insert_buletin(new_pid, data_b, laborator, fisier)
+            old_bid = b.get("id")
+            if old_bid is not None and new_b:
+                buletine_map[old_bid] = new_b["id"]
+            result["buletine"] += 1
+        except Exception as e:
+            result["erori"].append(f"buletin pacient_id={b.get('pacient_id')}: {e}")
+
+    # 5. rezultate_analize
+    for r in data.get("rezultate_analize") or []:
+        try:
+            old_bid = r.get("buletin_id")
+            new_bid = buletine_map.get(old_bid) if old_bid is not None else None
+            if new_bid is None:
+                continue
+            old_aid = r.get("analiza_standard_id")
+            new_aid = analize_map.get(old_aid) if old_aid is not None else None
+            insert_rezultat(
+                new_bid,
+                new_aid,
+                r.get("denumire_raw"),
+                r.get("valoare"),
+                r.get("valoare_text"),
+                r.get("unitate"),
+                r.get("interval_min"),
+                r.get("interval_max"),
+                r.get("flag"),
+                r.get("ordine"),
+                r.get("categorie"),
+            )
+            result["rezultate"] += 1
+        except Exception as e:
+            result["erori"].append(f"rezultat buletin_id={r.get('buletin_id')}: {e}")
+
+    return result
