@@ -114,6 +114,22 @@ def get_cursor(commit: bool = True):
         conn.close()
 
 
+def _fetchone_dict(cur) -> Optional[dict]:
+    """Converteste fetchone() la dict, sigur pentru orice tip de row (tuple, RealDictRow, etc.)."""
+    row = cur.fetchone()
+    if row is None:
+        return None
+    try:
+        if hasattr(row, "keys"):
+            return dict(row)
+        if cur.description and hasattr(row, "__getitem__"):
+            cols = [c[0] for c in cur.description]
+            return dict(zip(cols, row))
+    except (IndexError, TypeError, KeyError):
+        pass
+    return {}
+
+
 def _row_get(row, key_or_index, default=None):
     """Extrage o valoare din row - sigur pentru dict (PostgreSQL) si tuple (fallback)."""
     if row is None:
@@ -185,7 +201,7 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
                 (cnp, nume, prenume or ""),
             )
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = ?", (cnp,))
-            return dict(cur.fetchone())
+            return _fetchone_dict(cur) or {}
     cond_invalid_pg = cond_invalid.replace("nume", "pacienti.nume")
     with get_cursor() as cur:
         cur.execute(
@@ -201,7 +217,7 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
             """,
             (cnp, nume, prenume or ""),
         )
-        return dict(cur.fetchone())
+        return _fetchone_dict(cur) or {}
 
 
 def update_pacient_nume(cnp: str, nume: str, prenume: Optional[str] = None) -> bool:
@@ -266,7 +282,7 @@ def insert_buletin(pacient_id: int, data_buletin=None, laborator: Optional[str] 
                 (pacient_id, data_buletin, laborator, fisier_original),
             )
             cur.execute("SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine ORDER BY id DESC LIMIT 1")
-            return dict(cur.fetchone())
+            return _fetchone_dict(cur) or {}
         cur.execute(
             """
             INSERT INTO buletine (pacient_id, data_buletin, laborator, fisier_original)
@@ -275,7 +291,7 @@ def insert_buletin(pacient_id: int, data_buletin=None, laborator: Optional[str] 
             """,
             (pacient_id, data_buletin, laborator, fisier_original),
         )
-        return dict(cur.fetchone())
+        return _fetchone_dict(cur) or {}
 
 
 # --- Rezultate analize ---
@@ -291,7 +307,7 @@ def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumir
                 (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
             )
             cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
-            return dict(cur.fetchone())
+            return _fetchone_dict(cur) or {}
         cur.execute(
             """
             INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
@@ -300,7 +316,7 @@ def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumir
             """,
             (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
         )
-        return dict(cur.fetchone())
+        return _fetchone_dict(cur) or {}
 
 
 # --- Căutare analiza_standard_id după alias ---

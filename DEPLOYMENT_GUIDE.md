@@ -7,9 +7,23 @@ Aplicația este pregătită pentru deployment online cu suport pentru:
 
 ---
 
+## ⚡ Dacă Railway îți dă probleme → Render.com
+
+**Render.com** e o alternativă simplă, gratuită și foarte stabilă. Pași rapizi:
+
+1. **render.com** → Sign up cu GitHub
+2. **New +** → **PostgreSQL** (plan Free) → salvează **Internal Database URL**
+3. **New +** → **Web Service** → conectează repo-ul tău
+4. Setări: **Environment = Docker**; adaugă variabila `DATABASE_URL` = URL-ul de la pasul 2
+5. **Create** – deploy automat
+
+Aplicația se oprește după ~15 min inactivitate (plan gratuit), dar pornește instant la prima cerere. Datele rămân în PostgreSQL.
+
+---
+
 ## 📋 Opțiuni de Deployment
 
-### 1. Railway.app (RECOMANDAT - GRATUIT)
+### 1. Railway.app
 ✅ Gratuit pentru început (500h/lună)
 ✅ PostgreSQL inclus gratuit
 ✅ Deploy automat din GitHub
