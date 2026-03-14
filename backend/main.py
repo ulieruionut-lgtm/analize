@@ -18,6 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2Pas
 from backend.auth import create_access_token, decode_token, hash_password, verify_password
 from backend.config import settings
 from backend.database import (
+    _row_get,
     get_laboratoare,
     get_laborator_analize,
     create_user as db_create_user,
@@ -878,7 +879,7 @@ async def edit_rezultat(rezultat_id: int, body: dict, current_user: dict = Depen
             cur.execute(f"SELECT denumire_raw FROM rezultate_analize WHERE id = {ph}", (rezultat_id,))
             row = cur.fetchone()
             if row:
-                denumire = row[0] if _use_sqlite() else row['denumire_raw']
+                denumire = _row_get(row, 0 if _use_sqlite() else 'denumire_raw')
                 if denumire and denumire.strip():
                     from backend.normalizer import adauga_alias_nou
                     alias_salvat = adauga_alias_nou(denumire.strip(), int(new_std_id))

@@ -114,6 +114,22 @@ def get_cursor(commit: bool = True):
         conn.close()
 
 
+def _row_get(row, key_or_index, default=None):
+    """Extrage o valoare din row - sigur pentru dict (PostgreSQL) si tuple (fallback)."""
+    if row is None:
+        return default
+    try:
+        if hasattr(row, "keys") and isinstance(key_or_index, str):
+            return row.get(key_or_index, default)
+        if isinstance(key_or_index, int) and hasattr(row, "__getitem__"):
+            if 0 <= key_or_index < len(row):
+                return row[key_or_index]
+            return default
+    except (IndexError, KeyError, TypeError):
+        pass
+    return default
+
+
 def _row_to_dict(row) -> dict:
     if row is None:
         return None
@@ -300,7 +316,7 @@ def get_analiza_standard_id_by_alias(alias: str) -> Optional[int]:
         row = cur.fetchone()
         if not row:
             return None
-        return row[0] if _use_sqlite() else row["analiza_standard_id"]
+        return _row_get(row, 0 if _use_sqlite() else "analiza_standard_id")
 
 
 # --- Lista si cautare pacienti ---
@@ -487,7 +503,7 @@ def get_historicul_analiza_by_cod(cod_standard: str) -> list:
         row = cur.fetchone()
         if not row:
             return []
-        aid = row[0] if _use_sqlite() else row["id"]
+        aid = _row_get(row, 0 if _use_sqlite() else "id")
     return get_historicul_analiza(aid)
 
 
@@ -597,13 +613,14 @@ def ensure_default_admin() -> bool:
     """Creeaza utilizatorul 'admin' cu parola 'admin123' daca nu exista niciun user."""
     _init_users_table()
     with get_cursor(commit=False) as cur:
-        if _use_sqlite():
-            cur.execute("SELECT COUNT(*) FROM users")
-            cnt = cur.fetchone()[0]
-        else:
-            cur.execute("SELECT COUNT(*) FROM users")
-            row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) FROM users")
+        row = cur.fetchone()
+        if not row:
+            cnt = 0
+        elif hasattr(row, "keys"):
             cnt = list(row.values())[0] if row else 0
+        else:
+            cnt = _row_get(row, 0, 0)
         if cnt > 0:
             return False
     from backend.auth import hash_password
@@ -764,8 +781,7 @@ def add_rezultat_manual(buletin_id: int, analiza_standard_id: Optional[int],
             row = cur.fetchone()
             if row is None:
                 return None
-            # RealDictCursor (PostgreSQL) returneaza dict, sqlite returneaza tuple
-            row_id = row["id"] if hasattr(row, "keys") else row[0]
+            row_id = _row_get(row, "id" if hasattr(row, "keys") else 0)
             return {"id": row_id}
     except Exception as e:
         import logging
@@ -835,7 +851,7 @@ def _get_or_create_analiza_standard(cod: str, denumire: str) -> int:
         cur.execute(f"SELECT id FROM analiza_standard WHERE cod_standard = {ph}", (cod_norm,))
         row = cur.fetchone()
         if row:
-            return row[0] if _use_sqlite() else row["id"]
+            return _row_get(row, 0 if _use_sqlite() else "id")
         cur.execute(
             f"INSERT INTO analiza_standard (cod_standard, denumire_standard) VALUES ({ph}, {ph})",
             (cod_norm, (denumire or cod_norm).strip()),
@@ -846,7 +862,7 @@ def _get_or_create_analiza_standard(cod: str, denumire: str) -> int:
                 return rid
         cur.execute(f"SELECT id FROM analiza_standard WHERE cod_standard = {ph}", (cod_norm,))
         row = cur.fetchone()
-        return row[0] if _use_sqlite() else row["id"] if row else 0
+        return _row_get(row, 0 if _use_sqlite() else "id", 0) or 0
 
 
 def _insert_alias_if_not_exists(analiza_standard_id: int, alias: str) -> None:

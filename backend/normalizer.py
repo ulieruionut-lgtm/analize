@@ -109,9 +109,12 @@ def _incarca_cache() -> tuple[dict, dict]:
                 if row is None:
                     continue
                 try:
-                    alias_val = row['alias'] if hasattr(row, 'keys') else row[0]
-                    aid_val = row['analiza_standard_id'] if hasattr(row, 'keys') else row[1]
-                    alias = str(alias_val)
+                    from backend.database import _row_get
+                    alias_val = _row_get(row, 'alias' if hasattr(row, 'keys') else 0)
+                    aid_val = _row_get(row, 'analiza_standard_id' if hasattr(row, 'keys') else 1)
+                    if alias_val is None or aid_val is None:
+                        continue
+                    alias = str(alias_val).strip()
                     aid = int(aid_val)
                     cache_raw[alias.lower()] = aid
                     cache_norm[_normalizeaza(alias)] = aid
