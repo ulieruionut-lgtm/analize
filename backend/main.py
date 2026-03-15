@@ -621,20 +621,26 @@ async def upload_pdf(
         )
         if not buletin or buletin.get("id") is None:
             raise RuntimeError("Eroare la salvarea buletinului. Verifica conexiunea la baza de date.")
-        for r in parsed.rezultate:
-            insert_rezultat(
-                buletin_id=buletin["id"],
-                analiza_standard_id=r.analiza_standard_id,
-                denumire_raw=r.denumire_raw,
-                valoare=r.valoare,
-                valoare_text=r.valoare_text,
-                unitate=r.unitate,
-                interval_min=r.interval_min,
-                interval_max=r.interval_max,
-                flag=r.flag,
-                ordine=r.ordine,
-                categorie=r.categorie,
-            )
+        for idx, r in enumerate(parsed.rezultate):
+            try:
+                insert_rezultat(
+                    buletin_id=buletin["id"],
+                    analiza_standard_id=r.analiza_standard_id,
+                    denumire_raw=r.denumire_raw,
+                    valoare=r.valoare,
+                    valoare_text=r.valoare_text,
+                    unitate=r.unitate,
+                    interval_min=r.interval_min,
+                    interval_max=r.interval_max,
+                    flag=r.flag,
+                    ordine=r.ordine,
+                    categorie=r.categorie,
+                )
+            except (IndexError, TypeError) as ex:
+                raise RuntimeError(
+                    f"Eroare la rezultatul {idx+1}/{len(parsed.rezultate)} "
+                    f"(denumire: {getattr(r, 'denumire_raw', '?')[:50]}): {ex}"
+                ) from ex
         return {
             "message": "PDF procesat cu succes.",
             "tip_extragere": tip,
@@ -652,9 +658,11 @@ async def upload_pdf(
             pass
         detail = str(e)
         status = 503 if ("connection" in detail.lower() or "role" in detail or "database" in detail.lower()) else 500
+        # Include traceback mereu la erori "tuple index" sau "index" pt debug
+        include_tb = traceback_debug or "tuple index" in detail.lower() or ("index" in detail.lower() and "range" in detail.lower())
         return JSONResponse(
             status_code=status,
-            content={"detail": detail[:800], "traceback": tb if traceback_debug else None},
+            content={"detail": detail[:800], "traceback": tb if include_tb else None},
             media_type="application/json",
         )
     finally:
