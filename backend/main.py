@@ -375,6 +375,13 @@ async def run_migrations():
         return {"ok": False, "detail": str(e)}
 
 
+@app.get("/login")
+async def login_redirect():
+    """Redirect GET /login -> / (formularul de login e pe pagina principala)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=302)
+
+
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
