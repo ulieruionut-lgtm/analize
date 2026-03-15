@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 
 from backend.auth import create_access_token, decode_token, hash_password, verify_password
@@ -378,7 +378,6 @@ async def run_migrations():
 @app.get("/login")
 async def login_redirect():
     """Redirect GET /login -> / (formularul de login e pe pagina principala)."""
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/", status_code=302)
 
 
