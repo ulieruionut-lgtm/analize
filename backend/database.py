@@ -149,15 +149,16 @@ def _row_get(row, key_or_index, default=None):
 def _row_to_dict(row) -> dict:
     if row is None:
         return None
-    if hasattr(row, "keys"):
+    try:
+        if not hasattr(row, "keys"):
+            return {}
         d = dict(row)
-    else:
-        d = dict(zip([c[0] for c in row.description], row))
-    # Convertim datetime/date la string ISO (PostgreSQL le returneaza ca obiecte Python)
-    for k, v in d.items():
-        if isinstance(v, (datetime, date)):
-            d[k] = v.isoformat()
-    return d
+        for k, v in list(d.items()):
+            if isinstance(v, (datetime, date)):
+                d[k] = v.isoformat()
+        return d
+    except (IndexError, TypeError, KeyError, AttributeError):
+        return {}
 
 
 # --- Pacienti ---

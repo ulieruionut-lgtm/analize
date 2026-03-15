@@ -547,6 +547,7 @@ async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_curre
 async def upload_pdf(
     file: UploadFile = File(...),
     debug: bool = Query(False, description="Returneaza info diagnostic (text extras, analize parse)"),
+    traceback_debug: bool = Query(False, alias="traceback", description="Incluzand traceback complet in eroare"),
     current_user: dict = Depends(get_current_user),
 ):
     """Primeste PDF, extrage text (sau OCR), parseaza CNP + nume + analize, salveaza in DB."""
@@ -644,13 +645,18 @@ async def upload_pdf(
             "numar_analize": len(parsed.rezultate),
         }
     except Exception as e:
+        tb = traceback.format_exc()
         try:
-            _ERORI_LOG.write_text(traceback.format_exc(), encoding="utf-8")
+            _ERORI_LOG.write_text(tb, encoding="utf-8")
         except Exception:
             pass
         detail = str(e)
         status = 503 if ("connection" in detail.lower() or "role" in detail or "database" in detail.lower()) else 500
-        return _raspuns_eroare(status, detail)
+        return JSONResponse(
+            status_code=status,
+            content={"detail": detail[:800], "traceback": tb if traceback_debug else None},
+            media_type="application/json",
+        )
     finally:
         if tmp_path:
             try:
@@ -2127,7 +2133,7 @@ async function trimite(debugMode) {
 
     const fd = new FormData();
     fd.append('file', f);
-    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '');
+    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
       const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
@@ -2175,6 +2181,9 @@ async function trimite(debugMode) {
         esuat++;
         status = 'err';
         mesaj = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : 'Eroare ' + r.status;
+        if (j && j.traceback) {
+          mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem;color:var(--gri)">Traceback (debug)</summary><pre style="margin:6px 0 0;font-size:0.7rem;max-height:200px;overflow:auto;white-space:pre-wrap;background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:6px">' + escHtml(j.traceback) + '</pre></details>';
+        }
       }
     } catch(err) {
       esuat++;
