@@ -609,16 +609,22 @@ async def upload_pdf(
                             r.flag = "L"
                         else:
                             r.flag = "H"
-        pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
+        try:
+            pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
+        except Exception as ex:
+            raise RuntimeError(f"Eroare la upsert_pacient: {ex}") from ex
         if not pacient or pacient.get("id") is None:
             raise RuntimeError("Eroare la salvarea pacientului. Verifica conexiunea la baza de date.")
         data_buletin = _extrage_data_buletin(text)
-        buletin = insert_buletin(
+        try:
+            buletin = insert_buletin(
             pacient_id=pacient["id"],
             data_buletin=data_buletin,
             laborator=None,
             fisier_original=file.filename,
         )
+        except Exception as ex:
+            raise RuntimeError(f"Eroare la insert_buletin: {ex}") from ex
         if not buletin or buletin.get("id") is None:
             raise RuntimeError("Eroare la salvarea buletinului. Verifica conexiunea la baza de date.")
         for idx, r in enumerate(parsed.rezultate):
