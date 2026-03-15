@@ -2083,7 +2083,7 @@ function schimbTab(id) {
     clearTimeout(_cautaPacientTimer);
     const inp = document.getElementById('q-pacient');
     if (inp) inp.value = '';
-    afiseazaPlaceholderPacienti();
+    incarcaListaPacienti('');
   }
   if (id === 'alias') incarcaNecunoscute();
   if (id === 'setari') incarcaSetari();
@@ -2257,7 +2257,7 @@ async function incarcaRecenti() {
 
 // ─── Pacient ─────────────────────────────────────────────────────────────────
 let _cautaPacientTimer = null;
-const PLACEHOLDER_PACIENTI = '<p style="color:var(--gri);text-align:center;padding:24px;font-size:0.92rem">Introduceți CNP sau Nume pentru a căuta pacienți.</p>';
+const PLACEHOLDER_PACIENTI = '<p style="color:var(--gri);text-align:center;padding:24px;font-size:0.92rem">Se încarcă pacienții…</p>';
 
 function afiseazaPlaceholderPacienti() {
   document.getElementById('lista-pacienti').innerHTML = PLACEHOLDER_PACIENTI;
@@ -2271,18 +2271,15 @@ function cautaPacient(q) {
 async function incarcaListaPacienti(q) {
   const el = document.getElementById('lista-pacienti');
   const termen = (q || '').trim();
-  if (!termen) {
-    el.innerHTML = PLACEHOLDER_PACIENTI;
-    return;
-  }
   el.innerHTML = '<span style="color:var(--gri);font-size:0.9rem">Se încarcă…</span>';
   try {
-    const url = '/pacienti?q=' + encodeURIComponent(termen);
+    const url = termen ? '/pacienti?q=' + encodeURIComponent(termen) : '/pacienti';
     const r = await fetch(url, { headers: getAuthHeaders() });
     if (handle401(r)) return;
     const lista = r.ok ? await r.json() : [];
     if (!lista.length) {
-      el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">Niciun pacient găsit.</p>';
+      el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">' +
+        (termen ? 'Niciun pacient găsit.' : 'Niciun pacient în baza de date. Încarcă PDF-uri din tab-ul Upload.') + '</p>';
       return;
     }
     const nrB = n => n === 1 ? '1 buletin' : (n || 0) + ' buletine';
