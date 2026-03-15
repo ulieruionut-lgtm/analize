@@ -517,6 +517,18 @@ def sterge_analiza_necunoscuta(id_necunoscuta: int) -> bool:
     return True
 
 
+def goleste_analize_asociate() -> dict:
+    """Șterge toate intrările din analiza_necunoscuta și analiza_alias (asocierile din secțiunea Asociază cu analiza standard)."""
+    with get_cursor() as cur:
+        if _use_sqlite():
+            cur.execute("DELETE FROM analiza_necunoscuta")
+            cur.execute("DELETE FROM analiza_alias")
+        else:
+            cur.execute("DELETE FROM analiza_necunoscuta")
+            cur.execute("DELETE FROM analiza_alias")
+    return {"ok": True, "mesaj": "Toate asocierile au fost șterse."}
+
+
 def get_historicul_analiza_by_cod(cod_standard: str) -> list:
     with get_cursor(commit=False) as cur:
         if _use_sqlite():
@@ -869,11 +881,19 @@ def export_backup_data() -> Dict[str, Any]:
             "SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine ORDER BY id"
         )
         out["buletine"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
-        cur.execute(
-            """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
-                      unitate, interval_min, interval_max, flag, ordine, categorie, created_at
-               FROM rezultate_analize ORDER BY id"""
-        )
+        # Rezultate: încearcă cu ordine/categorie; dacă lipsesc (schema veche), fără ele
+        try:
+            cur.execute(
+                """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
+                          unitate, interval_min, interval_max, flag, ordine, categorie, created_at
+                   FROM rezultate_analize ORDER BY id"""
+            )
+        except Exception:
+            cur.execute(
+                """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
+                          unitate, interval_min, interval_max, flag, created_at
+                   FROM rezultate_analize ORDER BY id"""
+            )
         out["rezultate_analize"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
     return out
 
