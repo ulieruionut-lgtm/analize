@@ -73,9 +73,7 @@ def import_dictionar_excel(
         else:
             cur.execute("DELETE FROM analiza_alias")
 
-    # Faza 1: colecteaza (aid, alias) pentru toate randurile
     analyte_to_id = {}
-    de_inserat: List[Tuple[int, str]] = []
     erori = 0
     for i, row in enumerate(rows):
         if not row or len(row) < 2:
@@ -90,31 +88,27 @@ def import_dictionar_excel(
                     cod = _to_cod(analyte)
                     aid = _get_or_create_analiza_standard(cod, analyte)
                 analyte_to_id[analyte] = aid
-            de_inserat.append((analyte_to_id[analyte], alias))
+            aid = analyte_to_id[analyte]
+            with get_cursor(commit=True) as cur:
+                if _use_sqlite():
+                    cur.execute(
+                        "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
+                        (aid, alias),
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
+                           ON CONFLICT (alias) DO NOTHING""",
+                        (aid, alias),
+                    )
         except Exception:
             erori += 1
 
-    # Faza 2: insert batch (o singura conexiune/tranzactie)
-    if de_inserat:
-        with get_cursor(commit=True) as cur:
-            if _use_sqlite():
-                cur.executemany(
-                    "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
-                    de_inserat,
-                )
-            else:
-                cur.executemany(
-                    """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
-                       ON CONFLICT (alias) DO NOTHING""",
-                    de_inserat,
-                )
-
     invalideaza_cache()
-    n_alias = len(de_inserat)
     return {
         "ok": True,
         "analize_unic": len(analyte_to_id),
-        "aliasuri_procesate": n_alias,
+        "aliasuri_procesate": len(rows),
         "erori": erori,
-        "mesaj": f"Import finalizat: {len(analyte_to_id)} analize, {n_alias} aliasuri.",
+        "mesaj": f"Import finalizat: {len(analyte_to_id)} analize, {len(rows)} aliasuri.",
     }
