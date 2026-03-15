@@ -44,6 +44,7 @@ from backend.database import (
     adauga_analiza_standard,
     search_pacienti,
     sterge_analiza_necunoscuta,
+    goleste_analize_asociate,
     update_rezultat,
     update_user_password,
     update_pacient_nume,
@@ -525,6 +526,37 @@ async def backup_restore(
         )
 
 
+@app.post("/api/import-dictionar-excel")
+async def import_dictionar_excel(
+    file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user),
+):
+    """Importă dictionar analize + aliasuri din Excel. Doar admin."""
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Doar admin.")
+    try:
+        from backend.import_dictionar import import_dictionar_excel as _do_import_dictionar
+        root = Path(__file__).resolve().parent.parent
+        xlsx_path = root / "dictionar_analize_300_1200_alias.xlsx"
+        if file and file.filename and file.filename.lower().endswith(".xlsx"):
+            content = await file.read()
+            rez = _do_import_dictionar(content)
+        elif xlsx_path.exists():
+            rez = _do_import_dictionar(xlsx_path)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Încarcă fișierul Excel (dictionar_analize_300_1200_alias.xlsx) sau pune-l în rădăcina proiectului.",
+            )
+        if not rez.get("ok"):
+            raise HTTPException(status_code=500, detail=rez.get("mesaj", "Eroare import"))
+        return rez
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
 @app.delete("/buletin/{buletin_id}")
 async def sterge_buletin(buletin_id: int, current_user: dict = Depends(get_current_user)):
     """Sterge un buletin (cu toate analizele din el)."""
@@ -983,6 +1015,15 @@ async def invalideaza_cache_alias(current_user: dict = Depends(get_current_user)
     from backend.normalizer import invalideaza_cache
     invalideaza_cache()
     return {"ok": True, "mesaj": "Cache alias invalidat."}
+
+
+@app.post("/goleste-analize-asociate")
+async def goleste_asociate(current_user: dict = Depends(get_current_user)):
+    """Șterge toate intrările din analiza_necunoscuta și analiza_alias."""
+    from backend.normalizer import invalideaza_cache
+    result = goleste_analize_asociate()
+    invalideaza_cache()
+    return result
 
 
 @app.delete("/analiza-necunoscuta/{id_nec}")
@@ -1567,8 +1608,9 @@ async def index():
         Asociați fiecare denumire cu analiza standard corespunzătoare.
         <strong>La următorul upload, vor fi recunoscute automat.</strong>
       </p>
-      <div style="display:flex;gap:10px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="incarcaNecunoscute()">🔄 Reîncarcă lista</button>
+        <button class="btn btn-secondary" onclick="golesteAnalizeAsociate()" style="color:var(--rosu)" title="Șterge toate analizele necunoscute și alias-urile (asocierile)">🗑️ Șterge toate asocierile</button>
       </div>
       <div id="lista-necunoscute"><p style="color:var(--gri)">Se încarcă…</p></div>
     </div>
@@ -1604,6 +1646,18 @@ async def index():
         </div>
       </div>
       <p id="setari-msg-restore" style="font-size:0.88rem;display:none"></p>
+    </div>
+    <div class="card" id="card-import-dictionar" style="display:none">
+      <h2>Import dictionar analize (Excel)</h2>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Importă ~300 analize standard și ~800 aliasuri din fișierul Excel. Înlocuiește alias-urile existente.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+        <div>
+          <input type="file" id="input-dictionar-excel" accept=".xlsx" style="display:none" onchange="importDictionarExcel(this)">
+          <button class="btn btn-primary" onclick="document.getElementById('input-dictionar-excel').click()">📂 Încarcă Excel și importă</button>
+        </div>
+        <button class="btn btn-secondary" id="btn-import-dictionar-auto" onclick="importDictionarExcelAuto()">📥 Importă din proiect (dacă există)</button>
+      </div>
+      <p id="setari-msg-dictionar" style="font-size:0.88rem;display:none"></p>
     </div>
     <div class="card" id="card-user-management" style="display:none">
       <h2>Gestionare utilizatori</h2>
@@ -1799,6 +1853,7 @@ async function incarcaSetari() {
   document.getElementById('setari-msg-users').style.display = 'none';
   const card = document.getElementById('card-user-management');
   const cardBackup = document.getElementById('card-backup');
+  const cardDictionar = document.getElementById('card-import-dictionar');
   try {
     const r = await fetch('/me', { headers: getAuthHeaders() });
     if (!r.ok) return;
@@ -1806,6 +1861,7 @@ async function incarcaSetari() {
     if ((u.username || '').toLowerCase() === 'admin') {
       card.style.display = 'block';
       if (cardBackup) cardBackup.style.display = 'block';
+      if (cardDictionar) cardDictionar.style.display = 'block';
       incarcaListaUtilizatori();
       (async function() {
         try {
@@ -1823,10 +1879,12 @@ async function incarcaSetari() {
     } else {
       card.style.display = 'none';
       if (cardBackup) cardBackup.style.display = 'none';
+      if (cardDictionar) cardDictionar.style.display = 'none';
     }
   } catch {
     card.style.display = 'none';
     if (cardBackup) cardBackup.style.display = 'none';
+    if (cardDictionar) cardDictionar.style.display = 'none';
   }
   incarcaLaboratoare();
 }
@@ -1944,6 +2002,62 @@ async function importBackup(inputEl) {
     msgEl.textContent = 'Eroare: ' + (e.message || '');
   } finally {
     btnEl.disabled = false;
+  }
+}
+
+async function importDictionarExcel(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file || !file.name.toLowerCase().endsWith('.xlsx')) return;
+  const msgEl = document.getElementById('setari-msg-dictionar');
+  msgEl.style.display = '';
+  msgEl.style.color = 'var(--gri)';
+  msgEl.textContent = 'Se importă…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/import-dictionar-excel', {
+      method: 'POST',
+      body: fd,
+      headers: getAuthHeaders()
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      msgEl.style.color = 'var(--rosu)';
+      msgEl.textContent = j.detail || 'Eroare ' + r.status;
+      return;
+    }
+    msgEl.style.color = 'var(--verde)';
+    msgEl.textContent = (j.mesaj || '') + ' Analize: ' + (j.analize_unic||0) + ', Aliasuri: ' + (j.aliasuri_procesate||0);
+    if (j.erori) msgEl.textContent += '. Erori: ' + j.erori;
+    inputEl.value = '';
+  } catch (e) {
+    msgEl.style.color = 'var(--rosu)';
+    msgEl.textContent = 'Eroare: ' + (e.message || '');
+  }
+}
+
+async function importDictionarExcelAuto() {
+  const msgEl = document.getElementById('setari-msg-dictionar');
+  msgEl.style.display = '';
+  msgEl.style.color = 'var(--gri)';
+  msgEl.textContent = 'Se importă din proiect…';
+  try {
+    const r = await fetch('/api/import-dictionar-excel', {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      msgEl.style.color = 'var(--rosu)';
+      msgEl.textContent = j.detail || 'Eroare ' + r.status;
+      return;
+    }
+    msgEl.style.color = 'var(--verde)';
+    msgEl.textContent = (j.mesaj || '') + ' Analize: ' + (j.analize_unic||0) + ', Aliasuri: ' + (j.aliasuri_procesate||0);
+    if (j.erori) msgEl.textContent += '. Erori: ' + j.erori;
+  } catch (e) {
+    msgEl.style.color = 'var(--rosu)';
+    msgEl.textContent = 'Eroare: ' + (e.message || '');
   }
 }
 
@@ -3116,6 +3230,23 @@ async function incarcaStandardeCache() {
     _analize_std_cache = await r.json();
   } catch { _analize_std_cache = []; }
   return _analize_std_cache;
+}
+
+async function golesteAnalizeAsociate() {
+  if (!confirm('Sigur ștergeți TOATE analizele necunoscute și alias-urile (asocierile)? Nu se poate reveni.')) return;
+  try {
+    const r = await fetch('/goleste-analize-asociate', { method: 'POST', headers: getAuthHeaders() });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      document.getElementById('badge-nec').style.display = 'none';
+      incarcaNecunoscute();
+      alert(j.mesaj || 'Toate asocierile au fost șterse.');
+    } else {
+      alert('Eroare: ' + (j.detail || 'Necunoscut'));
+    }
+  } catch (e) {
+    alert('Eroare: ' + e.message);
+  }
 }
 
 async function incarcaNecunoscute() {
