@@ -532,35 +532,49 @@ def get_historicul_analiza_by_cod(cod_standard: str) -> list:
 
 # --- GET /pacient/{cnp} ---
 def get_pacient_cu_analize(cnp: str) -> Optional[dict]:
+    """Pacient cu buletine si rezultate. Optimizat: 2 query-uri in loc de N+1."""
     pacient = get_pacient_by_cnp(cnp)
     if not pacient:
         return None
-    with get_cursor() as cur:
+    with get_cursor(commit=False) as cur:
         if _use_sqlite():
-            cur.execute("SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine WHERE pacient_id = ? ORDER BY created_at DESC", (pacient["id"],))
+            cur.execute(
+                "SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine WHERE pacient_id = ? ORDER BY created_at DESC",
+                (pacient["id"],),
+            )
         else:
             cur.execute(
                 "SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine WHERE pacient_id = %s ORDER BY created_at DESC",
                 (pacient["id"],),
             )
         buletine = [_row_to_dict(r) for r in cur.fetchall()]
+    if not buletine:
+        pacient["buletine"] = []
+        return pacient
+    ids_buletin = [b["id"] for b in buletine]
+    placeholders = ",".join(["?" if _use_sqlite() else "%s"] * len(ids_buletin))
+    with get_cursor(commit=False) as cur:
+        if _use_sqlite():
+            cur.execute(
+                """SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
+                FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id IN (""" + placeholders + """) ORDER BY r.buletin_id, COALESCE(r.ordine, 99999), a.denumire_standard, r.denumire_raw""",
+                ids_buletin,
+            )
+        else:
+            cur.execute(
+                """SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
+                FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id IN (""" + placeholders + """) ORDER BY r.buletin_id, COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw""",
+                ids_buletin,
+            )
+        toate_rez = [_row_to_dict(r) for r in cur.fetchall()]
+    by_buletin = {}
+    for r in toate_rez:
+        bid = r.get("buletin_id")
+        if bid not in by_buletin:
+            by_buletin[bid] = []
+        by_buletin[bid].append(r)
     for b in buletine:
-        with get_cursor() as cur:
-            if _use_sqlite():
-                cur.execute(
-                    """SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
-                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = ? ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard, r.denumire_raw""",
-                    (b["id"],),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT r.id, r.buletin_id, r.analiza_standard_id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.interval_min, r.interval_max, r.flag, r.ordine, r.categorie, r.created_at, a.cod_standard, a.denumire_standard
-                    FROM rezultate_analize r LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id WHERE r.buletin_id = %s ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw
-                    """,
-                    (b["id"],),
-                )
-            b["rezultate"] = [_row_to_dict(r) for r in cur.fetchall()]
+        b["rezultate"] = by_buletin.get(b["id"], [])
     pacient["buletine"] = buletine
     return pacient
 
