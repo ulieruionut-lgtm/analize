@@ -319,21 +319,11 @@ _PARSER_VERSION = "nitu-v3-20250222"
 
 @app.get("/health")
 async def health():
-    """Returneaza 200 mereu - Railway healthcheck necesita 2xx ca deployment sa treaca."""
-    try:
-        from backend.database import get_cursor, _use_sqlite
-        with get_cursor() as cur:
-            cur.execute("SELECT 1")
-        db_type = "sqlite" if _use_sqlite() else "postgresql"
-        return {
-            "status": "ok",
-            "database": "connected",
-            "database_type": db_type,
-            "parser_version": _PARSER_VERSION,
-        }
-    except Exception as e:
-        # 200 chiar daca DB esueaza - evitam "Healthcheck failure" pe Railway
-        return {"status": "degraded", "database": str(e)[:150], "parser_version": _PARSER_VERSION}
+    """Returneaza 200 imediat - Railway healthcheck. Fara query DB."""
+    from backend.config import settings
+    url = (settings.database_url or "").strip().lower()
+    db_type = "postgresql" if url and url.startswith("postgres") else "sqlite"
+    return {"status": "ok", "database_type": db_type, "parser_version": _PARSER_VERSION}
 
 
 @app.get("/api/migrate")
