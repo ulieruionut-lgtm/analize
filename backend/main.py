@@ -1646,16 +1646,15 @@ async def index():
         </div>
       </div>
       <p id="setari-msg-restore" style="font-size:0.88rem;display:none"></p>
-    </div>
-    <div class="card" id="card-import-dictionar" style="display:none">
-      <h2>Import dictionar analize (Excel)</h2>
-      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Importă ~300 analize standard și ~800 aliasuri din fișierul Excel. Înlocuiește alias-urile existente.</p>
+      <hr style="margin:24px 0;border:none;border-top:1px solid #e0e0e0">
+      <h3 style="font-size:1rem;margin-bottom:8px">Import dictionar analize (Excel)</h3>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Importă ~300 analize standard și ~800 aliasuri. Înlocuiește alias-urile existente.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
         <div>
           <input type="file" id="input-dictionar-excel" accept=".xlsx" style="display:none" onchange="importDictionarExcel(this)">
           <button class="btn btn-primary" onclick="document.getElementById('input-dictionar-excel').click()">📂 Încarcă Excel și importă</button>
         </div>
-        <button class="btn btn-secondary" id="btn-import-dictionar-auto" onclick="importDictionarExcelAuto()">📥 Importă din proiect (dacă există)</button>
+        <button class="btn btn-secondary" onclick="importDictionarExcelAuto()">📥 Importă din proiect</button>
       </div>
       <p id="setari-msg-dictionar" style="font-size:0.88rem;display:none"></p>
     </div>
@@ -1853,7 +1852,6 @@ async function incarcaSetari() {
   document.getElementById('setari-msg-users').style.display = 'none';
   const card = document.getElementById('card-user-management');
   const cardBackup = document.getElementById('card-backup');
-  const cardDictionar = document.getElementById('card-import-dictionar');
   try {
     const r = await fetch('/me', { headers: getAuthHeaders() });
     if (!r.ok) return;
@@ -1861,7 +1859,6 @@ async function incarcaSetari() {
     if ((u.username || '').toLowerCase() === 'admin') {
       card.style.display = 'block';
       if (cardBackup) cardBackup.style.display = 'block';
-      if (cardDictionar) cardDictionar.style.display = 'block';
       incarcaListaUtilizatori();
       (async function() {
         try {
@@ -1879,12 +1876,10 @@ async function incarcaSetari() {
     } else {
       card.style.display = 'none';
       if (cardBackup) cardBackup.style.display = 'none';
-      if (cardDictionar) cardDictionar.style.display = 'none';
     }
   } catch {
     card.style.display = 'none';
     if (cardBackup) cardBackup.style.display = 'none';
-    if (cardDictionar) cardDictionar.style.display = 'none';
   }
   incarcaLaboratoare();
 }
