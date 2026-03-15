@@ -203,7 +203,13 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
             )
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = ?", (cnp,))
             return _fetchone_dict(cur) or {}
-    cond_invalid_pg = cond_invalid.replace("nume", "pacienti.nume")
+    # PostgreSQL: % in LIKE trebuie escapat ca %% (psycopg2 interpreteaza % ca placeholder)
+    cond_invalid_pg = (
+        "pacienti.nume = '' OR pacienti.nume = 'Necunoscut' "
+        "OR pacienti.nume LIKE '%%Medic%%' OR pacienti.nume LIKE '%%Varsta%%' "
+        "OR pacienti.nume LIKE '%%pacient%%' OR LENGTH(pacienti.nume) > 80 "
+        "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35)"
+    )
     with get_cursor() as cur:
         cur.execute(
             f"""
