@@ -85,13 +85,13 @@ async def startup_event():
             from pathlib import Path
             sql_dir = Path(__file__).resolve().parent.parent / "sql"
             conn = None
-            for attempt in range(5):
+            for attempt in range(3):
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = psycopg2.connect(url, connect_timeout=10)
                     break
                 except Exception as e:
-                    print(f"[STARTUP] DB connect attempt {attempt+1}/5: {e}")
-                    time.sleep(2)
+                    print(f"[STARTUP] DB connect attempt {attempt+1}/3: {e}")
+                    time.sleep(1)
             if conn:
                 conn.autocommit = False
                 try:
