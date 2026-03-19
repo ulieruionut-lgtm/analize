@@ -1413,6 +1413,7 @@ async def index():
     position: sticky;
     top: 0;
     z-index: 10;
+    min-height: 44px;
   }
   .tab-pacient-btn {
     display: inline-flex;
@@ -1443,44 +1444,25 @@ async def index():
   .tab-pacient-btn.activ .close-tab:hover { background: rgba(255,255,255,0.3); }
   #continut-pacienti-dinamici { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
-  /* Layout 2 coloane: listă stânga, tab-uri + conținut dreapta */
-  .pacient-layout {
-    display: flex;
-    gap: 24px;
-    align-items: flex-start;
-    width: 100%;
-    max-width: 1400px;
+  /* Variantă 2: Tab-uri ca browser – interfață principală */
+  .pacient-list-card { margin-bottom: 16px; }
+  .pacient-list-card.collapsat .lista-pacienti-body { display: none; }
+  .pacient-list-card .toggle-lista {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #f0f4f8;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    color: var(--albastru);
+    margin-bottom: 8px;
   }
-  .pacient-list-col {
-    flex: 0 0 340px;
-    min-width: 280px;
-  }
-  .pacient-list-col .card {
-    position: sticky;
-    top: 12px;
-    max-height: calc(100vh - 140px);
-    display: flex;
-    flex-direction: column;
-  }
-  .pacient-list-col #lista-pacienti {
-    max-height: 480px;
-    overflow-y: auto;
-  }
-  .pacient-content-col {
-    flex: 1;
-    min-width: 0;
-  }
-  .pacient-content-col #continut-pacienti-dinamici {
-    margin: 0;
-    padding: 0;
-    max-width: none;
-  }
-  @media (max-width: 768px) {
-    .pacient-layout { flex-direction: column; }
-    .pacient-list-col { flex: 1 1 auto; min-width: 100%; }
-    .pacient-list-col .card { position: static; max-height: none; }
-    .pacient-list-col #lista-pacienti { max-height: 320px; }
-  }
+  .pacient-list-card .toggle-lista:hover { background: #e4eaf0; }
+  .pacient-list-card.collapsat .toggle-lista .icon { transform: rotate(-90deg); }
+  #continut-pacienti-dinamici { margin-top: 12px; }
 
   @media (max-width: 600px) {
     .content { padding: 12px; }
@@ -1571,25 +1553,24 @@ async def index():
     </div>
   </div>
 
-  <!-- TAB 2: Pacient (layout 2 coloane: listă stânga, analize dreapta) -->
+  <!-- TAB 2: Pacient (variantă 2 – tab-uri ca browser, analize vizibile sus) -->
   <div id="tab-pacient" class="sectiune">
-    <div class="pacient-layout">
-      <div class="pacient-list-col">
-        <div class="card">
-          <h2>Caută pacient după CNP sau Nume</h2>
-          <div class="search-row">
-            <input class="input-search" id="q-pacient" placeholder="Introduceți CNP sau Nume…" oninput="cautaPacient(this.value)">
-          </div>
-          <div id="lista-pacienti"></div>
-        </div>
+    <div class="card pacient-list-card" id="card-lista-pacienti">
+      <div class="toggle-lista" id="toggle-lista-pacienti" onclick="toggleListaPacienti()" style="display:none" title="Arată/ascunde lista">
+        <span class="icon">▼</span> <span>Caută / Arată lista pacienți</span>
       </div>
-      <div class="pacient-content-col">
-        <div id="continut-pacienti-placeholder" style="padding:40px 24px;color:var(--gri);text-align:center;font-size:0.95rem;border:2px dashed var(--border);border-radius:12px;background:#fafbfc">
-          👤 Selectați un pacient din listă (buton Analize) pentru a vedea evoluția analizelor
+      <div class="lista-pacienti-body">
+        <h2>Caută pacient după CNP sau Nume</h2>
+        <div class="search-row">
+          <input class="input-search" id="q-pacient" placeholder="Introduceți CNP sau Nume…" oninput="cautaPacient(this.value)">
         </div>
-        <div id="continut-pacienti-dinamici" style="display:none"></div>
+        <div id="lista-pacienti"></div>
       </div>
     </div>
+    <div id="continut-pacienti-placeholder" style="padding:40px 24px;color:var(--gri);text-align:center;font-size:0.95rem;border:2px dashed var(--border);border-radius:12px;background:#fafbfc">
+      👤 Selectați un pacient din listă (buton Analize) – se deschide într-un tab pentru comutare rapidă
+    </div>
+    <div id="continut-pacienti-dinamici" style="display:none"></div>
   </div>
 
   <!-- TAB 3: Evolutie analiza pacient -->
@@ -1774,6 +1755,7 @@ function deschideTabPacient(cnp, nume, htmlContent) {
     });
     baraDinamica.appendChild(btn);
     baraDinamica.style.display = 'flex';
+    _colapseazaListaPacienti();
   } else {
     // Tab existent - actualizeaza doar continutul si eventual numele
     if (!_tabPacienti[cnp]) _tabPacienti[cnp] = { nume, html: htmlContent };
@@ -1791,6 +1773,25 @@ function deschideTabPacient(cnp, nume, htmlContent) {
   }
 
   activeazaTabPacient(cnp);
+}
+
+function toggleListaPacienti() {
+  const card = document.getElementById('card-lista-pacienti');
+  if (card) card.classList.toggle('collapsat');
+}
+
+function _colapseazaListaPacienti() {
+  const card = document.getElementById('card-lista-pacienti');
+  const toggle = document.getElementById('toggle-lista-pacienti');
+  if (card) card.classList.add('collapsat');
+  if (toggle) toggle.style.display = 'inline-flex';
+}
+
+function _expandListaPacienti() {
+  const card = document.getElementById('card-lista-pacienti');
+  const toggle = document.getElementById('toggle-lista-pacienti');
+  if (card) card.classList.remove('collapsat');
+  if (toggle) toggle.style.display = 'none';
 }
 
 function activeazaTabPacient(cnp) {
@@ -1827,6 +1828,7 @@ function inchideTabPacient(cnp) {
     _tabPacientActiv = null;
     const placeholder = document.getElementById('continut-pacienti-placeholder');
     if (placeholder) placeholder.style.display = '';
+    _expandListaPacienti();
     schimbTab('pacient');
   } else if (_tabPacientActiv === cnp) {
     // Activeaza ultimul tab ramas
