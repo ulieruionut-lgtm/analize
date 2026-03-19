@@ -763,22 +763,42 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             data = _normalizare_data_text(data)
         date_buletine.append(data or "Necunoscuta")
     
-    # 3. Grupeaza rezultatele pe analiza_standard
-    # cheie = (analiza_standard_id, denumire_standard) sau (None, denumire_raw)
+    # 3. Grupeaza rezultatele în rânduri pentru matrice.
+    # - Un singur buletin: câte înregistrări în DB, atâtea rânduri (cheie = id rezultat). Altfel
+    #   denumire_raw goală sau identică pentru același cod standard colapsează totul (ex. 28 → 22).
+    # - Mai multe buletine: cheie semantică (id standard, denumire raw, ordine) ca să alinieze coloanele
+    #   în timp; ordine lipsește → folosim id rezultat doar ca fallback pentru cheie.
+    n_buletine = len(buletine_sorted)
     analize_map = {}  # cheie -> {denumire, unitate, valori_dict: {buletin_id: (valoare, flag)}, categorie, ordine_min}
     
     for idx_buletin, b in enumerate(buletine_sorted):
         buletin_id = b.get("id")
         for rez in b.get("rezultate", []):
-            # Cheie de grupare: folosim analiza_standard_id sau denumire_raw
-            if rez.get("analiza_standard_id"):
-                cheie = (rez["analiza_standard_id"], rez.get("denumire_standard") or rez.get("denumire_raw", ""))
+            raw = (rez.get("denumire_raw") or "").strip()
+            sid = rez.get("analiza_standard_id")
+            std = (rez.get("denumire_standard") or "").strip()
+            rid = rez.get("id")
+            if n_buletine == 1 and rid is not None:
+                cheie = ("rez", int(rid))
             else:
-                cheie = (None, rez.get("denumire_raw", "Necunoscuta"))
+                o = rez.get("ordine")
+                if o is None:
+                    ord_key = int(rid) if rid is not None else 0
+                else:
+                    try:
+                        ord_key = int(o)
+                    except (TypeError, ValueError):
+                        ord_key = int(rid) if rid is not None else 0
+                if sid is not None:
+                    cheie = ("m", int(sid), raw or std or "?", ord_key)
+                else:
+                    cheie = ("u", raw or "Necunoscuta", ord_key)
             
             if cheie not in analize_map:
+                # Etichetă rând: denumirea din PDF (raw) distinge liniile; fallback la standard din catalog
+                label = (raw or std or "?").strip()
                 analize_map[cheie] = {
-                    "denumire_standard": cheie[1],
+                    "denumire_standard": label,
                     "unitate": rez.get("unitate") or "",
                     "valori_dict": {},
                     "categorie": rez.get("categorie") or "",
@@ -849,6 +869,7 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             "categorie": info.get("categorie") or "",
         })
     
+    rezultate_in_baza = sum(len(b.get("rezultate") or []) for b in buletine_sorted)
     return {
         "pacient": {
             "id": pacient_data.get("id"),
@@ -858,6 +879,8 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
         },
         "date_buletine": date_buletine,
         "buletine_ids": [b.get("id") for b in buletine_sorted],
+        # Număr real de înregistrări în DB (poate coincide cu rândurile din tabel după fix grupare)
+        "rezultate_in_baza": rezultate_in_baza,
         "analize": analize_result
     }
 
@@ -2541,7 +2564,7 @@ async function veziPacient(cnp) {
               style="background:none;border:none;cursor:pointer;color:var(--albastru);font-size:0.75rem;padding:2px 6px;margin-left:6px">✏️</button>
           </h3>
           <p>CNP: <strong style="font-family:monospace">${escHtml(data.pacient.cnp)}</strong></p>
-          <p>Buletine: <strong>${data.date_buletine.length}</strong> &nbsp;|&nbsp; Analize: <strong>${data.analize.length}</strong></p>
+          <p>Buletine: <strong>${data.date_buletine.length}</strong> &nbsp;|&nbsp; Analize: <strong>${typeof data.rezultate_in_baza === 'number' ? data.rezultate_in_baza : data.analize.length}</strong>${typeof data.rezultate_in_baza === 'number' && data.rezultate_in_baza !== data.analize.length ? ' <span style="font-size:0.78rem;color:var(--gri)" title="Rânduri distincte în tabel (grupare)">(' + data.analize.length + ' rânduri)</span>' : ''}</p>
         </div>
         <div style="margin-left:auto">
           <button class="btn" style="background:var(--rosu);color:white;padding:8px 16px;font-size:0.82rem"
