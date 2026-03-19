@@ -205,15 +205,21 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
         doc = fitz.open(pdf_path)
         texts = []
 
-        # Configuratie Tesseract din settings (PSM 3=auto table, OEM 2=LSTM+legacy)
-        tess_config = f"--oem {getattr(settings, 'ocr_oem', 2)} --psm {getattr(settings, 'ocr_psm', 3)}"
-        psm_fallback = getattr(settings, 'ocr_psm_fallback', 4)
-        min_chars = getattr(settings, 'ocr_min_chars', 100)
+        oem = getattr(settings, "ocr_oem", 2)
+        psm_main = getattr(settings, "ocr_psm", 3)
+        psm_fallback = getattr(settings, "ocr_psm_fallback", 4)
+        psm_sparse = getattr(settings, "ocr_psm_sparse", 11)
+        min_chars = getattr(settings, "ocr_min_chars", 100)
+        dpi_hint = getattr(settings, "ocr_dpi_hint", 400)
+        # user_defined_dpi ajută Tesseract la segmentare când rasterul e ~400 DPI
+        tess_cfg = (
+            f"--oem {oem} --psm {psm_main} -c user_defined_dpi={dpi_hint}"
+        )
 
         for page_num in range(len(doc)):
             page = doc[page_num]
             # 400 DPI pentru calitate mai buna
-            mat = fitz.Matrix(400 / 72, 400 / 72)
+            mat = fitz.Matrix(dpi_hint / 72, dpi_hint / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
             img_bytes = pix.tobytes("png")
             img = Image.open(io.BytesIO(img_bytes))
@@ -225,12 +231,12 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
             text = pytesseract.image_to_string(
                 img_proc,
                 lang=settings.ocr_lang,
-                config=tess_config,
+                config=tess_cfg,
             )
 
             # Retry cu PSM fallback (ex: coloana) daca rezultatul e slab
             if len(text.strip()) < min_chars:
-                fallback_config = f"--oem {getattr(settings, 'ocr_oem', 2)} --psm {psm_fallback}"
+                fallback_config = f"--oem {oem} --psm {psm_fallback} -c user_defined_dpi={dpi_hint}"
                 text_fallback = pytesseract.image_to_string(
                     img.convert("L"),
                     lang=settings.ocr_lang,
@@ -238,6 +244,16 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
                 )
                 if len(text_fallback.strip()) > len(text.strip()):
                     text = text_fallback
+            # A treia încercare: text sparse (liste / buletine microbiologie)
+            if len(text.strip()) < min_chars:
+                sparse_cfg = f"--oem {oem} --psm {psm_sparse} -c user_defined_dpi={dpi_hint}"
+                text_sparse = pytesseract.image_to_string(
+                    img_proc,
+                    lang=settings.ocr_lang,
+                    config=sparse_cfg,
+                )
+                if len(text_sparse.strip()) > len(text.strip()):
+                    text = text_sparse
 
             texts.append(text)
         doc.close()
@@ -294,7 +310,12 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
         import pymupdf
         doc = pymupdf.open(pdf_path)
         for page in doc:
-            text_fitz += page.get_text() + "\n"
+            # sort=True: ordine de citire (stânga→dreapta, sus→jos) — important pentru tabele
+            # Affidea/Hiperdia și alte buletine multi-pagină; altfel textul din coloane se amestecă.
+            try:
+                text_fitz += page.get_text(sort=True) + "\n"
+            except TypeError:
+                text_fitz += page.get_text() + "\n"
         doc.close()
         text_fitz = (text_fitz or "").strip()
     except Exception:
@@ -302,7 +323,10 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
             import fitz  # fallback: pymupdf se exporta si ca fitz
             doc = fitz.open(pdf_path)
             for page in doc:
-                text_fitz += page.get_text() + "\n"
+                try:
+                    text_fitz += page.get_text(sort=True) + "\n"
+                except TypeError:
+                    text_fitz += page.get_text() + "\n"
             doc.close()
             text_fitz = (text_fitz or "").strip()
         except Exception:

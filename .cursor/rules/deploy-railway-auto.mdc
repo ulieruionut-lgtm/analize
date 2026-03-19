@@ -1,0 +1,32 @@
+---
+description: După modificări de cod, deploy automat GitHub→Railway fără a cere confirmare
+alwaysApply: true
+---
+
+# Deploy automat (Railway / GitHub)
+
+## Când să deploy-ezi **fără să întrebi** utilizatorul
+
+După ce ai terminat modificări care afectează producția:
+
+- `backend/**/*.py` (API, parser, PDF, DB, auth)
+- `Dockerfile`, `railway.toml`, `railway.json`
+- orice fișier care e copiat în imaginea Docker sau servit de Railway
+
+## Ce să faci (în ordine)
+
+1. **`git add`** doar fișierele **legate de task** (preferă `backend/` sau path-uri explicite). Evită `git add -A` cu zeci de scripturi `_*.py` nedorișe în repo dacă nu fac parte din livrare.
+2. **`git commit -m "mesaj scurt în română: ce s-a schimbat"`**
+3. **`git push origin main`** (sau branch-ul folosit de Railway).
+
+Railway face deploy la push dacă repo-ul e conectat la serviciu.
+
+## Dacă push-ul eșuează
+
+- Autentificare GitHub / token: explică **o dată** ce trebuie făcut local; nu insista în buclă.
+- Alternativă: utilizatorul poate rula `PUSH_SI_DEPLOY.bat` sau `railway up` (vezi `GHID_DEPLOY_GITHUB_RAILWAY.md`).
+
+## Ce **nu** face automat
+
+- Deploy fără commit (nu modifica doar fișiere locale și presupune că e live).
+- Push cu secrete noi în cod; folosește variabile Railway / `.env` ignorate.

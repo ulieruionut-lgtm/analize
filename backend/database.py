@@ -191,8 +191,31 @@ def _nume_invalid(nume: Optional[str]) -> bool:
     return False
 
 
+def _sterge_prenume_corupt_la_reupload(
+    prenume_nou: Optional[str], prenume_vechi: Optional[str],
+) -> bool:
+    """
+    Dacă noul buletin nu aduce prenume dar vechiul din DB e corupt (ex. «CNP: CNP:»),
+    returnează True → apelantul golește câmpul (parserul corect nu mai trimite gunoi).
+    """
+    if (prenume_nou or "").strip():
+        return False
+    ov = (prenume_vechi or "").strip()
+    if not ov:
+        return False
+    try:
+        from backend.parser import _curata_camp_prenume, _prenume_invalid
+    except ImportError:
+        return False
+    return _prenume_invalid(_curata_camp_prenume(ov))
+
+
 def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
     """Insereaza sau actualizeaza pacient. NU suprascrie nume/prenume daca existentul e deja valid."""
+    existent = get_pacient_by_cnp(cnp)
+    prenume_vechi = (existent or {}).get("prenume") if existent else None
+    clear_corrupt_prenume = _sterge_prenume_corupt_la_reupload(prenume, prenume_vechi)
+
     # Nume tip analiza/etichete - considerate invalide pentru suprascriere
     cond_invalid = (
         "nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' "
@@ -200,7 +223,9 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR LENGTH(nume) > 80 "
         "OR (nume LIKE '% (%)' AND LENGTH(nume) < 35) "
         "OR nume LIKE '''%' "
-        "OR (nume LIKE '%, 1%' AND (nume LIKE '%MATEI%' OR nume LIKE '%GHEORGHE%' OR nume LIKE '%ALEXANDRA%'))"
+        "OR (nume LIKE '%, 1%' AND (nume LIKE '%MATEI%' OR nume LIKE '%GHEORGHE%' OR nume LIKE '%ALEXANDRA%')) "
+        # OCR: «Prenume: CNP:…» salvat greșit în câmpul nume
+        "OR (LOWER(nume) LIKE '%prenume%' AND LOWER(nume) LIKE '%cnp%')"
     )
     if _use_sqlite():
         with get_cursor() as cur:
@@ -213,6 +238,8 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
                          THEN excluded.prenume ELSE prenume END""",
                 (cnp, nume, prenume or ""),
             )
+            if clear_corrupt_prenume:
+                cur.execute("UPDATE pacienti SET prenume = NULL WHERE cnp = ?", (cnp,))
             cur.execute("SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = ?", (cnp,))
             return _fetchone_dict(cur) or {}
     # PostgreSQL: % in LIKE trebuie escapat ca %% (psycopg2 interpreteaza % ca placeholder)
@@ -223,7 +250,8 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR pacienti.nume LIKE '%%Data tipar%%' OR LENGTH(pacienti.nume) > 80 "
         "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35) "
         "OR pacienti.nume LIKE '''%%' "
-        "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%'))"
+        "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%')) "
+        "OR (LOWER(pacienti.nume) LIKE '%%prenume%%' AND LOWER(pacienti.nume) LIKE '%%cnp%%')"
     )
     with get_cursor() as cur:
         cur.execute(
@@ -239,7 +267,15 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
             """,
             (cnp, nume, prenume or ""),
         )
-        return _fetchone_dict(cur) or {}
+        row = _fetchone_dict(cur) or {}
+        if clear_corrupt_prenume:
+            cur.execute("UPDATE pacienti SET prenume = NULL WHERE cnp = %s", (cnp,))
+            cur.execute(
+                "SELECT id, cnp, nume, prenume, created_at FROM pacienti WHERE cnp = %s",
+                (cnp,),
+            )
+            row = _fetchone_dict(cur) or row
+        return row
 
 
 def update_pacient_nume(cnp: str, nume: str, prenume: Optional[str] = None) -> bool:

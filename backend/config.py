@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     ocr_psm: int = 3   # 3=auto segmentare (bun pt tabele), 4=coloană, 6=bloc, 11=sparse
     ocr_oem: int = 2   # 1=LSTM, 2=LSTM+legacy (tessdata full are ambele)
     ocr_psm_fallback: int = 4   # retry cu acest PSM dacă rezultat < ocr_min_chars
+    ocr_psm_sparse: int = 11    # ultimă încercare: text sparse (buletine cu liste)
     ocr_min_chars: int = 100    # prag pentru retry cu PSM fallback
+    ocr_dpi_hint: int = 400     # transmis Tesseract ca user_defined_dpi (aliniat cu rasterizarea)
     # TESSDATA_PREFIX: setează în .env pt tessdata_best (mai precis, mai lent). Ex: /usr/share/tessdata_best
     tessdata_prefix: str | None = None
     pdf_text_min_chars: int = 200
