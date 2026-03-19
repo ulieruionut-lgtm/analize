@@ -225,7 +225,10 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR nume LIKE '''%' "
         "OR (nume LIKE '%, 1%' AND (nume LIKE '%MATEI%' OR nume LIKE '%GHEORGHE%' OR nume LIKE '%ALEXANDRA%')) "
         # OCR: «Prenume: CNP:…» salvat greșit în câmpul nume
-        "OR (LOWER(nume) LIKE '%prenume%' AND LOWER(nume) LIKE '%cnp%')"
+        "OR (LOWER(nume) LIKE '%prenume%' AND LOWER(nume) LIKE '%cnp%') "
+        # MedLife: proceduri/specialitate lipite de nume (Histeroscopie, OG,)
+        "OR LOWER(nume) LIKE '%histeroscop%' OR LOWER(nume) LIKE '%colposcop%' "
+        "OR LOWER(nume) LIKE '%laparoscop%' OR LOWER(nume) LIKE '% og,%'"
     )
     if _use_sqlite():
         with get_cursor() as cur:
@@ -251,7 +254,9 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35) "
         "OR pacienti.nume LIKE '''%%' "
         "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%')) "
-        "OR (LOWER(pacienti.nume) LIKE '%%prenume%%' AND LOWER(pacienti.nume) LIKE '%%cnp%%')"
+        "OR (LOWER(pacienti.nume) LIKE '%%prenume%%' AND LOWER(pacienti.nume) LIKE '%%cnp%%') "
+        "OR LOWER(pacienti.nume) LIKE '%%histeroscop%%' OR LOWER(pacienti.nume) LIKE '%%colposcop%%' "
+        "OR LOWER(pacienti.nume) LIKE '%%laparoscop%%' OR LOWER(pacienti.nume) LIKE '%% og,%%'"
     )
     with get_cursor() as cur:
         cur.execute(

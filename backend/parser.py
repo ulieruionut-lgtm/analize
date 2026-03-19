@@ -427,6 +427,47 @@ _NUME_GUNOI = re.compile(
     re.IGNORECASE,
 )
 
+# MedLife PDR / antet: după nume apar specialitate sau proceduri separate prin virgulă (OCR le lipește)
+_RE_SEGMENT_PROCEDURA_MEDLIFE = re.compile(
+    r"(?i)^(OG|Histeroscopie|Colposcopie|Laparoscopie|FIV|IVF|AMIOC|"
+    r"Histerosonografie|Ecografie|Consulta|Consultatie|Consult\s|"
+    r"Obstetric|Ginecologic|Obstetrica|Chirurgie|Endoscop|Patologie|"
+    r"Spitalul|Clinic|Cabinet)\b",
+)
+
+
+def _taie_suffix_medlife_proceduri(s: str) -> str:
+    """
+    Elimină din coada numelui fragmente tip «OG,Histeroscopie,Colposcopie,FIV» (MedLife).
+    Ex: «CHINDRIS ALINA MADALINA OG,Histeroscopie,...» → «CHINDRIS ALINA MADALINA».
+    """
+    if not s or not s.strip():
+        return s or ""
+    s = s.strip()
+    # OG urmat de listă cu virgulă (frecvent lipit de ultimul prenume)
+    s = re.sub(r"\s+OG\s*,.*$", "", s, flags=re.IGNORECASE).strip()
+    # Virgulă + proceduri fără OG în față
+    s = re.sub(
+        r",\s*(?:Histeroscopie|Colposcopie|Laparoscopie|FIV|IVF|Ecografie)\b.*$",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    ).strip()
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    if len(parts) <= 1:
+        s = re.sub(r"\s+OG\s*$", "", s, flags=re.IGNORECASE).strip()
+        return s
+    kept: list[str] = []
+    for p in parts:
+        if _RE_SEGMENT_PROCEDURA_MEDLIFE.match(p):
+            break
+        p_clean = re.sub(r"\s+OG\s*$", "", p, flags=re.IGNORECASE).strip()
+        if p_clean != p:
+            kept.append(p_clean)
+            break
+        kept.append(p)
+    return ", ".join(kept) if kept else s
+
 
 def _curata_nume(raw: str) -> str:
     """Extrage doar numele din text care poate contine 'Medic trimitator:', 'Varsta:', etc."""
@@ -471,6 +512,8 @@ def _curata_nume(raw: str) -> str:
     # Corecteaza erori OCR frecvente la inceput de cuvant
     s = re.sub(r"\blancu\b", "IANCU", s)
     s = re.sub(r"\bvladasel\b", "VLADASEL", s, flags=re.IGNORECASE)
+    # MedLife: specialitate / proceduri lipite de Nume/Prenume
+    s = _taie_suffix_medlife_proceduri(s)
     return s
 
 
