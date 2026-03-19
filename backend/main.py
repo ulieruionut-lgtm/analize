@@ -30,6 +30,7 @@ from backend.database import (
     export_backup_data,
     restore_from_backup,
     get_all_analize_standard,
+    count_pacienti,
     get_all_pacienti,
     get_all_users,
     get_analize_necunoscute,
@@ -42,7 +43,6 @@ from backend.database import (
     insert_rezultat,
     add_rezultat_manual,
     adauga_analiza_standard,
-    search_pacienti,
     sterge_analiza_necunoscuta,
     goleste_analize_asociate,
     update_rezultat,
@@ -232,10 +232,16 @@ async def startup_event():
         traceback.print_exc()
 
     try:
-        from backend.database import fix_pacienti_nume_cunoscuti
+        from backend.database import fix_pacienti_nume_cunoscuti, fix_pacienti_nume_gunoi, fix_pacienti_nume_curatare_completa
         corectati = fix_pacienti_nume_cunoscuti()
+        n_gunoi = fix_pacienti_nume_gunoi()
+        n_curatare = fix_pacienti_nume_curatare_completa()
         if corectati:
-            print(f"[STARTUP] ✓ Nume corectate pentru {len(corectati)} pacienti: {[c['nume']+' '+c['prenume'] for c in corectati]}")
+            print(f"[STARTUP] ✓ Nume corectate: {len(corectati)} pacienti cunoscuti")
+        if n_gunoi:
+            print(f"[STARTUP] ✓ Nume gunoi -> Necunoscut: {n_gunoi} pacienti")
+        if n_curatare:
+            print(f"[STARTUP] ✓ Curatare nume (apostrofuri, Varsta, duplicari): {n_curatare} pacienti")
     except Exception as e:
         print(f"[STARTUP] Eroare la corectare nume (ignorat): {e}")
 
@@ -535,15 +541,15 @@ async def import_dictionar_excel(
         root = Path(__file__).resolve().parent.parent
         xlsx_path = root / "dictionar_analize_300_1200_alias.xlsx"
         if file and file.filename and file.filename.lower().endswith(".xlsx"):
-            content = await file.read()
-            rez = _do_import_dictionar(content)
+            source = await file.read()
         elif xlsx_path.exists():
-            rez = _do_import_dictionar(xlsx_path)
+            source = xlsx_path
         else:
             raise HTTPException(
                 status_code=400,
                 detail="Încarcă fișierul Excel (dictionar_analize_300_1200_alias.xlsx) sau pune-l în rădăcina proiectului.",
             )
+        rez = _do_import_dictionar(source)
         if not rez.get("ok"):
             raise HTTPException(status_code=500, detail=rez.get("mesaj", "Eroare import"))
         return rez
@@ -621,7 +627,11 @@ async def upload_pdf(
             return JSONResponse(status_code=422, content={"detail": detail})
         parsed: Optional[PatientParsed] = parse_full_text(text)
         if not parsed:
+            parsed = parse_full_text(text, cnp_optional=True)
+        if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
+        if not parsed.rezultate:
+            return JSONResponse(status_code=422, content={"detail": "Nu s-au extras analize din PDF."})
         normalize_rezultate(parsed.rezultate)
         # Aplica colored_tokens: daca valoarea unui rezultat apare cu culoare non-neagra in PDF
         # si nu are deja un flag, o marcam ca anormala (H implicit = atentie)
@@ -708,11 +718,16 @@ async def upload_pdf(
 
 
 @app.get("/pacienti")
-async def lista_pacienti(q: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Lista pacienti. Optional: ?q=text pentru cautare dupa CNP sau Nume."""
-    if q and q.strip():
-        return search_pacienti(q.strip())
-    return get_all_pacienti()
+async def lista_pacienti(
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+):
+    """Lista pacienti paginata. ?q=text pentru cautare, ?limit=50&offset=0 pentru paginare."""
+    total = count_pacienti(q)
+    items = get_all_pacienti(limit=limit, offset=offset, q=q)
+    return {"items": items, "total": total}
 
 
 @app.get("/pacient/{cnp}/evolutie-matrice")
@@ -1100,7 +1115,7 @@ async def index():
   .tab-btn.activ { color: var(--albastru); border-bottom-color: var(--albastru); }
 
   /* Content */
-  .content { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .content { max-width: 1200px; margin: 0 auto; padding: 24px; }
   .sectiune { display: none; }
   .sectiune.activa { display: block; }
 
@@ -1391,9 +1406,13 @@ async def index():
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 24px;
-    background: #f8f9fa;
-    border-bottom: 1px solid var(--border);
+    padding: 10px 24px;
+    background: linear-gradient(180deg, #e8eef2 0%, #f5f7f9 100%);
+    border-bottom: 2px solid var(--albastru);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   .tab-pacient-btn {
     display: inline-flex;
@@ -1411,7 +1430,7 @@ async def index():
   }
   .tab-pacient-btn:hover { border-color: var(--albastru); color: var(--albastru); }
   .tab-pacient-btn.activ { background: var(--albastru); color: white; border-color: var(--albastru); }
-  .tab-pacient-btn .tab-nume { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+  .tab-pacient-btn .tab-nume { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
   .tab-pacient-btn .close-tab {
     flex-shrink: 0;
     width: 16px; height: 16px;
@@ -1423,6 +1442,45 @@ async def index():
   .tab-pacient-btn .close-tab:hover { opacity: 1; background: rgba(0,0,0,0.15); }
   .tab-pacient-btn.activ .close-tab:hover { background: rgba(255,255,255,0.3); }
   #continut-pacienti-dinamici { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  /* Layout 2 coloane: listă stânga, tab-uri + conținut dreapta */
+  .pacient-layout {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 1400px;
+  }
+  .pacient-list-col {
+    flex: 0 0 340px;
+    min-width: 280px;
+  }
+  .pacient-list-col .card {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 140px);
+    display: flex;
+    flex-direction: column;
+  }
+  .pacient-list-col #lista-pacienti {
+    max-height: 480px;
+    overflow-y: auto;
+  }
+  .pacient-content-col {
+    flex: 1;
+    min-width: 0;
+  }
+  .pacient-content-col #continut-pacienti-dinamici {
+    margin: 0;
+    padding: 0;
+    max-width: none;
+  }
+  @media (max-width: 768px) {
+    .pacient-layout { flex-direction: column; }
+    .pacient-list-col { flex: 1 1 auto; min-width: 100%; }
+    .pacient-list-col .card { position: static; max-height: none; }
+    .pacient-list-col #lista-pacienti { max-height: 320px; }
+  }
 
   @media (max-width: 600px) {
     .content { padding: 12px; }
@@ -1513,16 +1571,25 @@ async def index():
     </div>
   </div>
 
-  <!-- TAB 2: Pacient -->
+  <!-- TAB 2: Pacient (layout 2 coloane: listă stânga, analize dreapta) -->
   <div id="tab-pacient" class="sectiune">
-    <div class="card">
-      <h2>Caută pacient după CNP sau Nume</h2>
-      <div class="search-row">
-        <input class="input-search" id="q-pacient" placeholder="Introduceți CNP sau Nume…" oninput="cautaPacient(this.value)">
+    <div class="pacient-layout">
+      <div class="pacient-list-col">
+        <div class="card">
+          <h2>Caută pacient după CNP sau Nume</h2>
+          <div class="search-row">
+            <input class="input-search" id="q-pacient" placeholder="Introduceți CNP sau Nume…" oninput="cautaPacient(this.value)">
+          </div>
+          <div id="lista-pacienti"></div>
+        </div>
       </div>
-      <div id="lista-pacienti"></div>
+      <div class="pacient-content-col">
+        <div id="continut-pacienti-placeholder" style="padding:40px 24px;color:var(--gri);text-align:center;font-size:0.95rem;border:2px dashed var(--border);border-radius:12px;background:#fafbfc">
+          👤 Selectați un pacient din listă (buton Analize) pentru a vedea evoluția analizelor
+        </div>
+        <div id="continut-pacienti-dinamici" style="display:none"></div>
+      </div>
     </div>
-    <div id="continut-pacienti-dinamici" style="display:none;margin-top:24px"></div>
   </div>
 
   <!-- TAB 3: Evolutie analiza pacient -->
@@ -1644,7 +1711,7 @@ async def index():
       <p id="setari-msg-restore" style="font-size:0.88rem;display:none"></p>
       <hr style="margin:24px 0;border:none;border-top:1px solid #e0e0e0">
       <h3 style="font-size:1rem;margin-bottom:8px">Import dictionar analize (Excel)</h3>
-      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Importă ~300 analize standard și ~800 aliasuri. Înlocuiește alias-urile existente.</p>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Importă ~300 analize standard și ~800 aliasuri. Înlocuiește alias-urile existente.<br><small>„Importă din proiect” necesită fișierul <code>dictionar_analize_300_1200_alias.xlsx</code> în rădăcina proiectului (și în git pentru Railway). Dacă importul eșuează prin timeout (Railway), rulați local: <code>railway run python import_dictionar_excel.py</code></small></p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
         <div>
           <input type="file" id="input-dictionar-excel" accept=".xlsx" style="display:none" onchange="importDictionarExcel(this)">
@@ -1678,6 +1745,7 @@ async def index():
 // ─── Tab-uri dinamice pacienti ───────────────────────────────────────────────
 const _tabPacienti = {};   // { cnp: { nume, html } }
 let _tabPacientActiv = null;
+let _veziPacientAbortController = null;
 
 function deschideTabPacient(cnp, nume, htmlContent) {
   const baraDinamica = document.getElementById('tabs-dinamice');
@@ -1727,13 +1795,14 @@ function deschideTabPacient(cnp, nume, htmlContent) {
 
 function activeazaTabPacient(cnp) {
   const continutDinamic = document.getElementById('continut-pacienti-dinamici');
+  const placeholder = document.getElementById('continut-pacienti-placeholder');
 
-  // Păstrăm tab-ul Pacient vizibil (listă + detaliu), nu îl ascundem
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('activ', ['upload','pacient','analiza','alias','setari'][i] === 'pacient'));
   document.querySelectorAll('.sectiune').forEach(s => s.classList.remove('activa'));
   document.getElementById('tab-pacient').classList.add('activa');
 
   continutDinamic.style.display = '';
+  if (placeholder) placeholder.style.display = 'none';
   document.querySelectorAll('.tab-pacient-btn').forEach(b => b.classList.remove('activ'));
   const btn = document.querySelector('.tab-pacient-btn[data-cnp="' + cnp + '"]');
   if (btn) btn.classList.add('activ');
@@ -1756,7 +1825,8 @@ function inchideTabPacient(cnp) {
     continutDinamic.style.display = 'none';
     continutDinamic.innerHTML = '';
     _tabPacientActiv = null;
-    // Revine la tab-ul Pacient
+    const placeholder = document.getElementById('continut-pacienti-placeholder');
+    if (placeholder) placeholder.style.display = '';
     schimbTab('pacient');
   } else if (_tabPacientActiv === cnp) {
     // Activeaza ultimul tab ramas
@@ -2002,7 +2072,7 @@ async function importDictionarExcel(inputEl) {
   const msgEl = document.getElementById('setari-msg-dictionar');
   msgEl.style.display = '';
   msgEl.style.color = 'var(--gri)';
-  msgEl.textContent = 'Se importă…';
+  msgEl.textContent = 'Se importă… (poate dura 2-3 minute, nu închideți pagina)';
   try {
     const fd = new FormData();
     fd.append('file', file);
@@ -2031,7 +2101,7 @@ async function importDictionarExcelAuto() {
   const msgEl = document.getElementById('setari-msg-dictionar');
   msgEl.style.display = '';
   msgEl.style.color = 'var(--gri)';
-  msgEl.textContent = 'Se importă din proiect…';
+  msgEl.textContent = 'Se importă din proiect… (poate dura 2-3 minute, nu închideți pagina)';
   try {
     const r = await fetch('/api/import-dictionar-excel', {
       method: 'POST',
@@ -2347,9 +2417,10 @@ async function trimite(debugMode) {
 
 async function incarcaRecenti() {
   try {
-    const r = await fetch('/pacienti', { headers: getAuthHeaders() });
+    const r = await fetch('/pacienti?limit=50&offset=0', { headers: getAuthHeaders() });
     if (r.status === 401) { clearToken(); location.reload(); return; }
-    const lista = r.ok ? await r.json() : [];
+    const data = r.ok ? await r.json() : {};
+    const lista = Array.isArray(data) ? data : (data.items || []);
     if (!lista.length) return;
     document.getElementById('card-pacienti-recenti').style.display = '';
     document.getElementById('lista-recenti').innerHTML =
@@ -2368,27 +2439,41 @@ function afiseazaPlaceholderPacienti() {
   document.getElementById('lista-pacienti').innerHTML = PLACEHOLDER_PACIENTI;
 }
 
+const PAGINA_PACIENTI_LIMIT = 50;
+let _paginaPacientiCurenta = 0;
+let _totalPacienti = 0;
+let _termenCautarePacienti = '';
+
 function cautaPacient(q) {
   clearTimeout(_cautaPacientTimer);
-  _cautaPacientTimer = setTimeout(() => incarcaListaPacienti(q), 320);
+  _cautaPacientTimer = setTimeout(() => { _paginaPacientiCurenta = 0; incarcaListaPacienti(q, 0); }, 320);
 }
 
-async function incarcaListaPacienti(q) {
+async function incarcaListaPacienti(q, pagina) {
   const el = document.getElementById('lista-pacienti');
   const termen = (q || '').trim();
+  _termenCautarePacienti = termen;
+  if (typeof pagina === 'number') _paginaPacientiCurenta = pagina;
+  pagina = _paginaPacientiCurenta;
   el.innerHTML = '<span style="color:var(--gri);font-size:0.9rem">Se încarcă…</span>';
   try {
-    const url = termen ? '/pacienti?q=' + encodeURIComponent(termen) : '/pacienti';
+    const offset = pagina * PAGINA_PACIENTI_LIMIT;
+    let url = '/pacienti?limit=' + PAGINA_PACIENTI_LIMIT + '&offset=' + offset;
+    if (termen) url += '&q=' + encodeURIComponent(termen);
     const r = await fetch(url, { headers: getAuthHeaders() });
     if (handle401(r)) return;
-    const lista = r.ok ? await r.json() : [];
+    const data = r.ok ? await r.json() : {};
+    const lista = Array.isArray(data) ? data : (data.items || []);
+    const total = typeof data.total === 'number' ? data.total : lista.length;
+    _totalPacienti = total;
     if (!lista.length) {
       el.innerHTML = '<p style="color:var(--gri);text-align:center;padding:20px">' +
         (termen ? 'Niciun pacient găsit.' : 'Niciun pacient în baza de date. Încarcă PDF-uri din tab-ul Upload.') + '</p>';
       return;
     }
     const nrB = n => n === 1 ? '1 buletin' : (n || 0) + ' buletine';
-    el.innerHTML = '<div class="tabel-container"><table>' +
+    const totalPagini = Math.ceil(total / PAGINA_PACIENTI_LIMIT) || 1;
+    let html = '<div class="tabel-container"><table>' +
       '<thead><tr><th>Nume</th><th>CNP</th><th>Buletine</th><th>Acțiune</th></tr></thead><tbody>' +
       lista.map(p => `<tr>
         <td><strong>${escHtml(p.nume||'')}</strong>${p.prenume?' '+escHtml(p.prenume):''}</td>
@@ -2400,6 +2485,14 @@ async function incarcaListaPacienti(q) {
         </td>
       </tr>`).join('') +
       '</tbody></table></div>';
+    if (totalPagini > 1) {
+      html += '<div class="paginare-pacienti" style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;flex-wrap:wrap">' +
+        '<span style="color:var(--gri);font-size:0.88rem">Pagina ' + (pagina + 1) + ' din ' + totalPagini + ' (' + total + ' pacienți)</span>' +
+        '<button class="btn btn-secondary" ' + (pagina <= 0 ? 'disabled' : 'onclick="incarcaListaPacienti(_termenCautarePacienti, ' + (pagina - 1) + ')"') + ' style="padding:6px 14px;font-size:0.85rem">← Înapoi</button>' +
+        '<button class="btn btn-secondary" ' + (pagina >= totalPagini - 1 ? 'disabled' : 'onclick="incarcaListaPacienti(_termenCautarePacienti, ' + (pagina + 1) + ')"') + ' style="padding:6px 14px;font-size:0.85rem">Înainte →</button>' +
+        '</div>';
+    }
+    el.innerHTML = html;
   } catch(e) {
     el.innerHTML = '<p style="color:red">Eroare: ' + e.message + '</p>';
   }
@@ -2412,13 +2505,18 @@ async function veziPacient(cnp) {
     return;
   }
 
+  // Anuleaza fetch-ul anterior (evita race: click A -> B -> răspuns A suprascrie B)
+  _veziPacientAbortController?.abort();
+  _veziPacientAbortController = new AbortController();
+  const signal = _veziPacientAbortController.signal;
+
   // Arata placeholder in tab dinamic temporar
   const numeTemporar = cnp;
   deschideTabPacient(cnp, numeTemporar,
     '<div class="card"><p style="color:var(--gri)">Se încarcă datele pacientului…</p></div>');
 
   try {
-    const r = await fetch('/pacient/' + encodeURIComponent(String(cnp)) + '/evolutie-matrice', { headers: getAuthHeaders() });
+    const r = await fetch('/pacient/' + encodeURIComponent(String(cnp)) + '/evolutie-matrice', { headers: getAuthHeaders(), signal });
     if (handle401(r)) return;
     if (!r.ok) {
       deschideTabPacient(cnp, cnp,
@@ -2514,6 +2612,7 @@ async function veziPacient(cnp) {
     }
 
   } catch(e) {
+    if (e.name === 'AbortError') return;
     deschideTabPacient(cnp, cnp,
       '<div class="card"><p style="color:red">Eroare: ' + escHtml(e.message) + '</p></div>');
   }
@@ -2985,8 +3084,9 @@ async function incarcaListaPacientiAnaliza(q) {
   if (!q || !q.trim()) { el.innerHTML = ''; return; }
   el.innerHTML = '<span style="color:var(--gri);font-size:0.9rem">Se caută…</span>';
   try {
-    const r = await fetch('/pacienti?q=' + encodeURIComponent(q.trim()), { headers: getAuthHeaders() });
-    const lista = await r.json();
+    const r = await fetch('/pacienti?q=' + encodeURIComponent(q.trim()) + '&limit=100&offset=0', { headers: getAuthHeaders() });
+    const data = await r.json();
+    const lista = Array.isArray(data) ? data : (data.items || []);
     if (!lista.length) {
       el.innerHTML = '<p style="color:var(--gri);padding:12px 0">Niciun pacient găsit.</p>';
       return;

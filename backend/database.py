@@ -174,7 +174,16 @@ def _nume_invalid(nume: Optional[str]) -> bool:
     if len(s) > 80:
         return True
     low = s.lower()
-    if any(x in low for x in ("medic", "varsta", "pacient", "nume pacient", "beneficiar", "cod client")):
+    if any(x in low for x in (
+        "medic", "varsta", "pacient", "nume pacient", "beneficiar", "cod client",
+        "data inregistrari", "data inregistrare", "data tipar",
+    )):
+        return True
+    # Nume care incep cu apostrof parazit
+    if re.match(r"^['\u2018\u2019\u201c\u201d\"]", s):
+        return True
+    # Secvente repetitive (ex: "MATEI M, 1 MATEI M, 1")
+    if re.search(r"\s+[MF]\s*,\s*\d+\s+", s):
         return True
     # Nume tip analiză (ex: "TGO (ASAT)", "CRP (mg/L)") – parser OCR confundă uneori
     if re.match(r"^[A-Za-z0-9]{2,20}\s*\([A-Za-z0-9/]+\)$", s, re.IGNORECASE):
@@ -184,11 +193,14 @@ def _nume_invalid(nume: Optional[str]) -> bool:
 
 def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
     """Insereaza sau actualizeaza pacient. NU suprascrie nume/prenume daca existentul e deja valid."""
-    # Nume tip analiza (ex: TGO (ASAT)) - considerate invalide pentru suprascriere
+    # Nume tip analiza/etichete - considerate invalide pentru suprascriere
     cond_invalid = (
         "nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' "
-        "OR nume LIKE '%pacient%' OR LENGTH(nume) > 80 "
-        "OR (nume LIKE '% (%)' AND LENGTH(nume) < 35)"
+        "OR nume LIKE '%pacient%' OR nume LIKE '%Data inregistr%' OR nume LIKE '%Data tipar%' "
+        "OR LENGTH(nume) > 80 "
+        "OR (nume LIKE '% (%)' AND LENGTH(nume) < 35) "
+        "OR nume LIKE '''%' "
+        "OR (nume LIKE '%, 1%' AND (nume LIKE '%MATEI%' OR nume LIKE '%GHEORGHE%' OR nume LIKE '%ALEXANDRA%'))"
     )
     if _use_sqlite():
         with get_cursor() as cur:
@@ -207,8 +219,11 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
     cond_invalid_pg = (
         "pacienti.nume = '' OR pacienti.nume = 'Necunoscut' "
         "OR pacienti.nume LIKE '%%Medic%%' OR pacienti.nume LIKE '%%Varsta%%' "
-        "OR pacienti.nume LIKE '%%pacient%%' OR LENGTH(pacienti.nume) > 80 "
-        "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35)"
+        "OR pacienti.nume LIKE '%%pacient%%' OR pacienti.nume LIKE '%%Data inregistr%%' "
+        "OR pacienti.nume LIKE '%%Data tipar%%' OR LENGTH(pacienti.nume) > 80 "
+        "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35) "
+        "OR pacienti.nume LIKE '''%%' "
+        "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%'))"
     )
     with get_cursor() as cur:
         cur.execute(
@@ -262,6 +277,67 @@ _PACIENTI_FIX_NUME = [
     ("2970424080038", "MANDACHE", "OANA ALEXANDRA"),
     ("5240222080031", "NITU", "MATEI"),
 ]
+
+
+def fix_pacienti_nume_gunoi() -> int:
+    """Seteaza 'Necunoscut' pentru pacienti cu nume evident gunoi (Data inregistrari etc.) care nu au corectie cunoscuta."""
+    cnps_cunoscuti = {c[0] for c in _PACIENTI_FIX_NUME}
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT id, cnp, nume FROM pacienti WHERE nume != 'Necunoscut' AND nume != ''")
+        rows = cur.fetchall()
+    n = 0
+    for row in rows:
+        rid = _row_get(row, "id") or _row_get(row, 0)
+        cnp = _row_get(row, "cnp") or _row_get(row, 1)
+        nume = _row_get(row, "nume") or _row_get(row, 2)
+        if cnp in cnps_cunoscuti:
+            continue
+        if not _nume_invalid(nume):
+            continue
+        with get_cursor() as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(f"UPDATE pacienti SET nume = 'Necunoscut', prenume = NULL WHERE id = {ph}", (rid,))
+            n += cur.rowcount
+    return n
+
+
+def fix_pacienti_nume_curatare_completa() -> int:
+    """
+    Aplica _curata_nume pe TOȚI pacienții - elimină apostrofuri, Varsta:, duplicări etc.
+    Rulează la startup pentru a corecta orice nume corupt din OCR/upload-uri anterioare.
+    """
+    from backend.parser import _curata_nume, _nume_este_gunoi
+    cnps_cunoscuti = {c[0] for c in _PACIENTI_FIX_NUME}
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT id, cnp, nume, prenume FROM pacienti")
+        rows = cur.fetchall()
+    n = 0
+    for row in rows:
+        rid = _row_get(row, "id") or _row_get(row, 0)
+        cnp = (_row_get(row, "cnp") or _row_get(row, 1)) or ""
+        nume_raw = _row_get(row, "nume") or _row_get(row, 2) or ""
+        prenume_raw = _row_get(row, "prenume") or _row_get(row, 3) or ""
+        full_raw = f"{nume_raw} {prenume_raw}".strip()
+        full_curat = _curata_nume(full_raw)
+        if _nume_este_gunoi(full_curat):
+            nume_nou, prenume_nou = "Necunoscut", None
+        elif cnp in cnps_cunoscuti:
+            nume_nou, prenume_nou = next((c[1], c[2]) for c in _PACIENTI_FIX_NUME if c[0] == cnp)
+        elif full_curat and full_curat != "Necunoscut":
+            parts = full_curat.split(None, 1)
+            nume_nou = parts[0] if parts else "Necunoscut"
+            prenume_nou = parts[1] if len(parts) >= 2 else None
+        else:
+            continue
+        if (nume_nou, prenume_nou or "") != (nume_raw, prenume_raw or ""):
+            with get_cursor() as cur:
+                ph = "?" if _use_sqlite() else "%s"
+                cur.execute(
+                    f"UPDATE pacienti SET nume = {ph}, prenume = {ph} WHERE id = {ph}",
+                    (nume_nou, prenume_nou, rid),
+                )
+                n += cur.rowcount
+    return n
 
 
 def fix_pacienti_nume_cunoscuti() -> list:
@@ -343,20 +419,67 @@ def get_analiza_standard_id_by_alias(alias: str) -> Optional[int]:
 
 
 # --- Lista si cautare pacienti ---
-def get_all_pacienti() -> list:
+def count_pacienti(q: Optional[str] = None) -> int:
+    """Număr total pacienți. Dacă q e setat, numără doar cei care match-uiesc căutarea."""
     with get_cursor(commit=False) as cur:
-        if _use_sqlite():
-            cur.execute(
-                "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
-                "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
-                "GROUP BY p.id ORDER BY p.nume"
-            )
+        if q and q.strip():
+            q_like = f"%{q.strip()}%"
+            q_like_lower = f"%{q.strip().lower()}%"
+            if _use_sqlite():
+                cur.execute(
+                    "SELECT COUNT(*) FROM pacienti p "
+                    "WHERE p.cnp LIKE ? OR LOWER(COALESCE(p.nume,'') || ' ' || COALESCE(p.prenume,'')) LIKE ?",
+                    (q_like, q_like_lower),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) FROM pacienti p "
+                    "WHERE p.cnp LIKE %s OR LOWER(CONCAT(COALESCE(p.nume,''), ' ', COALESCE(p.prenume,''))) LIKE %s",
+                    (q_like, q_like_lower),
+                )
         else:
-            cur.execute(
-                "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
-                "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
-                "GROUP BY p.id ORDER BY p.nume"
-            )
+            cur.execute("SELECT COUNT(*) FROM pacienti")
+        row = cur.fetchone()
+        return int(_row_get(row, 0) or 0)
+
+
+def get_all_pacienti(limit: int = 100, offset: int = 0, q: Optional[str] = None) -> list:
+    """Listă pacienți cu paginare. Opțional q pentru căutare după CNP/nume."""
+    with get_cursor(commit=False) as cur:
+        if q and q.strip():
+            q_like = f"%{q.strip()}%"
+            q_like_lower = f"%{q.strip().lower()}%"
+            if _use_sqlite():
+                cur.execute(
+                    "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
+                    "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
+                    "WHERE p.cnp LIKE ? OR LOWER(COALESCE(p.nume,'') || ' ' || COALESCE(p.prenume,'')) LIKE ? "
+                    "GROUP BY p.id ORDER BY p.nume LIMIT ? OFFSET ?",
+                    (q_like, q_like_lower, limit, offset),
+                )
+            else:
+                cur.execute(
+                    "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
+                    "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
+                    "WHERE p.cnp LIKE %s OR LOWER(CONCAT(COALESCE(p.nume,''), ' ', COALESCE(p.prenume,''))) LIKE %s "
+                    "GROUP BY p.id ORDER BY p.nume LIMIT %s OFFSET %s",
+                    (q_like, q_like_lower, limit, offset),
+                )
+        else:
+            if _use_sqlite():
+                cur.execute(
+                    "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
+                    "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
+                    "GROUP BY p.id ORDER BY p.nume LIMIT ? OFFSET ?",
+                    (limit, offset),
+                )
+            else:
+                cur.execute(
+                    "SELECT p.id, p.cnp, p.nume, p.prenume, p.created_at, COUNT(b.id) as nr_buletine "
+                    "FROM pacienti p LEFT JOIN buletine b ON b.pacient_id = p.id "
+                    "GROUP BY p.id ORDER BY p.nume LIMIT %s OFFSET %s",
+                    (limit, offset),
+                )
         return [_row_to_dict(r) for r in cur.fetchall()]
 
 
