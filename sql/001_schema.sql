@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS rezultate_analize (
     analiza_standard_id INTEGER REFERENCES analiza_standard(id) ON DELETE SET NULL,
     denumire_raw VARCHAR(255),
     valoare NUMERIC,
-    valoare_text VARCHAR(128),
+    valoare_text TEXT,
     unitate VARCHAR(64),
     interval_min NUMERIC,
     interval_max NUMERIC,

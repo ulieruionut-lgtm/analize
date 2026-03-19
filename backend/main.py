@@ -187,6 +187,26 @@ async def startup_event():
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 010 (ignorat): {ex}")
+            # Migrare 011: valoare_text TEXT (microbiologie / paragrafe > 128 caractere)
+            sql_011 = Path(__file__).resolve().parent.parent / "sql" / "011_pg_valoare_text.sql"
+            if url and sql_011.exists():
+                try:
+                    conn = psycopg2.connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_011.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] ✓ Migrare 011 (valoare_text TEXT) aplicata")
+                    except Exception as ex:
+                        conn.rollback()
+                        em = str(ex).lower()
+                        if "already" not in em and "duplicate" not in em:
+                            print(f"[STARTUP] Migrare 011: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 011 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     # Migrare 009 pentru SQLite (tabele laboratoare)
@@ -362,7 +382,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:

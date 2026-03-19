@@ -413,11 +413,34 @@ def insert_buletin(pacient_id: int, data_buletin=None, laborator: Optional[str] 
         return _fetchone_dict(cur) or {}
 
 
+# Limite aliniate la schema PostgreSQL (evită crash la INSERT)
+_REZ_DEN_MAX = 255
+_REZ_UNIT_MAX = 64
+_REZ_FLAG_MAX = 16
+_REZ_CAT_MAX = 100
+# TEXT în PG după migrare 011; plafon rezonabil anti-abuz
+_REZ_VALOARE_TEXT_MAX = 500_000
+
+
+def _clip_str(s: Optional[str], max_len: int) -> Optional[str]:
+    if s is None:
+        return None
+    t = str(s).strip()
+    if not t:
+        return None
+    return t[:max_len] if len(t) > max_len else t
+
+
 # --- Rezultate analize ---
 def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumire_raw: Optional[str],
                     valoare=None, valoare_text: Optional[str] = None, unitate: Optional[str] = None,
                     interval_min=None, interval_max=None, flag: Optional[str] = None,
                     ordine: Optional[int] = None, categorie: Optional[str] = None) -> dict:
+    denumire_raw = _clip_str(denumire_raw, _REZ_DEN_MAX)
+    valoare_text = _clip_str(valoare_text, _REZ_VALOARE_TEXT_MAX)
+    unitate = _clip_str(unitate, _REZ_UNIT_MAX)
+    flag = _clip_str(flag, _REZ_FLAG_MAX)
+    categorie = _clip_str(categorie, _REZ_CAT_MAX)
     with get_cursor() as cur:
         if _use_sqlite():
             cur.execute(
@@ -978,6 +1001,9 @@ def add_rezultat_manual(buletin_id: int, analiza_standard_id: Optional[int],
                         flag: Optional[str]) -> Optional[dict]:
     """Adauga manual un rezultat intr-un buletin existent."""
     try:
+        dn = _clip_str(denumire_raw, _REZ_DEN_MAX) or ""
+        un = _clip_str(unitate, _REZ_UNIT_MAX)
+        fl = _clip_str(flag, _REZ_FLAG_MAX)
         with get_cursor() as cur:
             ph = "?" if _use_sqlite() else "%s"
             cur.execute(f"""
@@ -985,7 +1011,7 @@ def add_rezultat_manual(buletin_id: int, analiza_standard_id: Optional[int],
                     (buletin_id, analiza_standard_id, denumire_raw, valoare, unitate, flag)
                 VALUES ({ph},{ph},{ph},{ph},{ph},{ph})
                 RETURNING id
-            """, (buletin_id, analiza_standard_id, denumire_raw.strip(), valoare, unitate, flag or None))
+            """, (buletin_id, analiza_standard_id, dn, valoare, un, fl))
             row = cur.fetchone()
             if row is None:
                 return None
