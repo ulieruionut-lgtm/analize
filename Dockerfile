@@ -21,5 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Railway injectează PORT; dacă lipsește, --port gol face uvicorn să iasă imediat → healthcheck eșuat
 ENV PORT=8000
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "exec python -m uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

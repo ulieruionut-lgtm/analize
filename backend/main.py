@@ -1,9 +1,9 @@
 """FastAPI – Analize medicale PDF. Interfata medic + API REST."""
-import asyncio
 import json
 import os
 import re
 import tempfile
+import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -55,10 +55,15 @@ from backend.database import (
 )
 from backend.models import PatientParsed
 from backend.normalizer import normalize_rezultate
-from backend.parser import parse_full_text
-from backend.pdf_processor import extract_text_from_pdf
 
 app = FastAPI(title="Analize medicale PDF", version="1.0.0")
+
+
+def _postgresql_connect(url: str):
+    """PostgreSQL cu timeout fix — fără connect implicit care poate bloca minute în thread-ul de startup."""
+    import psycopg2
+
+    return psycopg2.connect(url, connect_timeout=25)
 
 _ERORI_LOG = Path(__file__).resolve().parent.parent / "upload_eroare.txt"
 _HTTP_BEARER = HTTPBearer(auto_error=False)
@@ -78,18 +83,18 @@ async def get_current_user(
 
 def _startup_blocking_work() -> None:
     """Migrări DB, admin implicit, curățare nume — sincron, rulează într-un thread (nu blochează /health)."""
+    print("[STARTUP][worker] migrări și admin…", flush=True)
     try:
         from backend.config import settings
         url = (settings.database_url or "").strip()
         if url and url.lower().startswith("postgresql"):
-            import psycopg2
             import time
             from pathlib import Path
             sql_dir = Path(__file__).resolve().parent.parent / "sql"
             conn = None
             for attempt in range(3):
                 try:
-                    conn = psycopg2.connect(url, connect_timeout=10)
+                    conn = _postgresql_connect(url)
                     break
                 except Exception as e:
                     print(f"[STARTUP] DB connect attempt {attempt+1}/3: {e}")
@@ -120,7 +125,7 @@ def _startup_blocking_work() -> None:
                     conn.close()
             sql_path = Path(__file__).resolve().parent.parent / "sql" / "007_ordine_categorie.sql"
             if sql_path.exists():
-                conn = psycopg2.connect(url)
+                conn = _postgresql_connect(url)
                 conn.autocommit = False
                 try:
                     cur = conn.cursor()
@@ -137,7 +142,7 @@ def _startup_blocking_work() -> None:
             sql_008 = Path(__file__).resolve().parent.parent / "sql" / "008_pg_alias_bioclinica.sql"
             if url and sql_008.exists():
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = _postgresql_connect(url)
                     conn.autocommit = False
                     try:
                         cur = conn.cursor()
@@ -156,7 +161,7 @@ def _startup_blocking_work() -> None:
             sql_009 = Path(__file__).resolve().parent.parent / "sql" / "009_pg_laboratoare_catalog.sql"
             if url and sql_009.exists():
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = _postgresql_connect(url)
                     conn.autocommit = False
                     try:
                         cur = conn.cursor()
@@ -174,7 +179,7 @@ def _startup_blocking_work() -> None:
             sql_010_pg = Path(__file__).resolve().parent.parent / "sql" / "010_pg_alias_laboratoare.sql"
             if url and sql_010_pg.exists():
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = _postgresql_connect(url)
                     conn.autocommit = False
                     try:
                         cur = conn.cursor()
@@ -193,7 +198,7 @@ def _startup_blocking_work() -> None:
             sql_011 = Path(__file__).resolve().parent.parent / "sql" / "011_pg_valoare_text.sql"
             if url and sql_011.exists():
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = _postgresql_connect(url)
                     conn.autocommit = False
                     try:
                         cur = conn.cursor()
@@ -213,7 +218,7 @@ def _startup_blocking_work() -> None:
             sql_012 = Path(__file__).resolve().parent.parent / "sql" / "012_pg_necunoscuta_categorie.sql"
             if url and sql_012.exists():
                 try:
-                    conn = psycopg2.connect(url)
+                    conn = _postgresql_connect(url)
                     conn.autocommit = False
                     try:
                         cur = conn.cursor()
@@ -345,9 +350,11 @@ def _startup_blocking_work() -> None:
 
 @app.on_event("startup")
 async def startup_event():
-    """Migrările PostgreSQL/SQLite rulează în fundal — Railway poate confirma /health imediat."""
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _startup_blocking_work)
+    """Migrările DB rulează într-un thread daemon — nu folosim executor/asyncio (unele runtime-uri blochează ciudat)."""
+    threading.Thread(
+        target=_startup_blocking_work, daemon=True, name="db-migrations"
+    ).start()
+    print("[STARTUP] Thread migrări DB pornit; /health disponibil.", flush=True)
 
 
 def _raspuns_eroare(status: int, mesaj: str):
@@ -425,7 +432,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-20260322-ocr-fragmente"
+_PARSER_VERSION = "railway-health-port-20260322"
 
 @app.get("/health")
 async def health():
@@ -445,10 +452,9 @@ async def run_migrations():
     if not url or not url.lower().startswith("postgresql"):
         return {"ok": False, "detail": "Nu folosești PostgreSQL."}
     try:
-        import psycopg2
         from pathlib import Path
         sql_dir = Path(__file__).resolve().parent.parent / "sql"
-        conn = psycopg2.connect(url)
+        conn = _postgresql_connect(url)
         conn.autocommit = False
         done = []
         try:
@@ -724,6 +730,9 @@ async def upload_pdf(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
+        from backend.parser import parse_full_text
+        from backend.pdf_processor import extract_text_from_pdf
+
         text, tip, ocr_err, colored_tokens, extractor = extract_text_from_pdf(tmp_path)
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
