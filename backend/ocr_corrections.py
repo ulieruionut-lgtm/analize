@@ -40,32 +40,63 @@ OCR_FIX_PATTERNS_NORMALIZAT: Tuple[Tuple[str, str], ...] = (
 
 def corecteaza_ocr_linie_buletin(linie: str) -> str:
     """
-    Corecții OCR pe linie înainte de parsare (organisme, fragmente de specii).
+    Corecții OCR pe linie înainte de parsare.
     Nu înlocuiește agresiv — doar pattern-uri frecvente din buletine reale.
     """
     if not linie or not linie.strip():
         return linie
     s = linie
-    # Ha_emophi_!us → Haemophilus (variante OCR)
+
+    # --- Simboluri parazite între denumire și valoare (MedLife scanat) ---
+    # "TSH ¢ 2.88" → "TSH 2.88"  |  "TSH * 2.88" → "TSH 2.88"
+    # Simboluri: ¢ § ° ~ ` ^ ± ∓ † ‡ ¶ și combinații cu spații
+    s = re.sub(r"(?<=\s)[¢§°~`^±†‡¶]+(?=\s)", "", s)
+    # "TSH¢2.88" (fără spații) → "TSH 2.88"
+    s = re.sub(r"([A-Za-z])[¢§°~`^±†‡¶]+(\d)", r"\1 \2", s)
+
+    # --- Unități OCR corupte (MedLife, Synevo scanat) ---
+    # pmoliL / pmolil / pmoll → pmol/L  (cu sau fara spatiu inaintea unitatii)
+    s = re.sub(r"\bpmoli?[lL]\b", "pmol/L", s)
+    s = re.sub(r"(\d)pmoli?[lL]?\b", r"\1 pmol/L", s)  # "230pmoli" → "230 pmol/L"
+    # uUl/mt / uUI/mt / uUl/mL → uUI/mL (TSH)
+    s = re.sub(r"\bu[Uu][Ii]?/m[tTlL]\b", "uUI/mL", s, flags=re.IGNORECASE)
+    # mUl/ml / mUI/ml → mUI/mL
+    s = re.sub(r"\bm[Uu][Ii]?/m[lL]\b", "mUI/mL", s, flags=re.IGNORECASE)
+    # *10%6 / *10'6 / *106 → *10^6  (eritrocite MedLife)
+    s = re.sub(r"\*10[%\'`]6", "*10^6", s)
+    # *10'3 / *10%3 / *103 → *10^3
+    s = re.sub(r"\*10[%\'`]3", "*10^3", s)
+    # *1073 / *1075 / *1073 (OCR confundă ^ cu 7) → *10^3
+    s = re.sub(r"\*107([3-6])", r"*10^\1", s)
+    # ng/mL scris ca ng/ml (normalizare minora)
+    # pUlimL / pUliml → pUI/mL (TSH interval)
+    s = re.sub(r"\bp[Uu]l?i?m[lL]\b", "pUI/mL", s)
+
+    # mg/di → mg/dL (OCR confundă L cu i)
+    s = re.sub(r"\bmg/di\b", "mg/dL", s, flags=re.IGNORECASE)
+    # mgl/di / mgl/dl → mg/dL
+    s = re.sub(r"\bmgl?/d[il]\b", "mg/dL", s, flags=re.IGNORECASE)
+    # IU/ml → UI/mL (normalizare)
+    # UL → U/L (Tesseract pierde bara oblică)
+    s = re.sub(r"(?<=\d)\s+UL\b", " U/L", s)
+    s = re.sub(r"\bUL\b(?=\s*<)", "U/L", s)
+
+    # --- Microbiologie: organisme corupte ---
     s = re.sub(
         r"Ha[_\s]+emophi[_\s!l1Ii\*]*us",
         "Haemophilus",
         s,
         flags=re.IGNORECASE,
     )
-    # Fragment «eriaceae» (lipsește Enterobact)
     s = re.sub(r"(?<![A-Za-zĂÂÎȘȚăâîșț])eriaceae\b", "Enterobacteriaceae", s, flags=re.IGNORECASE)
     s = re.sub(r"\bEntero\s*bacteriaceae\b", "Enterobacteriaceae", s, flags=re.IGNORECASE)
-    # Moraxella catarrhalis
     s = re.sub(r"\bMoraxel{1,3}a\b", "Moraxella", s, flags=re.IGNORECASE)
-    # Staphylococcus aureus cu zgomot
     s = re.sub(
         r"\bStaphylo[_\s]*coc\w*\s+aureus\b",
         "Staphylococcus aureus",
         s,
         flags=re.IGNORECASE,
     )
-    # Clostridium difficile
     s = re.sub(
         r"\bClostridi\w*\s+difficile\b",
         "Clostridium difficile",

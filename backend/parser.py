@@ -555,12 +555,16 @@ def _parse_european_number(s: str) -> Optional[float]:
             return float(cleaned)
         # Fara virgula: "4.650.000" sau "3.980" sau "81.9"
         cleaned = s.replace(",", ".")
-        # Daca are forma d.ddd sau d.ddd.ddd (grupuri de 3 cifre) = mii
-        digits_only = re.sub(r"[^0-9]", "", s)
-        if len(digits_only) >= 4 and "." in s:
-            # Probabil mii: 4.650.000, 323.000, 3.980
-            cleaned = s.replace(".", "")
-            return float(cleaned)
+        # Punct de mii: toate grupurile dupa punct au exact 3 cifre
+        # ex: "3.980" (3 cifre dupa punct) sau "4.650.000" (grupuri de 3)
+        # ATENTIE: "14.89" (2 cifre) sau "0.27" (2 cifre) = format standard cu punct zecimal
+        parts_after_dot = re.findall(r"\.(\d+)", s)
+        if parts_after_dot:
+            last_group_len = len(parts_after_dot[-1])
+            if last_group_len == 3:
+                # Toate grupurile sunt de 3 cifre → separator de mii
+                cleaned = s.replace(".", "")
+                return float(cleaned)
         return float(cleaned)
     except ValueError:
         return None
@@ -1359,6 +1363,19 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                 interval_max = float(m_interval.group(2).replace(",", "."))
             except ValueError:
                 interval_min = interval_max = None
+    # Referinta singulara fara paranteze: "<56 U/L" sau ">5" sau "≤ 100"
+    if interval_min is None and interval_max is None:
+        m_ref_sing = re.search(r"([<>≤≥]|<=|>=)\s*([\d.,]+)", rest)
+        if m_ref_sing:
+            op = m_ref_sing.group(1)
+            ref_val = _parse_european_number(m_ref_sing.group(2))
+            if ref_val is not None:
+                if op in ("<", "<=", "≤"):
+                    interval_min = 0.0
+                    interval_max = ref_val
+                elif op in (">", ">=", "≥"):
+                    interval_min = ref_val
+                    interval_max = ref_val * 10 if ref_val > 0 else None
 
     # Valideaza interval (interval_min trebuie < interval_max)
     if interval_min is not None and interval_max is not None:
@@ -1431,9 +1448,16 @@ def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denu
     Strategii:
     1. Cu interval: daca valoarea e > 10x intervalul_max si valoarea/10 e in interval => divide by 10
     2. Fara interval: euristici pentru RDW, MPV etc. - daca valoare > max_tipic*5, incercam /10
+
+    Protectie: daca valoarea are deja zecimale (ex 14.89) si intervalul pare corupt
+    (interval_max > 10 * valoare), nu modifica — intervalul e cel eronat, nu valoarea.
     """
     # Strategie 1: cu interval
     if interval_max is not None and interval_max > 0:
+        # Daca valoarea are deja zecimale si intervalul e suspect de mare, intervalul e cel corupt
+        has_decimals = (valoare != int(valoare)) if valoare is not None else False
+        if has_decimals and interval_max > valoare * 8 and valoare > 0:
+            return valoare  # interval corupt de OCR, valoarea e OK
         if valoare > 10 * interval_max:
             v10 = valoare / 10
             if v10 <= 2 * interval_max:
@@ -1441,6 +1465,14 @@ def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denu
             v100 = valoare / 100
             if v100 <= 2 * interval_max:
                 return v100
+        # Cazul: 121 cu interval [10.7, 14.1] → 121/10 = 12.1 e in interval
+        # OCR a omis punctul zecimal (12.1 → 121)
+        if valoare > interval_max * 5:
+            v10 = valoare / 10
+            if interval_min is not None and interval_min <= v10 <= interval_max * 1.5:
+                return v10
+            elif interval_min is None and v10 <= interval_max * 1.5:
+                return v10
         return valoare
 
     # Strategie 2: fara interval - euristici pentru parametri cunoscuti
