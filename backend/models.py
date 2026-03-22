@@ -76,6 +76,9 @@ class RezultatParsat(BaseModel):
     flag: Optional[str] = None
     categorie: Optional[str] = None   # sectiunea din buletin (ex: Hemoleucograma, Biochimie)
     ordine: Optional[int] = None      # pozitia in PDF (pentru sortare in ordinea originala)
+    # Microbiologie / meta (serializată JSON în coloana rezultat_meta la salvare)
+    organism_raw: Optional[str] = None
+    rezultat_tip: Optional[str] = None  # ex. "microbiology"
 
 
 class PatientParsed(BaseModel):

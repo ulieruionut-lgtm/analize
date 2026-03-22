@@ -20,6 +20,7 @@ def _to_cod(s: str) -> str:
 
 def import_dictionar_excel(
     source: Union[str, Path, bytes, BinaryIO],
+    progress_callback=None,
 ) -> Dict:
     """
     Importă analize standard + aliasuri din Excel.
@@ -32,24 +33,6 @@ def import_dictionar_excel(
         _use_sqlite,
     )
     from backend.normalizer import invalideaza_cache
-
-    def _find_analiza_by_denumire(denumire: str):
-        if not denumire or not denumire.strip():
-            return None
-        dn = str(denumire).strip().lower()
-        with get_cursor(commit=False) as cur:
-            if _use_sqlite():
-                cur.execute(
-                    "SELECT id FROM analiza_standard WHERE LOWER(TRIM(denumire_standard)) = ?",
-                    (dn,),
-                )
-            else:
-                cur.execute(
-                    "SELECT id FROM analiza_standard WHERE LOWER(TRIM(denumire_standard)) = LOWER(TRIM(%s))",
-                    (denumire,),
-                )
-            row = cur.fetchone()
-            return row[0] if row else None
 
     try:
         import openpyxl
@@ -73,9 +56,25 @@ def import_dictionar_excel(
         else:
             cur.execute("DELETE FROM analiza_alias")
 
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT id, denumire_standard FROM analiza_standard")
+        denumire_to_id = {}
+        for row in cur.fetchall():
+            rid, den_val = row[0], (row[1] or "")
+            den = str(den_val).strip().lower()
+            if den:
+                denumire_to_id[den] = rid
+
     analyte_to_id = {}
     erori = 0
+    total = len(rows)
+    batch = []
+    BATCH_SIZE = 50
+    if progress_callback and total > 0:
+        progress_callback(0, total)
     for i, row in enumerate(rows):
+        if progress_callback and (i + 1) % 50 == 0:
+            progress_callback(i + 1, total)
         if not row or len(row) < 2:
             continue
         analyte, alias = (row[0] or "").strip(), (row[1] or "").strip()
@@ -83,26 +82,55 @@ def import_dictionar_excel(
             continue
         try:
             if analyte not in analyte_to_id:
-                aid = _find_analiza_by_denumire(analyte)
+                dn = analyte.strip().lower()
+                aid = denumire_to_id.get(dn)
                 if aid is None:
                     cod = _to_cod(analyte)
                     aid = _get_or_create_analiza_standard(cod, analyte)
+                    denumire_to_id[dn] = aid
                 analyte_to_id[analyte] = aid
             aid = analyte_to_id[analyte]
-            with get_cursor(commit=True) as cur:
-                if _use_sqlite():
-                    cur.execute(
-                        "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
-                        (aid, alias),
-                    )
-                else:
-                    cur.execute(
-                        """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
-                           ON CONFLICT (alias) DO NOTHING""",
-                        (aid, alias),
-                    )
+            batch.append((aid, alias))
         except Exception:
             erori += 1
+            continue
+        if len(batch) >= BATCH_SIZE:
+            try:
+                with get_cursor() as cur:
+                    if _use_sqlite():
+                        cur.executemany(
+                            "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
+                            batch,
+                        )
+                    else:
+                        cur.executemany(
+                            """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
+                               ON CONFLICT (alias) DO NOTHING""",
+                            batch,
+                        )
+                batch = []
+            except Exception:
+                erori += len(batch)
+                batch = []
+    if batch:
+        try:
+            with get_cursor() as cur:
+                if _use_sqlite():
+                    cur.executemany(
+                        "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
+                        batch,
+                    )
+                else:
+                    cur.executemany(
+                        """INSERT INTO analiza_alias (analiza_standard_id, alias) VALUES (%s, %s)
+                           ON CONFLICT (alias) DO NOTHING""",
+                        batch,
+                    )
+        except Exception:
+            erori += len(batch)
+
+    if progress_callback and total > 0:
+        progress_callback(total, total)
 
     invalideaza_cache()
     return {

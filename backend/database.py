@@ -56,7 +56,13 @@ def _init_sqlite_if_needed():
         if cur.fetchone():
             _SQLITE_INIT_DONE = True
             return
-        for fname in ["schema_sqlite.sql", "seed_sqlite.sql", "002_analize_extinse.sql", "009_laboratoare_catalog.sql"]:
+        for fname in [
+            "schema_sqlite.sql",
+            "seed_sqlite.sql",
+            "002_analize_extinse.sql",
+            "009_laboratoare_catalog.sql",
+            "015_alias_clinice_necunoscute.sql",
+        ]:
             fpath = sql_dir / fname
             if fpath.exists():
                 conn.executescript(fpath.read_text(encoding="utf-8"))
@@ -177,6 +183,7 @@ def _nume_invalid(nume: Optional[str]) -> bool:
     if any(x in low for x in (
         "medic", "varsta", "pacient", "nume pacient", "beneficiar", "cod client",
         "data inregistrari", "data inregistrare", "data tipar",
+        "trimitator", "medicitrimitator",
     )):
         return True
     # Nume care incep cu apostrof parazit
@@ -220,6 +227,7 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
     cond_invalid = (
         "nume = '' OR nume = 'Necunoscut' OR nume LIKE '%Medic%' OR nume LIKE '%Varsta%' "
         "OR nume LIKE '%pacient%' OR nume LIKE '%Data inregistr%' OR nume LIKE '%Data tipar%' "
+        "OR LOWER(nume) LIKE '%trimitator%' OR LOWER(nume) LIKE '%medicitrimitator%' "
         "OR LENGTH(nume) > 80 "
         "OR (nume LIKE '% (%)' AND LENGTH(nume) < 35) "
         "OR nume LIKE '''%' "
@@ -250,7 +258,9 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "pacienti.nume = '' OR pacienti.nume = 'Necunoscut' "
         "OR pacienti.nume LIKE '%%Medic%%' OR pacienti.nume LIKE '%%Varsta%%' "
         "OR pacienti.nume LIKE '%%pacient%%' OR pacienti.nume LIKE '%%Data inregistr%%' "
-        "OR pacienti.nume LIKE '%%Data tipar%%' OR LENGTH(pacienti.nume) > 80 "
+        "OR pacienti.nume LIKE '%%Data tipar%%' "
+        "OR LOWER(pacienti.nume) LIKE '%%trimitator%%' OR LOWER(pacienti.nume) LIKE '%%medicitrimitator%%' "
+        "OR LENGTH(pacienti.nume) > 80 "
         "OR (pacienti.nume LIKE '%% (%%' AND LENGTH(pacienti.nume) < 35) "
         "OR pacienti.nume LIKE '''%%' "
         "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%')) "
@@ -425,6 +435,26 @@ _REZ_FLAG_MAX = 16
 _REZ_CAT_MAX = 100
 # TEXT în PG după migrare 011; plafon rezonabil anti-abuz
 _REZ_VALOARE_TEXT_MAX = 500_000
+_REZ_META_MAX = 16_384
+
+
+def rezultat_meta_pentru_insert(organism_raw: Optional[str], rezultat_tip: Optional[str]) -> Optional[str]:
+    """Construiește JSON pentru coloana rezultat_meta (microbiologie etc.)."""
+    import json
+
+    d: Dict[str, str] = {}
+    if organism_raw and str(organism_raw).strip():
+        clipped = _clip_str(str(organism_raw).strip(), 500)
+        if clipped:
+            d["organism_raw"] = clipped
+    if rezultat_tip and str(rezultat_tip).strip():
+        clipped_tip = _clip_str(str(rezultat_tip).strip(), 64)
+        if clipped_tip:
+            d["rezultat_tip"] = clipped_tip
+    if not d:
+        return None
+    raw_json = json.dumps(d, ensure_ascii=False)
+    return _clip_str(raw_json, _REZ_META_MAX)
 
 
 def _clip_str(s: Optional[str], max_len: int) -> Optional[str]:
@@ -440,28 +470,30 @@ def _clip_str(s: Optional[str], max_len: int) -> Optional[str]:
 def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumire_raw: Optional[str],
                     valoare=None, valoare_text: Optional[str] = None, unitate: Optional[str] = None,
                     interval_min=None, interval_max=None, flag: Optional[str] = None,
-                    ordine: Optional[int] = None, categorie: Optional[str] = None) -> dict:
+                    ordine: Optional[int] = None, categorie: Optional[str] = None,
+                    rezultat_meta: Optional[str] = None) -> dict:
     denumire_raw = _clip_str(denumire_raw, _REZ_DEN_MAX)
     valoare_text = _clip_str(valoare_text, _REZ_VALOARE_TEXT_MAX)
     unitate = _clip_str(unitate, _REZ_UNIT_MAX)
     flag = _clip_str(flag, _REZ_FLAG_MAX)
     categorie = _clip_str(categorie, _REZ_CAT_MAX)
+    rezultat_meta = _clip_str(rezultat_meta, _REZ_META_MAX)
     with get_cursor() as cur:
         if _use_sqlite():
             cur.execute(
-                """INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
+                """INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta),
             )
-            cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
+            cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
             return _fetchone_dict(cur) or {}
         cur.execute(
             """
-            INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at
+            INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at
             """,
-            (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
+            (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta),
         )
         return _fetchone_dict(cur) or {}
 
@@ -621,9 +653,14 @@ def get_laborator_analize(laborator_id: int) -> list:
 
 # --- Lista analize standard ---
 def get_all_analize_standard() -> list:
+    from backend.analiza_categorii import categorie_grup_pentru_cod
+
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT id, cod_standard, denumire_standard FROM analiza_standard ORDER BY denumire_standard")
-        return [_row_to_dict(r) for r in cur.fetchall()]
+        rows = [_row_to_dict(r) for r in cur.fetchall()]
+        for r in rows:
+            r["categorie_grup"] = categorie_grup_pentru_cod(r.get("cod_standard") or "")
+        return rows
 
 
 def adauga_analiza_standard(denumire: str, cod: str) -> dict:
@@ -680,18 +717,182 @@ def get_analize_necunoscute(doar_neaprobate: bool = True) -> list:
         if _use_sqlite():
             if doar_neaprobate:
                 cur.execute(
-                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, created_at, updated_at "
-                    "FROM analiza_necunoscuta WHERE aprobata = 0 ORDER BY aparitii DESC, denumire_raw"
+                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, created_at, updated_at "
+                    "FROM analiza_necunoscuta WHERE aprobata = 0 "
+                    "ORDER BY CASE WHEN categorie IS NULL OR categorie = '' THEN 1 ELSE 0 END, categorie, aparitii DESC, denumire_raw"
                 )
             else:
                 cur.execute(
-                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, created_at, updated_at "
+                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, created_at, updated_at "
                     "FROM analiza_necunoscuta ORDER BY aprobata, aparitii DESC"
                 )
         else:
-            q = "SELECT * FROM analiza_necunoscuta" + (" WHERE aprobata=0" if doar_neaprobate else "") + " ORDER BY aparitii DESC"
-            cur.execute(q)
+            ord_by = (
+                " ORDER BY CASE WHEN categorie IS NULL OR categorie = '' THEN 1 ELSE 0 END, "
+                "categorie, aparitii DESC, denumire_raw"
+            )
+            q = "SELECT * FROM analiza_necunoscuta" + (" WHERE aprobata=0" if doar_neaprobate else "") + ord_by
+            try:
+                cur.execute(q)
+            except Exception:
+                # PostgreSQL fără migrare 012 (coloana categorie) — tranzacția e invalidă până la rollback
+                try:
+                    cur.connection.rollback()
+                except Exception:
+                    pass
+                ord_simple = " ORDER BY aparitii DESC, denumire_raw"
+                q2 = "SELECT * FROM analiza_necunoscuta" + (" WHERE aprobata=0" if doar_neaprobate else "") + ord_simple
+                cur.execute(q2)
         return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def backfill_categorie_necunoscuta_din_rezultate(
+    dry_run: bool = True,
+    limit: Optional[int] = None,
+) -> dict:
+    """
+    Completează analiza_necunoscuta.categorie din rezultate_analize: pentru fiecare
+    denumire_raw fără categorie la necunoscute, folosește cel mai recent rând din
+    rezultate (ORDER BY id DESC) care are categorie setată (secțiunea din buletin).
+
+    :param dry_run: dacă True, nu scrie în DB, doar numără și returnează eșantion.
+    :param limit: opțional, max. rânduri din analiza_necunoscuta de examinat.
+    """
+    ph = "?" if _use_sqlite() else "%s"
+    stats: dict = {
+        "dry_run": dry_run,
+        "examinat": 0,
+        "cu_categorie_gasita": 0,
+        "fara_categorie_in_rezultate": 0,
+        "actualizate": 0,
+        "esantion": [],
+    }
+    where_empty = "(categorie IS NULL OR TRIM(categorie) = '')"
+    sql_nec = f"SELECT id, denumire_raw FROM analiza_necunoscuta WHERE {where_empty}"
+    if limit is not None and limit > 0:
+        lim = int(limit)
+        if _use_sqlite():
+            sql_nec += f" LIMIT {lim}"
+        else:
+            sql_nec += f" LIMIT {lim}"
+
+    sql_cat = (
+        f"SELECT categorie FROM rezultate_analize WHERE denumire_raw = {ph} "
+        f"AND categorie IS NOT NULL AND TRIM(categorie) != '' ORDER BY id DESC LIMIT 1"
+    )
+
+    with get_cursor(commit=not dry_run) as cur:
+        cur.execute(sql_nec)
+        nec_rows = [
+            nr for nr in (_row_to_dict(r) for r in cur.fetchall() if r is not None) if nr
+        ]
+
+        for nr in nec_rows:
+            stats["examinat"] += 1
+            rid = nr.get("id")
+            raw = (nr.get("denumire_raw") or "").strip()
+            if rid is None or not raw:
+                stats["fara_categorie_in_rezultate"] += 1
+                continue
+
+            cur.execute(sql_cat, (raw,))
+            cd = _fetchone_dict(cur)
+            cat = (cd or {}).get("categorie") if cd else None
+            if cat is None:
+                stats["fara_categorie_in_rezultate"] += 1
+                continue
+            cat = str(cat).strip()
+            if not cat:
+                stats["fara_categorie_in_rezultate"] += 1
+                continue
+
+            stats["cu_categorie_gasita"] += 1
+            if len(stats["esantion"]) < 30:
+                stats["esantion"].append(
+                    {"id": rid, "denumire_raw": raw[:80], "categorie": cat[:100]}
+                )
+
+            if not dry_run:
+                cur.execute(
+                    f"UPDATE analiza_necunoscuta SET categorie = {ph} WHERE id = {ph}",
+                    (cat, rid),
+                )
+                stats["actualizate"] += 1
+
+    if dry_run:
+        stats["actualizate"] = stats["cu_categorie_gasita"]
+
+    return stats
+
+
+def curata_gunoi_analize_pipeline(
+    dry_run: bool = True,
+    sterge_rezultate_nemapate: bool = False,
+    doar_neaprobate_necunoscute: bool = True,
+) -> dict:
+    """
+    Șterge intrări gunoi folosind aceleași reguli ca ``backend.parser.este_denumire_gunoi``
+    (sincron cu normalizer-ul, care nu mai loghează gunoi).
+
+    - analiza_necunoscuta: implicit doar rânduri cu aprobata=0 (listă „de asociat”).
+    - rezultate_analize: opțional, rânduri cu analiza_standard_id IS NULL și denumire gunoi.
+
+    :param dry_run: nu execută DELETE dacă True.
+    :param sterge_rezultate_nemapate: curăță și rezultatele din buletine (fără mapare).
+    :param doar_neaprobate_necunoscute: dacă False, include și rânduri aprobate (rar; folosiți cu grijă).
+    """
+    from backend.parser import este_denumire_gunoi
+
+    ph = "?" if _use_sqlite() else "%s"
+    stats: dict = {
+        "dry_run": dry_run,
+        "necunoscute_scanate": 0,
+        "necunoscute_sterse": 0,
+        "rezultate_scanate": 0,
+        "rezultate_sterse": 0,
+        "exemple_necunoscute": [],
+        "exemple_rezultate": [],
+    }
+
+    sql_nec = "SELECT id, denumire_raw FROM analiza_necunoscuta"
+    if doar_neaprobate_necunoscute:
+        sql_nec += " WHERE aprobata = 0"
+
+    with get_cursor(commit=not dry_run) as cur:
+        cur.execute(sql_nec)
+        for row in cur.fetchall():
+            d = _row_to_dict(row)
+            stats["necunoscute_scanate"] += 1
+            raw = d.get("denumire_raw") or ""
+            if not este_denumire_gunoi(raw):
+                continue
+            stats["necunoscute_sterse"] += 1
+            if len(stats["exemple_necunoscute"]) < 30:
+                stats["exemple_necunoscute"].append(
+                    {"id": d.get("id"), "denumire_raw": (raw or "")[:120]}
+                )
+            if not dry_run:
+                cur.execute(f"DELETE FROM analiza_necunoscuta WHERE id = {ph}", (d["id"],))
+
+        if sterge_rezultate_nemapate:
+            cur.execute(
+                "SELECT id, denumire_raw FROM rezultate_analize WHERE analiza_standard_id IS NULL"
+            )
+            for row in cur.fetchall():
+                d = _row_to_dict(row)
+                stats["rezultate_scanate"] += 1
+                raw = d.get("denumire_raw") or ""
+                if not este_denumire_gunoi(raw):
+                    continue
+                stats["rezultate_sterse"] += 1
+                if len(stats["exemple_rezultate"]) < 30:
+                    stats["exemple_rezultate"].append(
+                        {"id": d.get("id"), "denumire_raw": (raw or "")[:120]}
+                    )
+                if not dry_run:
+                    cur.execute(f"DELETE FROM rezultate_analize WHERE id = {ph}", (d["id"],))
+
+    return stats
 
 
 def sterge_analiza_necunoscuta(id_necunoscuta: int) -> bool:
@@ -947,10 +1148,18 @@ def delete_pacient(pacient_id: int) -> bool:
 
 def get_rezultate_buletin(buletin_id: int) -> list:
     """Returneaza toate rezultatele unui buletin, cu denumire_standard si flag."""
-    try:
-        with get_cursor(commit=False) as cur:
-            ph = "?" if _use_sqlite() else "%s"
-            cur.execute(f"""
+    ph = "?" if _use_sqlite() else "%s"
+    sql_cu_meta = f"""
+                SELECT r.id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.flag,
+                       r.interval_min, r.interval_max,
+                       r.analiza_standard_id, r.ordine, r.categorie, r.rezultat_meta,
+                       a.denumire_standard, a.cod_standard
+                FROM rezultate_analize r
+                LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id
+                WHERE r.buletin_id = {ph}
+                ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw
+            """
+    sql_fara_meta = f"""
                 SELECT r.id, r.denumire_raw, r.valoare, r.valoare_text, r.unitate, r.flag,
                        r.interval_min, r.interval_max,
                        r.analiza_standard_id, r.ordine, r.categorie,
@@ -959,7 +1168,13 @@ def get_rezultate_buletin(buletin_id: int) -> list:
                 LEFT JOIN analiza_standard a ON a.id = r.analiza_standard_id
                 WHERE r.buletin_id = {ph}
                 ORDER BY COALESCE(r.ordine, 99999), a.denumire_standard NULLS LAST, r.denumire_raw
-            """, (buletin_id,))
+            """
+    try:
+        with get_cursor(commit=False) as cur:
+            try:
+                cur.execute(sql_cu_meta, (buletin_id,))
+            except Exception:
+                cur.execute(sql_fara_meta, (buletin_id,))
             rows = cur.fetchall()
             return [_row_to_dict(r) for r in rows] if rows else []
     except Exception:
@@ -1071,19 +1286,26 @@ def export_backup_data() -> Dict[str, Any]:
             "SELECT id, pacient_id, data_buletin, laborator, fisier_original, created_at FROM buletine ORDER BY id"
         )
         out["buletine"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
-        # Rezultate: încearcă cu ordine/categorie; dacă lipsesc (schema veche), fără ele
+        # Rezultate: încearcă cu ordine/categorie/rezultat_meta; fallback schema veche
         try:
             cur.execute(
                 """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
-                          unitate, interval_min, interval_max, flag, ordine, categorie, created_at
+                          unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at
                    FROM rezultate_analize ORDER BY id"""
             )
         except Exception:
-            cur.execute(
-                """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
-                          unitate, interval_min, interval_max, flag, created_at
-                   FROM rezultate_analize ORDER BY id"""
-            )
+            try:
+                cur.execute(
+                    """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
+                              unitate, interval_min, interval_max, flag, ordine, categorie, created_at
+                       FROM rezultate_analize ORDER BY id"""
+                )
+            except Exception:
+                cur.execute(
+                    """SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text,
+                              unitate, interval_min, interval_max, flag, created_at
+                       FROM rezultate_analize ORDER BY id"""
+                )
         out["rezultate_analize"] = [_json_serializable(_row_to_dict(r)) for r in cur.fetchall()]
     return out
 
@@ -1226,6 +1448,7 @@ def restore_from_backup(data: Dict[str, Any]) -> Dict[str, Any]:
                 r.get("flag"),
                 r.get("ordine"),
                 r.get("categorie"),
+                r.get("rezultat_meta"),
             )
             result["rezultate"] += 1
         except Exception as e:
