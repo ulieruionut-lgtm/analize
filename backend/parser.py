@@ -504,6 +504,14 @@ RE_VALOARE_LINIE_DASH = re.compile(
     re.IGNORECASE,
 )
 
+# În _este_gunoi_ocr: rând «valoare UM min - max» oriunde în linie (fără _parse_oneline — evită cicluri/cost la pornire)
+_RE_TABULAR_ROW_VAL_UM_INTERVAL = re.compile(
+    r"(?<!\S)(?:[<>≤≥]\s*)?(?:\d+[.,]\d+|\d+)\s+"
+    r"(?:\*[\w/.^µμ·]+|[a-zA-Z%µμg·²³'\/][\w/.^µμ³·/%]*)\s+"
+    r"[\d.,]+\s*[-–]\s*[\d.,]",
+    re.IGNORECASE,
+)
+
 # Format valoare + referinta singulara (≤ X) la inceputul liniei - ex: "2,260mg/dL (<= 0,33)"
 RE_VALOARE_REF_SINGULAR = re.compile(
     r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
@@ -931,10 +939,10 @@ def _este_gunoi_ocr(linie: str) -> bool:
     )
     if _CUVINTE_MEDICALE.search(linie):
         return False
-    # Rând «denumire + valoare + UM + interval» (MedLife/Synevo pe o linie): multe cifre/token-uri
-    # scurte trec pragul de mai jos și erau ignorați în Pasul 2 (_este_linie_parametru → False).
-    pl = _parse_oneline(linie)
-    if pl is not None and (pl.valoare is not None or (pl.valoare_text or "").strip()):
+    # Rând «… valoare UM min - max» (MedLife): multe token-uri numerice trec pragul „silabe scurte”.
+    # NU apelăm _parse_oneline aici (în unele medii poate interacționa cu _este_linie_parametru la încărcare).
+    m_tab = _RE_TABULAR_ROW_VAL_UM_INTERVAL.search(linie)
+    if m_tab and re.search(r"[A-Za-zĂÂÎȘȚăâîșț]", linie[: m_tab.start()]):
         return False
     # Imparte in cuvinte (secvente ne-spatiu)
     cuvinte = linie.split()

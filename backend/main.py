@@ -1,4 +1,5 @@
 """FastAPI – Analize medicale PDF. Interfata medic + API REST."""
+import asyncio
 import json
 import os
 import re
@@ -41,8 +42,10 @@ from backend.database import (
     get_user_by_username,
     insert_buletin,
     insert_rezultat,
+    rezultat_meta_pentru_insert,
     add_rezultat_manual,
     adauga_analiza_standard,
+    backfill_categorie_necunoscuta_din_rezultate,
     sterge_analiza_necunoscuta,
     goleste_analize_asociate,
     update_rezultat,
@@ -73,9 +76,8 @@ async def get_current_user(
     return {"username": payload["sub"]}
 
 
-@app.on_event("startup")
-async def startup_event():
-    """La pornire: migrare ordine/categorie, admin default, corectare nume pacienti."""
+def _startup_blocking_work() -> None:
+    """Migrări DB, admin implicit, curățare nume — sincron, rulează într-un thread (nu blochează /health)."""
     try:
         from backend.config import settings
         url = (settings.database_url or "").strip()
@@ -207,6 +209,26 @@ async def startup_event():
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 011 (ignorat): {ex}")
+            # Migrare 012: categorie (secțiune PDF) pe analiza_necunoscuta
+            sql_012 = Path(__file__).resolve().parent.parent / "sql" / "012_pg_necunoscuta_categorie.sql"
+            if url and sql_012.exists():
+                try:
+                    conn = psycopg2.connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_012.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] ✓ Migrare 012 (categorie necunoscute) aplicata")
+                    except Exception as ex:
+                        conn.rollback()
+                        em = str(ex).lower()
+                        if "already" not in em and "duplicate" not in em and "exists" not in em:
+                            print(f"[STARTUP] Migrare 012: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 012 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     # Migrare 009 pentru SQLite (tabele laboratoare)
@@ -237,6 +259,61 @@ async def startup_event():
                         print(f"[STARTUP] Migrare 010 SQLite: {ex}")
                 finally:
                     conn.close()
+            # 012 SQLite: coloana categorie pe analiza_necunoscuta
+            conn_cat = None
+            try:
+                conn_cat = get_connection()
+                cur = conn_cat.execute("PRAGMA table_info(analiza_necunoscuta)")
+                col_names = [row[1] for row in cur.fetchall()]
+                if "categorie" not in col_names:
+                    conn_cat.execute("ALTER TABLE analiza_necunoscuta ADD COLUMN categorie TEXT")
+                    conn_cat.commit()
+                    print("[STARTUP] ✓ SQLite: coloana categorie pe analiza_necunoscuta")
+            except Exception as ex:
+                if "duplicate" not in str(ex).lower():
+                    print(f"[STARTUP] SQLite categorie necunoscute: {ex}")
+            finally:
+                if conn_cat:
+                    try:
+                        conn_cat.close()
+                    except Exception:
+                        pass
+            # Coloana rezultat_meta (JSON microbiologie / meta)
+            conn_rm = None
+            try:
+                conn_rm = get_connection()
+                cur_rm = conn_rm.execute("PRAGMA table_info(rezultate_analize)")
+                col_rm = [row[1] for row in cur_rm.fetchall()]
+                if "rezultat_meta" not in col_rm:
+                    conn_rm.execute("ALTER TABLE rezultate_analize ADD COLUMN rezultat_meta TEXT")
+                    conn_rm.commit()
+                    print("[STARTUP] ✓ SQLite: coloana rezultat_meta pe rezultate_analize")
+            except Exception as ex:
+                if "duplicate" not in str(ex).lower():
+                    print(f"[STARTUP] SQLite rezultat_meta: {ex}")
+            finally:
+                if conn_rm:
+                    try:
+                        conn_rm.close()
+                    except Exception:
+                        pass
+            sql_015 = Path(__file__).resolve().parent.parent / "sql" / "015_alias_clinice_necunoscute.sql"
+            if sql_015.exists():
+                conn015 = None
+                try:
+                    conn015 = get_connection()
+                    conn015.executescript(sql_015.read_text(encoding="utf-8"))
+                    conn015.commit()
+                    print("[STARTUP] ✓ Migrare 015 SQLite (alias clinice / microbiologie)")
+                except Exception as ex:
+                    if "UNIQUE constraint" not in str(ex) and "already exists" not in str(ex).lower():
+                        print(f"[STARTUP] Migrare 015 SQLite: {ex}")
+                finally:
+                    if conn015:
+                        try:
+                            conn015.close()
+                        except Exception:
+                            pass
     except Exception as ex:
         print(f"[STARTUP] Migrare 009 SQLite (ignorat): {ex}")
     try:
@@ -264,6 +341,13 @@ async def startup_event():
             print(f"[STARTUP] ✓ Curatare nume (apostrofuri, Varsta, duplicari): {n_curatare} pacienti")
     except Exception as e:
         print(f"[STARTUP] Eroare la corectare nume (ignorat): {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Migrările PostgreSQL/SQLite rulează în fundal — Railway poate confirma /health imediat."""
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _startup_blocking_work)
 
 
 def _raspuns_eroare(status: int, mesaj: str):
@@ -341,7 +425,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "nitu-v3-20250222"
+_PARSER_VERSION = "medlife-20260322-startup-bg"
 
 @app.get("/health")
 async def health():
@@ -382,7 +466,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
@@ -434,6 +518,13 @@ class ChangePasswordRequest(BaseModel):
 class CreateUserRequest(BaseModel):
     username: str
     password: str
+
+
+class BackfillNecunoscutaCategorieBody(BaseModel):
+    """Backfill categorie (secțiune PDF) pentru analiza_necunoscuta din rezultate_analize."""
+
+    dry_run: bool = True
+    limit: Optional[int] = None
 
 
 @app.post("/change-password")
@@ -579,6 +670,26 @@ async def import_dictionar_excel(
         return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
+@app.post("/api/admin/backfill-necunoscuta-categorie")
+async def admin_backfill_necunoscuta_categorie(
+    body: BackfillNecunoscutaCategorieBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Completează analiza_necunoscuta.categorie din rezultate (cel mai recent rând cu aceeași denumire_raw).
+    Implicit dry_run=true (simulare). Doar utilizatorul admin.
+    """
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Doar admin poate rula această operație.")
+    try:
+        return backfill_categorie_necunoscuta_din_rezultate(
+            dry_run=body.dry_run,
+            limit=body.limit,
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
 @app.delete("/buletin/{buletin_id}")
 async def sterge_buletin(buletin_id: int, current_user: dict = Depends(get_current_user)):
     """Sterge un buletin (cu toate analizele din el)."""
@@ -651,7 +762,18 @@ async def upload_pdf(
         if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
         if not parsed.rezultate:
-            return JSONResponse(status_code=422, content={"detail": "Nu s-au extras analize din PDF."})
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "Nu s-au extras analize din PDF. Textul a fost extras, dar formatul nu se potrivește "
+                    "parserului (sau toate liniile au fost filtrate). Încearcă „Verificare (fără salvare)” "
+                    "sau contactează suportul cu un eșantion din PDF.",
+                    "hint": "Folosește butonul Verificare pentru a vedea textul extras și numărul de linii.",
+                    "lungime_text": len(text.strip()),
+                    "tip_extragere": tip,
+                    "extractor": extractor,
+                },
+            )
         normalize_rezultate(parsed.rezultate)
         # Aplica colored_tokens: daca valoarea unui rezultat apare cu culoare non-neagra in PDF
         # si nu are deja un flag, o marcam ca anormala (H implicit = atentie)
@@ -699,6 +821,10 @@ async def upload_pdf(
                     flag=r.flag,
                     ordine=r.ordine,
                     categorie=r.categorie,
+                    rezultat_meta=rezultat_meta_pentru_insert(
+                        getattr(r, "organism_raw", None),
+                        getattr(r, "rezultat_tip", None),
+                    ),
                 )
             except (IndexError, TypeError) as ex:
                 raise RuntimeError(
@@ -1744,6 +1870,17 @@ async def index():
         <button class="btn btn-secondary" onclick="importDictionarExcelAuto()">📥 Importă din proiect</button>
       </div>
       <p id="setari-msg-dictionar" style="font-size:0.88rem;display:none"></p>
+      <hr style="margin:24px 0;border:none;border-top:1px solid #e0e0e0">
+      <h3 style="font-size:1rem;margin-bottom:8px">Categorii – analize necunoscute</h3>
+      <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">
+        Completează coloana „secțiune PDF” pentru rândurile din <strong>analize necunoscute</strong>, copiind-o din rezultatele deja salvate (același text din buletin).
+        <strong>Simulare</strong> nu modifică baza de date.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <button type="button" class="btn btn-secondary" onclick="backfillNecunoscutaCategorie(true)">🔍 Simulare backfill</button>
+        <button type="button" class="btn btn-primary" onclick="backfillNecunoscutaCategorie(false)">✓ Aplică în baza de date</button>
+      </div>
+      <p id="setari-msg-backfill-nec" style="font-size:0.88rem;display:none"></p>
     </div>
     <div class="card" id="card-user-management" style="display:none">
       <h2>Gestionare utilizatori</h2>
@@ -1961,6 +2098,8 @@ function logout() {
 async function incarcaSetari() {
   document.getElementById('setari-msg-parola').style.display = 'none';
   document.getElementById('setari-msg-users').style.display = 'none';
+  const msgBf = document.getElementById('setari-msg-backfill-nec');
+  if (msgBf) { msgBf.style.display = 'none'; msgBf.textContent = ''; }
   const card = document.getElementById('card-user-management');
   const cardBackup = document.getElementById('card-backup');
   try {
@@ -2139,6 +2278,46 @@ async function importDictionarExcel(inputEl) {
   } catch (e) {
     msgEl.style.color = 'var(--rosu)';
     msgEl.textContent = 'Eroare: ' + (e.message || '');
+  }
+}
+
+async function backfillNecunoscutaCategorie(dryRun) {
+  const msg = document.getElementById('setari-msg-backfill-nec');
+  if (!msg) return;
+  if (!dryRun && !confirm('Aplicați actualizarea categoriilor în baza de date? (Doar pentru rândurile fără categorie)')) return;
+  msg.style.display = 'block';
+  msg.style.color = 'var(--gri)';
+  msg.textContent = 'Se rulează…';
+  try {
+    const r = await fetch('/api/admin/backfill-necunoscuta-categorie', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dry_run: dryRun })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (handle401(r)) return;
+    if (!r.ok) {
+      msg.style.color = 'var(--rosu)';
+      msg.textContent = (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail || j)) || ('Eroare ' + r.status);
+      return;
+    }
+    msg.style.color = 'var(--verde)';
+    msg.textContent =
+      (j.dry_run ? '[Simulare] ' : '') +
+      'Examinat: ' + j.examinat +
+      ', cu categorie găsită: ' + j.cu_categorie_gasita +
+      ', fără sursă în rezultate: ' + j.fara_categorie_in_rezultate +
+      (j.dry_run ? ', ar fi actualizate: ' + j.actualizate : ', actualizate: ' + j.actualizate);
+    if (j.dry_run && j.cu_categorie_gasita > 0) {
+      msg.textContent += ' — folosiți „Aplică în baza de date” pentru a salva.';
+    }
+    if (!j.dry_run && j.actualizate > 0) {
+      _analize_std_cache = null;
+      try { incarcaNecunoscute(); } catch (e) {}
+    }
+  } catch (e) {
+    msg.style.color = 'var(--rosu)';
+    msg.textContent = 'Eroare: ' + (e.message || '');
   }
 }
 
@@ -3359,7 +3538,55 @@ async function adaugaAnalizaStandard() {
 // ─── Tab 4: Analize necunoscute ───────────────────────────────────────────────
 let _analize_std_cache = null;
 
+/** Aliniat la backend.analiza_categorii.potrivire_categorie_pdf_cu_grup (etichete categorie_grup). */
+function potrivireCategoriePdfCuGrupJs(categoriePdf, categorieGrup) {
+  const g = String(categorieGrup || '').toLowerCase();
+  if (!categoriePdf || !String(categoriePdf).trim()) return true;
+  const p = String(categoriePdf).trim().toLowerCase();
+  if (p.includes('hemo') || p.includes('leuco') || p.includes('formula') || p.includes('hemat'))
+    return g.includes('hemoleuco') || g.includes('hemat');
+  if (p.includes('urin') || p.includes('sediment') || p.includes('sumar'))
+    return g.includes('urin');
+  if (p.includes('biochim') || p.includes('lipid'))
+    return g.includes('biochim') || g.includes('metabol');
+  if (p.includes('microbio') || p.includes('cultur') || p.includes('infec') || p.includes('bacterio'))
+    return g.includes('microbiol') || g.includes('infec');
+  if (p.includes('imun') || p.includes('serol'))
+    return g.includes('imun') || g.includes('serol');
+  if (p.includes('hormon') || p.includes('tiroid') || p.includes('endocrin'))
+    return g.includes('hormon') || g.includes('tiroid');
+  if (p.includes('coagul') || p.includes('hemost'))
+    return g.includes('coagul') || g.includes('hemost');
+  if (p.includes('marker') || p.includes('tumor') || p.includes('onco'))
+    return g.includes('marker') || g.includes('tumor');
+  if (p.includes('miner') || p.includes('electrol'))
+    return g.includes('miner') || g.includes('oligoe');
+  if (p.includes('inflam'))
+    return g.includes('biochim');
+  if (p.includes('electroforez'))
+    return g.includes('alte') || g.includes('biochim');
+  return true;
+}
+
+function buildStdSelectOptionsHtml(stdList, categoriePdf) {
+  const opt = (s) => `<option value="${s.id}">${escHtml(s.denumire_standard)} (${escHtml(s.cod_standard)})</option>`;
+  const cat = (categoriePdf || '').trim();
+  if (!cat) {
+    return '<option value="">— Selectați —</option>' + stdList.map(opt).join('');
+  }
+  const matched = stdList.filter(s => potrivireCategoriePdfCuGrupJs(cat, s.categorie_grup));
+  const rest = stdList.filter(s => !potrivireCategoriePdfCuGrupJs(cat, s.categorie_grup));
+  let h = '<option value="">— Selectați —</option>';
+  if (matched.length) {
+    h += '<optgroup label="Potrivite cu secțiunea din PDF">' + matched.map(opt).join('') + '</optgroup>';
+  }
+  h += '<optgroup label="Toate celelalte analize">' + rest.map(opt).join('') + '</optgroup>';
+  return h;
+}
+
 async function incarcaStandardeCache() {
+  if (_analize_std_cache && _analize_std_cache.length && _analize_std_cache[0].categorie_grup === undefined)
+    _analize_std_cache = null;
   if (_analize_std_cache) return _analize_std_cache;
   try {
     const r = await fetch('/analize-standard', { headers: getAuthHeaders() });
@@ -3408,22 +3635,28 @@ async function incarcaNecunoscute() {
       return;
     }
 
-    // Construieste optiunile pentru select
-    const optStd = std.map(s => `<option value="${s.id}">${escHtml(s.denumire_standard)} (${escHtml(s.cod_standard)})</option>`).join('');
-
     el.innerHTML = `
       <p style="font-size:0.85rem;color:var(--gri);margin-bottom:12px">
-        ${nec.length} analize nerecunoscute. Asociați-le cu analiza standard corectă:
+        ${nec.length} analize nerecunoscute. Lista e grupată după <strong>secțiunea din buletin</strong> (Hemoleucogramă, Biochimie, Urină…).
+        În dropdown, analizele standard <em>potrivite secțiunii</em> apar primele (optgroup).
       </p>
       <div class="tabel-container"><table>
       <thead><tr>
+        <th>Secțiune PDF</th>
         <th>Denumire din PDF</th>
         <th>Apariții</th>
         <th>Asociază cu analiza standard</th>
         <th>Acțiuni</th>
       </tr></thead>
       <tbody>` +
-      nec.map(n => `<tr id="nec-row-${n.id}">
+      nec.map(n => {
+        const catPdf = (n.categorie || '').trim();
+        const catBadge = catPdf
+          ? `<span class="badge badge-norm" title="Categorie extrasă la parsare din buletin" style="max-width:160px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(catPdf)}</span>`
+          : '<span style="color:var(--gri);font-size:0.8rem" title="Reîncărcați după upload-uri noi sau lipsă secțiune în PDF">—</span>';
+        const opts = buildStdSelectOptionsHtml(std, n.categorie);
+        return `<tr id="nec-row-${n.id}">
+        <td style="vertical-align:top">${catBadge}</td>
         <td>
           <strong>${escHtml(n.denumire_raw)}</strong>
           <div style="font-size:0.75rem;color:var(--gri);margin-top:2px">Prima apariție: ${(n.created_at||'').substring(0,10)}</div>
@@ -3431,8 +3664,7 @@ async function incarcaNecunoscute() {
         <td><span class="badge badge-norm">${n.aparitii}×</span></td>
         <td>
           <select id="sel-std-${n.id}" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
-            <option value="">— Selectați —</option>
-            ${optStd}
+            ${opts}
           </select>
         </td>
         <td style="white-space:nowrap">
@@ -3442,7 +3674,8 @@ async function incarcaNecunoscute() {
             title="Șterge (zgomot / artefact OCR)"
             onclick="stergeNecunoscuta(${n.id})">🗑</button>
         </td>
-      </tr>`).join('') +
+      </tr>`;
+      }).join('') +
       '</tbody></table></div>';
 
   } catch(e) {
@@ -3465,7 +3698,7 @@ async function aprobaAlias(id, denumireRaw) {
     if (r.ok) {
       const row = document.getElementById('nec-row-' + id);
       if (row) {
-        row.innerHTML = `<td colspan="4">
+        row.innerHTML = `<td colspan="5">
           <span style="color:var(--verde)">✅ <strong>${escHtml(denumireRaw)}</strong> a fost asociat cu succes. Toate rezultatele existente au fost actualizate și va fi recunoscut automat la orice upload viitor.</span>
         </td>`;
       }
