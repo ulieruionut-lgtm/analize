@@ -1,27 +1,20 @@
-"""Procesare OCR cu Tesseract (folosit din pdf_processor când PDF-ul e scan).
+"""Integrare Tesseract: verificare disponibilitate partajată cu pdf_processor.
 
-Îmbunătățiri: preprocesare imagine în pdf_processor (deskew, contrast, PSM + fallback + sparse),
-limba ron+eng din setări. Tesseract **nu** învață din PDF-urile tale: e model static.
-„Învățare permanentă” în app = reguli în parser + aliasuri în DB / corecții manuale la pacient.
-Pentru AI vizual antrenabil ar fi nevoie de alt serviciu (ex. cloud Vision cu fine-tuning).
+Preprocesare și OCR propriu-zis: backend.pdf_processor (_run_ocr_pymupdf).
 """
-import subprocess
-import sys
-from pathlib import Path
+from __future__ import annotations
+
+from typing import Tuple
+
+from backend.pdf_processor import tesseract_availability
 
 
 def check_tesseract_installed() -> bool:
-    """Verifică dacă Tesseract e instalat și în PATH."""
-    try:
-        subprocess.run(
-            ["tesseract", "--version"],
-            capture_output=True,
-            check=True,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+    """Returnează True dacă Tesseract răspunde (pytesseract)."""
+    ok, _ = tesseract_availability()
+    return ok
 
 
-# Utilizare: textul se extrage în pdf_processor via _run_ocr().
-# Acest modul poate fi extins cu preprocesare imagine (contrast, binarizare) pentru OCR mai bun.
+def tesseract_status() -> Tuple[bool, str | None]:
+    """(disponibil, mesaj_eroare_sau_None) — util pentru health checks."""
+    return tesseract_availability()

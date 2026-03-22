@@ -25,6 +25,19 @@ class Settings(BaseSettings):
     ocr_psm_sparse: int = 11    # ultimă încercare: text sparse (buletine cu liste)
     ocr_min_chars: int = 100    # prag pentru retry cu PSM fallback
     ocr_dpi_hint: int = 400     # transmis Tesseract ca user_defined_dpi (aliniat cu rasterizarea)
+    # Retry suplimentar OCR când calitatea (confidență Tesseract) e slabă, nu doar text scurt
+    ocr_use_metrics_retry: bool = True
+    ocr_retry_min_mean_conf: float = 48.0   # sub medie → încearcă alt preproces / PSM
+    ocr_retry_max_weak_ratio: float = 0.45  # fracție cuvinte cu conf < ocr_weak_word_conf
+    ocr_weak_word_conf: int = 60
+    ocr_min_digit_ratio: float = 0.0        # >0 = cere cifre în text (ex. 0.02); 0 = dezactivat
+    # Preprocesare: False = mereu profil „dificil” (comportament clasic); True = curat vs dificil după contrast
+    ocr_preprocess_auto: bool = False
+    # Detectare layout: PSM principal 4 dacă proiecție verticală sugerează 2 coloane (experimental)
+    ocr_layout_auto: bool = False
+    # OCR per coloană cu gap vertical detectat (experimental; fallback la pagină întreagă)
+    ocr_column_segmentation: bool = False
+
     # TESSDATA_PREFIX: setează în .env pt tessdata_best (mai precis, mai lent). Ex: /usr/share/tessdata_best
     tessdata_prefix: str | None = None
     pdf_text_min_chars: int = 200

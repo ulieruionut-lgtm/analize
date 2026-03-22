@@ -9,6 +9,7 @@ Strategii de matching (in ordine, se opreste la primul match):
   5. Match dupa primele 2 cuvinte semnificative (conservator)
   6. Match dupa >= 3 cuvinte cheie comune
   7. Fuzzy match (similaritate >= 88%) pentru erori OCR (ex: Hcmoglobina -> Hemoglobina)
+  7b. rapidfuzz.partial_ratio (opțional, prag 90) dacă difflib nu găsește — alias scurt în linie lungă
 
 Daca nu gaseste nimic: salveaza in analiza_necunoscuta pentru aprobare manuala.
 """
@@ -20,6 +21,11 @@ import unicodedata
 from typing import Optional
 
 from backend.models import RezultatParsat
+from backend.ocr_corrections import (
+    aplică_corectii_ocr_normalizat,
+    corecteaza_ocr_linie_buletin,
+    corecteaza_umar_numar_artefact_capitalizat,
+)
 
 
 # ─── Normalizare text ─────────────────────────────────────────────────────────
@@ -32,8 +38,8 @@ def _curata_artefacte(text: str) -> str:
     text = re.sub(r'\s*\[\d+[.,]?\d*\s*[\w/]+\]\s*', ' ', text)
     # Sterge trailing " :" sau ":" (artefact OCR de la sfarsitul denumirii)
     text = re.sub(r'\s*:\s*$', '', text)
-    # Corectare OCR frecventa: "umar" -> "Numar" (N citit gresit ca u)
-    text = re.sub(r'\bumar\s+de\b', 'Numar de', text, flags=re.IGNORECASE)
+    text = corecteaza_umar_numar_artefact_capitalizat(text)
+    text = corecteaza_ocr_linie_buletin(text)
     # Sterge spatii multiple si trimeaza
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -66,6 +72,24 @@ def _cuvinte_cheie(text: str) -> set:
     return {w for w in re.split(r'[\s\-/\(\)]+', text) if len(w) >= 3 and not w.isdigit()}
 
 
+def _baza_denumire_pentru_fuzzy(norm: str) -> str:
+    """
+    Pentru fuzzy matching: păstrează doar partea de denumire, fără sufix numeric / unități uzuale.
+    `norm` trebuie deja normalizat (lowercase, fără diacritice).
+    """
+    if not norm:
+        return norm
+    t = norm.strip()
+    t = re.sub(
+        r"\s+[\d.,]+\s*(?:g/?d?l|mg/?l|ui/?ml|mmol/?l|µ?g/?l|/ul|%|fl|pg|umol/?l|iu/?l|m?iu/?l)?\s*$",
+        "",
+        t,
+        flags=re.IGNORECASE,
+    )
+    t = re.sub(r"\s+[\d.,]+\s*$", "", t)
+    return t.strip()
+
+
 def _strip_prefix_regina_maria(raw: str) -> str:
     """
     Elimina prefixele numerice din formatul Regina Maria (Nr. denumire test).
@@ -85,12 +109,11 @@ def _strip_prefix_regina_maria(raw: str) -> str:
     return s
 
 
-# Cache in-memory cu TTL de 3 minute - se reincarc automat din DB
-# Astfel aliasurile adaugate direct in DB sunt preluate rapid, fara restart
+# Cache in-memory: reîncărcare la expirare TTL sau imediat după adăugare alias (vezi invalideaza_cache()).
 _CACHE: Optional[dict] = None
 _CACHE_RAW: Optional[dict] = None
 _CACHE_TIMESTAMP: float = 0.0
-_CACHE_TTL_SECUNDE: int = 60  # 1 minut - invata rapid alias-urile aprobate (inclusiv cu multi-worker)
+_CACHE_TTL_SECUNDE: int = 60  # 60 secunde — aliasurile noi din DB apar rapid; nu e nevoie de restart
 
 
 def _incarca_cache() -> tuple[dict, dict]:
@@ -170,24 +193,8 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
 
-    # 4b. Corectii OCR frecvente pentru termeni medicali români (eroare -> corect)
-    _OCR_FIXES = (
-        (r'\bumar\b', 'numar'),              # N citit gresit ca u
-        (r'\bcrealinin[ae]?\b', 'creatinina'),
-        (r'\bglu[o0]{2,}za\b', 'glucoza'),   # gluooza, glu0za
-        (r'\bhemoglo[b6]ina\b', 'hemoglobina'),
-        (r'\bh[ce]moglobina\b', 'hemoglobina'),  # hcmoglobina
-        (r'\bhemat[o0]crit\b', 'hematocrit'),
-        (r'\bleuc[o0]cite\b', 'leucocite'),
-        (r'\btr[o0]mbocite\b', 'trombocite'),
-        (r'\bferit[i1]na\b', 'feritina'),
-        (r'\bcolester[o0]l\b', 'colesterol'),
-        (r'\btriglicer[i1]de\b', 'trigliceride'),
-        (r'\berit[ro]cite\b', 'eritrocite'),
-    )
-    raw_ocr_fix = raw_norm
-    for pattern, repl in _OCR_FIXES:
-        raw_ocr_fix = re.sub(pattern, repl, raw_ocr_fix, flags=re.IGNORECASE)
+    # 4b. Corectii OCR frecvente (modul partajat ocr_corrections)
+    raw_ocr_fix = aplică_corectii_ocr_normalizat(raw_norm)
     if raw_ocr_fix != raw_norm and raw_ocr_fix in cache_norm:
         return cache_norm[raw_ocr_fix]
 
@@ -209,39 +216,66 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
             if len(raw_kw & alias_kw) >= 3:
                 return aid
 
-    # 7. Fuzzy matching pentru erori OCR (ex: "Hcmoglobina" -> "Hemoglobina")
-    # Folosim difflib.get_close_matches cu threshold 0.88 - suficient de strict
-    # pentru a evita false pozitive dar prinde erorile tipice OCR (1-2 litere gresite)
-    if len(raw_norm) >= 5:  # nu aplica pe denumiri prea scurte
-        matches = difflib.get_close_matches(raw_norm, cache_norm.keys(), n=1, cutoff=0.88)
+    # 7. Fuzzy pe baza denumirii (fără valori numerice la coadă) — difflib
+    baza_fuzz = _baza_denumire_pentru_fuzzy(raw_norm)
+    if len(baza_fuzz) >= 5:
+        cutoff = 0.90 if len(baza_fuzz) < 12 else 0.88
+        matches = difflib.get_close_matches(baza_fuzz, cache_norm.keys(), n=1, cutoff=cutoff)
         if matches:
             return cache_norm[matches[0]]
+
+    # 7b. rapidfuzz partial_ratio pe aceeași bază; aliniere la începutul șirului
+    if len(baza_fuzz) >= 6:
+        try:
+            from rapidfuzz import fuzz, process
+        except ImportError:
+            pass
+        else:
+            sc_cut = 95 if len(baza_fuzz) < 14 else 90
+            best = process.extractOne(
+                baza_fuzz,
+                list(cache_norm.keys()),
+                scorer=fuzz.partial_ratio,
+                score_cutoff=sc_cut,
+            )
+            if best is not None:
+                match_key, _score, _idx = best
+                al = fuzz.partial_ratio_alignment(baza_fuzz, match_key)
+                max_start = max(2, len(baza_fuzz) // 3)
+                if al.src_start <= max_start:
+                    return cache_norm[match_key]
 
     return None
 
 
-def _log_necunoscuta(denumire_raw: str) -> None:
-    """Salveaza analiza necunoscuta in DB pentru aprobare ulterioara."""
+def _log_necunoscuta(denumire_raw: str, categorie_buletin: Optional[str] = None) -> None:
+    """Salveaza analiza necunoscuta in DB pentru aprobare ulterioara (cu secțiunea din PDF dacă există)."""
     try:
         from backend.database import get_cursor, _use_sqlite
+        raw = denumire_raw.strip()
+        cat = (categorie_buletin or "").strip() or None
         with get_cursor() as cur:
             if _use_sqlite():
                 cur.execute(
-                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii)
-                       VALUES (?, 1)
+                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
+                       VALUES (?, 1, ?)
                        ON CONFLICT(denumire_raw) DO UPDATE SET
                            aparitii = aparitii + 1,
+                           categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                             THEN excluded.categorie ELSE analiza_necunoscuta.categorie END,
                            updated_at = datetime('now')""",
-                    (denumire_raw.strip(),)
+                    (raw, cat),
                 )
             else:
                 cur.execute(
-                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii)
-                       VALUES (%s, 1)
+                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
+                       VALUES (%s, 1, %s)
                        ON CONFLICT(denumire_raw) DO UPDATE SET
                            aparitii = analiza_necunoscuta.aparitii + EXCLUDED.aparitii,
+                           categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                             THEN EXCLUDED.categorie ELSE analiza_necunoscuta.categorie END,
                            updated_at = NOW()""",
-                    (denumire_raw.strip(),)
+                    (raw, cat),
                 )
     except Exception as e:
         raw_preview = (denumire_raw or "")[:80]
@@ -262,8 +296,13 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
     if aid is not None:
         r.analiza_standard_id = aid
     else:
-        # Logam pentru aprobare - medicul va putea asigna ulterior
-        _log_necunoscuta(r.denumire_raw)
+        # Nu logăm gunoi (nume, adrese, note, OCR) — aceleași reguli ca la curățare/scripturi
+        from backend.parser import este_denumire_gunoi
+
+        if este_denumire_gunoi(r.denumire_raw):
+            return r
+        # Logam pentru aprobare - medicul va putea asigna ulterior (cu categoria din buletin)
+        _log_necunoscuta(r.denumire_raw, r.categorie)
 
     return r
 

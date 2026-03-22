@@ -12,6 +12,41 @@ import pdfplumber
 from backend.config import settings
 
 
+def tesseract_availability() -> Tuple[bool, str | None]:
+    """
+    Verifică dacă pytesseract poate apela binarul Tesseract.
+    Returnează (True, None) dacă e ok, altfel (False, mesaj_utilizator).
+    """
+    try:
+        import pytesseract
+    except ImportError:
+        return False, "pytesseract nu este instalat. Rulează: pip install pytesseract"
+
+    tess_prefix = getattr(settings, "tessdata_prefix", None)
+    if tess_prefix:
+        import os
+
+        os.environ["TESSDATA_PREFIX"] = str(tess_prefix)
+
+    try:
+        pytesseract.get_tesseract_version()
+        return True, None
+    except Exception as tess_err:
+        import os
+        import platform
+
+        if platform.system() == "Windows":
+            hint = (
+                "Descarcă de la: https://github.com/UB-Mannheim/tesseract/wiki "
+                "și instalează cu opțiunea «Romanian» bifată. "
+                "Apoi adaugă C:\\Program Files\\Tesseract-OCR la PATH."
+            )
+        else:
+            tpfx = os.environ.get("TESSDATA_PREFIX", "(negăsit)")
+            hint = f"Tesseract nu e găsit în PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
+        return False, "Tesseract OCR nu este disponibil. " + hint
+
+
 def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
     """
     Extrage continut din tabele cu borduri folosind pdfplumber extract_tables().
@@ -86,12 +121,370 @@ def _threshold_adaptiv(arr):
         return None
 
 
+def _gray_std_mean_pil(img) -> Tuple[float, float]:
+    """Deviație standard și medie pe L — contrastul scanului."""
+    try:
+        import numpy as np
+
+        arr = np.array(img.convert("L"))
+        return float(arr.std()), float(arr.mean())
+    except Exception:
+        return 50.0, 128.0
+
+
+def _preproceseaza_ocr_clean(img):
+    """
+    Profil „scan curat”: CLAHE ușor + contrast moderat, fără binarizare adaptivă agresivă.
+    """
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageEnhance
+
+        desk = _deskew_imagine(img)
+        base = desk if desk is not None else img.convert("L")
+        gray = base if base.mode == "L" else base.convert("L")
+        arr = np.array(gray)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        arr2 = clahe.apply(arr)
+        pil = Image.fromarray(arr2)
+        pil = ImageEnhance.Contrast(pil).enhance(1.4)
+        pil = ImageEnhance.Sharpness(pil).enhance(1.25)
+        return pil
+    except Exception:
+        return img.convert("L")
+
+
+def _apply_ocr_preprocess_profile(img, profile: str):
+    """profile: 'clean' | 'hard'"""
+    if profile == "clean":
+        return _preproceseaza_ocr_clean(img)
+    return _preproceseaza_imagine_ocr(img)
+
+
+def _pick_primary_preprocess_name(pil_img) -> str:
+    if not getattr(settings, "ocr_preprocess_auto", False):
+        return "hard"
+    try:
+        std, _mean = _gray_std_mean_pil(pil_img)
+        if std < 38.0:
+            return "hard"
+        return "clean"
+    except Exception:
+        return "hard"
+
+
+def _tesseract_word_metrics(image, lang: str, config: str, pytesseract_mod):
+    """(mean_conf, weak_ratio, digit_ratio, n_words) pe nivel cuvânt."""
+    from pytesseract import Output
+
+    weak_thr = int(getattr(settings, "ocr_weak_word_conf", 60))
+    try:
+        d = pytesseract_mod.image_to_data(
+            image, lang=lang, config=config, output_type=Output.DICT
+        )
+    except Exception:
+        return 0.0, 1.0, 0.0, 0
+
+    n = len(d.get("text", []))
+    if n == 0:
+        return 0.0, 1.0, 0.0, 0
+
+    confs: list[int] = []
+    weak = 0
+    chars_digit = 0
+    chars_alpha = 0
+    n_words = 0
+    levels = d.get("level", [0] * n)
+    texts = d.get("text", [])
+    confs_raw = d.get("conf", [])
+
+    for i in range(n):
+        try:
+            if int(levels[i]) != 5:
+                continue
+        except (ValueError, TypeError, KeyError, IndexError):
+            continue
+        word = (texts[i] or "").strip()
+        if not word:
+            continue
+        try:
+            c = int(float(confs_raw[i]))
+        except (ValueError, TypeError, KeyError, IndexError):
+            continue
+        if c < 0:
+            continue
+        n_words += 1
+        confs.append(c)
+        if c < weak_thr:
+            weak += 1
+        for ch in word:
+            if ch.isdigit():
+                chars_digit += 1
+            elif ch.isalpha():
+                chars_alpha += 1
+
+    mean_c = sum(confs) / len(confs) if confs else 0.0
+    weak_ratio = weak / n_words if n_words else 1.0
+    tot = chars_digit + chars_alpha
+    digit_ratio = (chars_digit / tot) if tot > 0 else 0.0
+    return mean_c, weak_ratio, digit_ratio, n_words
+
+
+def _ocr_quality_score(
+    text: str,
+    mean_c: float,
+    weak_ratio: float,
+    digit_ratio: float,
+    n_words: int,
+    min_chars: int,
+) -> float:
+    t = (text or "").strip()
+    L = len(t)
+    if L == 0 and n_words == 0:
+        return -1e9
+    score = mean_c * 0.45
+    score += min(L / 8.0, 45.0)
+    score -= weak_ratio * 38.0
+    score += digit_ratio * 22.0
+    if L < min_chars:
+        score -= (min_chars - L) * 0.55
+    if n_words == 0 and L > 5:
+        score -= 15.0
+    return score
+
+
+def _ocr_needs_more_passes(
+    text: str,
+    mean_c: float,
+    weak_ratio: float,
+    digit_ratio: float,
+    n_words: int,
+    min_chars: int,
+) -> bool:
+    t = (text or "").strip()
+    if len(t) < min_chars:
+        return True
+    if not getattr(settings, "ocr_use_metrics_retry", True):
+        return False
+    if n_words == 0:
+        return len(t) < max(min_chars, 80)
+    if mean_c < float(getattr(settings, "ocr_retry_min_mean_conf", 48.0)):
+        return True
+    if weak_ratio > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.45)):
+        return True
+    mdr = float(getattr(settings, "ocr_min_digit_ratio", 0.0) or 0.0)
+    if mdr > 0 and len(t) >= min_chars and digit_ratio < mdr:
+        return True
+    return False
+
+
+def _tesseract_cfg(oem: int, psm: int, dpi: int) -> str:
+    return f"--oem {oem} --psm {psm} -c user_defined_dpi={dpi}"
+
+
+def _infer_psm_from_vertical_layout(gray_arr) -> int | None:
+    """Sugerează PSM 4 dacă există faleză verticală centrală (2 coloane)."""
+    try:
+        import cv2
+        import numpy as np
+
+        h, w = gray_arr.shape
+        if w < 500 or h < 400:
+            return None
+        _, bw = cv2.threshold(gray_arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        ink = (bw < 200).astype(np.uint8)
+        proj = ink.sum(axis=0).astype(np.float64)
+        mx = proj.max()
+        if mx <= 0:
+            return None
+        projn = proj / mx
+        sm = np.convolve(projn, np.ones(15) / 15.0, mode="same")
+        low = sm < 0.11
+        best_w = 0
+        best_mid = None
+        i = 0
+        while i < w:
+            if not low[i]:
+                i += 1
+                continue
+            j = i
+            while j < w and low[j]:
+                j += 1
+            gap = j - i
+            mid = (i + j) // 2
+            if gap >= max(12, w // 55) and 0.24 * w < mid < 0.76 * w and gap > best_w:
+                best_w = gap
+                best_mid = mid
+            i = j
+        if best_mid is None or best_w < max(12, w // 55):
+            return None
+        return 4
+    except Exception:
+        return None
+
+
+def _split_page_into_column_images(pil_img):
+    import numpy as np
+    import cv2
+
+    im = pil_img if pil_img.mode == "RGB" else pil_img.convert("RGB")
+    arr = np.array(im.convert("L"))
+    h, w = arr.shape
+    if w < 400:
+        return None
+    try:
+        _, bw = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        ink = (bw < 200).astype(np.uint8)
+        proj = ink.sum(axis=0).astype(np.float64)
+        mx = proj.max()
+        if mx < h * 0.04:
+            return None
+        projn = proj / (mx + 1e-6)
+        sm = np.convolve(projn, np.ones(15) / 15.0, mode="same")
+        low = sm < 0.12
+        best_w = 0
+        best_x = None
+        i = 0
+        while i < w:
+            if not low[i]:
+                i += 1
+                continue
+            j = i
+            while j < w and low[j]:
+                j += 1
+            gap = j - i
+            mid = (i + j) // 2
+            if gap >= max(12, w // 60) and 0.22 * w < mid < 0.78 * w and gap > best_w:
+                best_w = gap
+                best_x = int(mid)
+            i = j
+        if best_x is None:
+            return None
+        lw, rw = best_x, w - best_x
+        if lw < int(0.27 * w) or rw < int(0.27 * w):
+            return None
+        return [im.crop((0, 0, best_x, h)), im.crop((best_x, 0, w, h))]
+    except Exception:
+        return None
+
+
+def _try_ocr_split_columns(
+    pil_rgb, lang: str, base_cfg: str, pytesseract_mod, min_chars: int
+) -> str | None:
+    cols = _split_page_into_column_images(pil_rgb)
+    if not cols or len(cols) < 2:
+        return None
+    parts = []
+    for c in cols:
+        try:
+            t = pytesseract_mod.image_to_string(c, lang=lang, config=base_cfg).strip()
+        except Exception:
+            t = ""
+        parts.append(t)
+    merged = "\n".join(p for p in parts if p)
+    if len(merged.strip()) < max(20, min_chars // 2):
+        return None
+    return merged
+
+
+def _ocr_pass_string_and_metrics(
+    pil_img, lang: str, tess_cfg: str, pytesseract_mod
+) -> Tuple[str, float, float, float, int]:
+    text = pytesseract_mod.image_to_string(pil_img, lang=lang, config=tess_cfg) or ""
+    mean_c, weak_r, dig_r, n_w = _tesseract_word_metrics(
+        pil_img, lang, tess_cfg, pytesseract_mod
+    )
+    return text, mean_c, weak_r, dig_r, n_w
+
+
+def _ocr_best_for_page_rgb(
+    img_rgb, pytesseract_mod, min_chars: int, dpi_hint: int, oem: int
+) -> str:
+    lang = settings.ocr_lang
+    psm_user = int(getattr(settings, "ocr_psm", 3))
+    psm_fb = int(getattr(settings, "ocr_psm_fallback", 4))
+    psm_sp = int(getattr(settings, "ocr_psm_sparse", 11))
+
+    if getattr(settings, "ocr_column_segmentation", False):
+        cfg_try = _tesseract_cfg(oem, psm_user, dpi_hint)
+        col_merged = _try_ocr_split_columns(
+            img_rgb, lang, cfg_try, pytesseract_mod, min_chars
+        )
+        if col_merged:
+            cm = col_merged.strip()
+            if len(cm) >= min_chars or (len(cm) >= 40 and re.search(r"\d", cm)):
+                return col_merged
+
+    psm_main = psm_user
+    if getattr(settings, "ocr_layout_auto", False):
+        try:
+            import numpy as np
+
+            arr = np.array(img_rgb.convert("L"))
+            guess = _infer_psm_from_vertical_layout(arr)
+            if guess is not None:
+                psm_main = guess
+        except Exception:
+            pass
+
+    primary = _pick_primary_preprocess_name(img_rgb)
+    secondary = "hard" if primary == "clean" else "clean"
+
+    def pass_(img_prep, psm: int):
+        cfg = _tesseract_cfg(oem, psm, dpi_hint)
+        return _ocr_pass_string_and_metrics(img_prep, lang, cfg, pytesseract_mod)
+
+    img_a = _apply_ocr_preprocess_profile(img_rgb, primary)
+    text, mean_c, weak_r, dig_r, n_w = pass_(img_a, psm_main)
+    best_t = text
+    best_sc = _ocr_quality_score(text, mean_c, weak_r, dig_r, n_w, min_chars)
+    img_best = img_a
+    best_mean, best_weak, best_dig, best_nw = mean_c, weak_r, dig_r, n_w
+
+    if (
+        _ocr_needs_more_passes(text, mean_c, weak_r, dig_r, n_w, min_chars)
+        and secondary != primary
+    ):
+        img_b = _apply_ocr_preprocess_profile(img_rgb, secondary)
+        t2, m2, w2, d2, n2 = pass_(img_b, psm_main)
+        s2 = _ocr_quality_score(t2, m2, w2, d2, n2, min_chars)
+        if s2 > best_sc:
+            best_t, best_sc = t2, s2
+            img_best = img_b
+            best_mean, best_weak, best_dig, best_nw = m2, w2, d2, n2
+
+    if _ocr_needs_more_passes(
+        best_t, best_mean, best_weak, best_dig, best_nw, min_chars
+    ):
+        for psm_x in (psm_fb, psm_sp):
+            if psm_x == psm_main:
+                continue
+            t3, m3, w3, d3, n3 = pass_(img_best, psm_x)
+            s3 = _ocr_quality_score(t3, m3, w3, d3, n3, min_chars)
+            if s3 > best_sc:
+                best_t, best_sc = t3, s3
+                best_mean, best_weak, best_dig, best_nw = m3, w3, d3, n3
+
+    if _ocr_needs_more_passes(
+        best_t, best_mean, best_weak, best_dig, best_nw, min_chars
+    ):
+        gimg = img_rgb.convert("L")
+        for psm_x in (psm_fb, psm_sp):
+            t4, m4, w4, d4, n4 = pass_(gimg, psm_x)
+            s4 = _ocr_quality_score(t4, m4, w4, d4, n4, min_chars)
+            if s4 > best_sc:
+                best_t, best_sc = t4, s4
+
+    return best_t
+
+
 def _preproceseaza_imagine_ocr(img):
     """
-    Preproceseaza o imagine pentru OCR mai bun:
+    Profil „dificil” pentru OCR:
     1. Deskew (corectare inclinare) daca OpenCV disponibil
     2. Grayscale + contrast + sharpness
-    3. Threshold adaptiv (sau fix 180 fallback)
+    3. Threshold adaptiv
     4. Sterge liniile subtiri de bordura
     Returneaza imaginea procesata (PIL Image).
     """
@@ -177,26 +570,11 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
     try:
         import pytesseract
     except ImportError:
-        return "", "pytesseract nu este instalat. Ruleaza: pip install pytesseract"
+        return "", "pytesseract nu este instalat. Rulează: pip install pytesseract"
 
-    # TESSDATA_PREFIX pentru tessdata_best (opțional, setat în .env)
-    tess_prefix = getattr(settings, "tessdata_prefix", None)
-    if tess_prefix:
-        import os
-        os.environ["TESSDATA_PREFIX"] = str(tess_prefix)
-
-    try:
-        pytesseract.get_tesseract_version()
-    except Exception as tess_err:
-        import os, platform
-        if platform.system() == "Windows":
-            hint = ("Descarca de la: https://github.com/UB-Mannheim/tesseract/wiki "
-                    "si instaleaza cu optiunea 'Romanian' bifata. "
-                    "Apoi adauga C:\\Program Files\\Tesseract-OCR la variabila PATH.")
-        else:
-            tpfx = os.environ.get("TESSDATA_PREFIX", "(negasit)")
-            hint = f"Tesseract nu e gasit in PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
-        return "", "Tesseract OCR nu este disponibil. " + hint
+    ok, err = tesseract_availability()
+    if not ok:
+        return "", err or "Tesseract OCR nu este disponibil."
 
     try:
         from PIL import Image
@@ -206,55 +584,21 @@ def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
         texts = []
 
         oem = getattr(settings, "ocr_oem", 2)
-        psm_main = getattr(settings, "ocr_psm", 3)
-        psm_fallback = getattr(settings, "ocr_psm_fallback", 4)
-        psm_sparse = getattr(settings, "ocr_psm_sparse", 11)
         min_chars = getattr(settings, "ocr_min_chars", 100)
         dpi_hint = getattr(settings, "ocr_dpi_hint", 400)
-        # user_defined_dpi ajută Tesseract la segmentare când rasterul e ~400 DPI
-        tess_cfg = (
-            f"--oem {oem} --psm {psm_main} -c user_defined_dpi={dpi_hint}"
-        )
 
         for page_num in range(len(doc)):
             page = doc[page_num]
-            # 400 DPI pentru calitate mai buna
             mat = fitz.Matrix(dpi_hint / 72, dpi_hint / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
             img_bytes = pix.tobytes("png")
             img = Image.open(io.BytesIO(img_bytes))
+            if img.mode != "RGB":
+                img = img.convert("RGB")
 
-            # Preprocesare: deskew, contrast, threshold adaptiv, sterge borduri
-            img_proc = _preproceseaza_imagine_ocr(img)
-
-            # OCR cu configuratie din settings
-            text = pytesseract.image_to_string(
-                img_proc,
-                lang=settings.ocr_lang,
-                config=tess_cfg,
+            text = _ocr_best_for_page_rgb(
+                img, pytesseract, min_chars, dpi_hint, oem
             )
-
-            # Retry cu PSM fallback (ex: coloana) daca rezultatul e slab
-            if len(text.strip()) < min_chars:
-                fallback_config = f"--oem {oem} --psm {psm_fallback} -c user_defined_dpi={dpi_hint}"
-                text_fallback = pytesseract.image_to_string(
-                    img.convert("L"),
-                    lang=settings.ocr_lang,
-                    config=fallback_config,
-                )
-                if len(text_fallback.strip()) > len(text.strip()):
-                    text = text_fallback
-            # A treia încercare: text sparse (liste / buletine microbiologie)
-            if len(text.strip()) < min_chars:
-                sparse_cfg = f"--oem {oem} --psm {psm_sparse} -c user_defined_dpi={dpi_hint}"
-                text_sparse = pytesseract.image_to_string(
-                    img_proc,
-                    lang=settings.ocr_lang,
-                    config=sparse_cfg,
-                )
-                if len(text_sparse.strip()) > len(text.strip()):
-                    text = text_sparse
-
             texts.append(text)
         doc.close()
         return "\n".join(texts), None
@@ -362,11 +706,16 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
             extractor_used = "pdfplumber"
 
     contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
+    # Text suficient dar fără zecimale evidente (ex. doar „Negativ”, CNP) — tot merită parsat
     if len(text_combinat) >= min_chars and contine_numar:
+        colored = extract_colored_tokens(pdf_path)
+        return text_combinat, "text", None, colored, extractor_used
+    if len(text_combinat) >= min_chars * 2:
         colored = extract_colored_tokens(pdf_path)
         return text_combinat, "text", None, colored, extractor_used
 
     # Pas 3: PDF scanat - PyMuPDF + Tesseract cu preprocesare
     ocr_text, ocr_err = _run_ocr_pymupdf(pdf_path)
     combined = (text_combinat + "\n" + ocr_text).strip() if text_combinat else ocr_text.strip()
-    return combined, "ocr", ocr_err, set(), "ocr"
+    ocr_extractor = f"{extractor_used}+ocr" if text_combinat.strip() else "ocr"
+    return combined, "ocr", ocr_err, set(), ocr_extractor
