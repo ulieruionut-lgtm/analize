@@ -1,10 +1,13 @@
 FROM python:3.11-slim
 
-# Instaleaza Tesseract OCR cu pachetele de limba română și engleză direct din apt
+# Dependente sistem pentru OpenCV, PyMuPDF si Tesseract
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-ron \
     tesseract-ocr-eng \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
