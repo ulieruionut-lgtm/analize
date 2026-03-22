@@ -82,8 +82,8 @@ async def get_current_user(
 
 
 def _startup_blocking_work() -> None:
-    """Migrări DB, admin implicit, curățare nume — sincron, rulează într-un thread (nu blochează /health)."""
-    print("[STARTUP][worker] migrări și admin…", flush=True)
+    """Migrari DB, admin implicit, curatare nume - sincron, ruleaza intr-un thread (nu blocheaza /health)."""
+    print("[STARTUP][worker] start migratii si admin", flush=True)
     try:
         from backend.config import settings
         url = (settings.database_url or "").strip()
@@ -112,7 +112,7 @@ def _startup_blocking_work() -> None:
                                     sql = path.read_text(encoding="utf-8")
                                     cur.execute(sql)
                                     conn.commit()
-                                    print(f"[STARTUP] ✓ Schema PG: {fname}")
+                                    print(f"[STARTUP] OK Schema PG: {fname}")
                                 except Exception as ex:
                                     conn.rollback()
                                     print(f"[STARTUP] Schema PG {fname}: {ex}")
@@ -131,14 +131,13 @@ def _startup_blocking_work() -> None:
                     cur = conn.cursor()
                     cur.execute(sql_path.read_text(encoding="utf-8"))
                     conn.commit()
-                    print("[STARTUP] ✓ Migrare 007 (ordine, categorie) aplicata")
+                    print("[STARTUP] OK Migrare 007 (ordine, categorie)")
                 except Exception as e:
                     conn.rollback()
                     if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
                         print(f"[STARTUP] Migrare 007: {e}")
                 finally:
                     conn.close()
-            # Migrare 008: alias Bioclinica (Hematii, Proteina C reactivă)
             sql_008 = Path(__file__).resolve().parent.parent / "sql" / "008_pg_alias_bioclinica.sql"
             if url and sql_008.exists():
                 try:
@@ -148,7 +147,7 @@ def _startup_blocking_work() -> None:
                         cur = conn.cursor()
                         cur.execute(sql_008.read_text(encoding="utf-8"))
                         conn.commit()
-                        print("[STARTUP] ✓ Migrare 008 (alias Bioclinica) aplicata")
+                        print("[STARTUP] OK Migrare 008 (alias Bioclinica)")
                     except Exception as ex:
                         conn.rollback()
                         if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
@@ -157,7 +156,6 @@ def _startup_blocking_work() -> None:
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 008 (ignorat): {ex}")
-            # Migrare 009: laboratoare + catalog analize
             sql_009 = Path(__file__).resolve().parent.parent / "sql" / "009_pg_laboratoare_catalog.sql"
             if url and sql_009.exists():
                 try:
@@ -167,7 +165,7 @@ def _startup_blocking_work() -> None:
                         cur = conn.cursor()
                         cur.execute(sql_009.read_text(encoding="utf-8"))
                         conn.commit()
-                        print("[STARTUP] ✓ Migrare 009 (laboratoare, catalog) aplicata")
+                        print("[STARTUP] OK Migrare 009 (laboratoare, catalog)")
                     except Exception as ex:
                         conn.rollback()
                         if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
@@ -185,7 +183,7 @@ def _startup_blocking_work() -> None:
                         cur = conn.cursor()
                         cur.execute(sql_010_pg.read_text(encoding="utf-8"))
                         conn.commit()
-                        print("[STARTUP] ✓ Migrare 010 (alias laboratoare) aplicata")
+                        print("[STARTUP] OK Migrare 010 (alias laboratoare)")
                     except Exception as ex:
                         conn.rollback()
                         if "duplicate" not in str(ex).lower():
@@ -194,7 +192,6 @@ def _startup_blocking_work() -> None:
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 010 (ignorat): {ex}")
-            # Migrare 011: valoare_text TEXT (microbiologie / paragrafe > 128 caractere)
             sql_011 = Path(__file__).resolve().parent.parent / "sql" / "011_pg_valoare_text.sql"
             if url and sql_011.exists():
                 try:
@@ -204,7 +201,7 @@ def _startup_blocking_work() -> None:
                         cur = conn.cursor()
                         cur.execute(sql_011.read_text(encoding="utf-8"))
                         conn.commit()
-                        print("[STARTUP] ✓ Migrare 011 (valoare_text TEXT) aplicata")
+                        print("[STARTUP] OK Migrare 011 (valoare_text TEXT)")
                     except Exception as ex:
                         conn.rollback()
                         em = str(ex).lower()
@@ -214,7 +211,6 @@ def _startup_blocking_work() -> None:
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 011 (ignorat): {ex}")
-            # Migrare 012: categorie (secțiune PDF) pe analiza_necunoscuta
             sql_012 = Path(__file__).resolve().parent.parent / "sql" / "012_pg_necunoscuta_categorie.sql"
             if url and sql_012.exists():
                 try:
@@ -224,7 +220,7 @@ def _startup_blocking_work() -> None:
                         cur = conn.cursor()
                         cur.execute(sql_012.read_text(encoding="utf-8"))
                         conn.commit()
-                        print("[STARTUP] ✓ Migrare 012 (categorie necunoscute) aplicata")
+                        print("[STARTUP] OK Migrare 012 (categorie necunoscute)")
                     except Exception as ex:
                         conn.rollback()
                         em = str(ex).lower()
@@ -236,7 +232,6 @@ def _startup_blocking_work() -> None:
                     print(f"[STARTUP] Migrare 012 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
-    # Migrare 009 pentru SQLite (tabele laboratoare)
     try:
         from backend.database import get_connection, _use_sqlite
         if _use_sqlite():
@@ -246,7 +241,7 @@ def _startup_blocking_work() -> None:
                 try:
                     conn.executescript(sql_009_sqlite.read_text(encoding="utf-8"))
                     conn.commit()
-                    print("[STARTUP] ✓ Migrare 009 SQLite (laboratoare) aplicata")
+                    print("[STARTUP] OK Migrare 009 SQLite (laboratoare)")
                 except Exception as ex:
                     if "already exists" not in str(ex).lower():
                         print(f"[STARTUP] Migrare 009 SQLite: {ex}")
@@ -258,13 +253,12 @@ def _startup_blocking_work() -> None:
                     conn = get_connection()
                     conn.executescript(sql_010.read_text(encoding="utf-8"))
                     conn.commit()
-                    print("[STARTUP] ✓ Migrare 010 SQLite (alias laboratoare) aplicata")
+                    print("[STARTUP] OK Migrare 010 SQLite (alias laboratoare)")
                 except Exception as ex:
                     if "UNIQUE constraint" not in str(ex):
                         print(f"[STARTUP] Migrare 010 SQLite: {ex}")
                 finally:
                     conn.close()
-            # 012 SQLite: coloana categorie pe analiza_necunoscuta
             conn_cat = None
             try:
                 conn_cat = get_connection()
@@ -273,7 +267,7 @@ def _startup_blocking_work() -> None:
                 if "categorie" not in col_names:
                     conn_cat.execute("ALTER TABLE analiza_necunoscuta ADD COLUMN categorie TEXT")
                     conn_cat.commit()
-                    print("[STARTUP] ✓ SQLite: coloana categorie pe analiza_necunoscuta")
+                    print("[STARTUP] OK SQLite: coloana categorie pe analiza_necunoscuta")
             except Exception as ex:
                 if "duplicate" not in str(ex).lower():
                     print(f"[STARTUP] SQLite categorie necunoscute: {ex}")
@@ -283,7 +277,6 @@ def _startup_blocking_work() -> None:
                         conn_cat.close()
                     except Exception:
                         pass
-            # Coloana rezultat_meta (JSON microbiologie / meta)
             conn_rm = None
             try:
                 conn_rm = get_connection()
@@ -292,7 +285,7 @@ def _startup_blocking_work() -> None:
                 if "rezultat_meta" not in col_rm:
                     conn_rm.execute("ALTER TABLE rezultate_analize ADD COLUMN rezultat_meta TEXT")
                     conn_rm.commit()
-                    print("[STARTUP] ✓ SQLite: coloana rezultat_meta pe rezultate_analize")
+                    print("[STARTUP] OK SQLite: coloana rezultat_meta pe rezultate_analize")
             except Exception as ex:
                 if "duplicate" not in str(ex).lower():
                     print(f"[STARTUP] SQLite rezultat_meta: {ex}")
@@ -309,7 +302,7 @@ def _startup_blocking_work() -> None:
                     conn015 = get_connection()
                     conn015.executescript(sql_015.read_text(encoding="utf-8"))
                     conn015.commit()
-                    print("[STARTUP] ✓ Migrare 015 SQLite (alias clinice / microbiologie)")
+                    print("[STARTUP] OK Migrare 015 SQLite (alias clinice / microbiologie)")
                 except Exception as ex:
                     if "UNIQUE constraint" not in str(ex) and "already exists" not in str(ex).lower():
                         print(f"[STARTUP] Migrare 015 SQLite: {ex}")
@@ -325,11 +318,11 @@ def _startup_blocking_work() -> None:
         print("[STARTUP] Verificare/Creare utilizator admin...")
         result = ensure_default_admin()
         if result:
-            print("[STARTUP] ✓ Utilizator admin creat (username: admin, password: admin123)")
+            print("[STARTUP] OK Utilizator admin creat (username: admin, password: admin123)")
         else:
-            print("[STARTUP] ✓ Utilizator admin exista deja")
+            print("[STARTUP] OK Utilizator admin exista deja")
     except Exception as e:
-        print(f"[STARTUP] ✗ Eroare la creare admin: {e}")
+        print(f"[STARTUP] Eroare la creare admin: {e}")
         import traceback
         traceback.print_exc()
 
@@ -339,22 +332,22 @@ def _startup_blocking_work() -> None:
         n_gunoi = fix_pacienti_nume_gunoi()
         n_curatare = fix_pacienti_nume_curatare_completa()
         if corectati:
-            print(f"[STARTUP] ✓ Nume corectate: {len(corectati)} pacienti cunoscuti")
+            print(f"[STARTUP] OK Nume corectate: {len(corectati)} pacienti cunoscuti")
         if n_gunoi:
-            print(f"[STARTUP] ✓ Nume gunoi -> Necunoscut: {n_gunoi} pacienti")
+            print(f"[STARTUP] OK Nume gunoi -> Necunoscut: {n_gunoi} pacienti")
         if n_curatare:
-            print(f"[STARTUP] ✓ Curatare nume (apostrofuri, Varsta, duplicari): {n_curatare} pacienti")
+            print(f"[STARTUP] OK Curatare nume: {n_curatare} pacienti")
     except Exception as e:
         print(f"[STARTUP] Eroare la corectare nume (ignorat): {e}")
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Migrările DB rulează într-un thread daemon — nu folosim executor/asyncio (unele runtime-uri blochează ciudat)."""
+    """Migrarile DB ruleaza intr-un thread daemon - /health disponibil imediat."""
     threading.Thread(
         target=_startup_blocking_work, daemon=True, name="db-migrations"
     ).start()
-    print("[STARTUP] Thread migrări DB pornit; /health disponibil.", flush=True)
+    print("[STARTUP] Thread migratii DB pornit; /health disponibil.", flush=True)
 
 
 def _raspuns_eroare(status: int, mesaj: str):
