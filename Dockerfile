@@ -16,7 +16,7 @@ ENV TESSDATA_PREFIX=/tessdata
 
 WORKDIR /app
 
-# Encoding UTF-8 obligatoriu — fara el, print() cu diacritice cade pe cp1250/ASCII in container
+# Encoding UTF-8 obligatoriu
 ENV PYTHONIOENCODING=utf-8
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
@@ -26,6 +26,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Railway injectează PORT; dacă lipsește, --port gol face uvicorn să iasă imediat → healthcheck eșuat
-ENV PORT=8000
-CMD ["sh", "-c", "exec python -m uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# start.sh citeste $PORT injectat de Railway (sau 8000 implicit)
+RUN printf '#!/bin/sh\nexec python -m uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-8000}"\n' > /start.sh \
+    && chmod +x /start.sh
+
+CMD ["/bin/sh", "/start.sh"]

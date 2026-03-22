@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.cursor/
+backups/
+*.bat
+.env
+*.log
+upload_eroare.txt
+analize.db
