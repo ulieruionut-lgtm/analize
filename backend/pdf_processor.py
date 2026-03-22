@@ -1,7 +1,14 @@
 """Detectare tip PDF (text vs scan) + extragere text.
-- PDF cu text: pdfplumber (extract_text + extract_tables pentru tabele cu borduri)
-- PDF scanat: PyMuPDF (fitz) pentru imagini + preprocesare + Tesseract OCR
-  PyMuPDF nu are nevoie de poppler - merge pe Windows fara instalare extra.
+- PDF cu text: PyMuPDF + pdfplumber
+- PDF scanat: PyMuPDF → imagine → preprocesare → Tesseract OCR
+
+Principii de performanta:
+- O singura trecere per pagina (render + tsv + string dintr-un apel image_to_data)
+- O singura preprocesare per pagina (fara multi-pass daca prima e suficient de buna)
+- Deskew cu proiectie Hough (nu minAreaRect pe 1M puncte)
+- Eliminare borduri cu morfologie OpenCV (nu loop Python)
+- OEM 3 (LSTM pur) implicit — mai rapid si mai precis pe text romanesc
+- Groupare randuri TSV cu sweep liniar O(n log n) in loc de O(n^2)
 """
 import re
 from pathlib import Path
@@ -10,137 +17,515 @@ from typing import Tuple
 from backend.config import settings
 
 
+# ---------------------------------------------------------------------------
+# Verificare disponibilitate Tesseract
+# ---------------------------------------------------------------------------
+
 def tesseract_availability() -> Tuple[bool, str | None]:
-    """
-    Verifică dacă pytesseract poate apela binarul Tesseract.
-    Returnează (True, None) dacă e ok, altfel (False, mesaj_utilizator).
-    """
     try:
         import pytesseract
     except ImportError:
-        return False, "pytesseract nu este instalat. Rulează: pip install pytesseract"
+        return False, "pytesseract nu este instalat. Ruleaza: pip install pytesseract"
 
     tess_prefix = getattr(settings, "tessdata_prefix", None)
     if tess_prefix:
         import os
-
         os.environ["TESSDATA_PREFIX"] = str(tess_prefix)
 
     try:
         pytesseract.get_tesseract_version()
         return True, None
     except Exception as tess_err:
-        import os
-        import platform
-
+        import os, platform
         if platform.system() == "Windows":
             hint = (
-                "Descarcă de la: https://github.com/UB-Mannheim/tesseract/wiki "
-                "și instalează cu opțiunea «Romanian» bifată. "
-                "Apoi adaugă C:\\Program Files\\Tesseract-OCR la PATH."
+                "Descarca de la: https://github.com/UB-Mannheim/tesseract/wiki "
+                "si instaleaza cu optiunea Romanian bifata. "
+                "Apoi adauga C:\\Program Files\\Tesseract-OCR la PATH."
             )
         else:
-            tpfx = os.environ.get("TESSDATA_PREFIX", "(negăsit)")
-            hint = f"Tesseract nu e găsit în PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
+            tpfx = os.environ.get("TESSDATA_PREFIX", "(negasit)")
+            hint = f"Tesseract nu e gasit in PATH. TESSDATA_PREFIX={tpfx}. Eroare: {tess_err}"
         return False, "Tesseract OCR nu este disponibil. " + hint
 
 
-def _ocr_tsv_recluster_rows(pdf_path: str) -> str:
+# ---------------------------------------------------------------------------
+# Preprocesare imagine
+# ---------------------------------------------------------------------------
+
+def _deskew_hough(gray_arr):
     """
-    OCR cu Tesseract image_to_data (TSV + bbox) reconstruiește rânduri fizice din tabel.
-    Fiecare cuvânt are coordonata Y; grupăm cuvintele cu Y apropiați pe același rând,
-    ordonăm după X și obținem linii «Test  Rezultat  UM  Interval».
-    Funcționează chiar dacă PSM 3/4 amestecă coloanele.
+    Corecteaza inclinarea cu proiectie Hough (mai robusta decat minAreaRect).
+    Returneaza numpy array corectat sau None daca inclinarea e neglijabila / OpenCV lipseste.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        h, w = gray_arr.shape
+        if h < 100 or w < 100:
+            return None
+
+        _, bw = cv2.threshold(gray_arr, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # Dilata usor pentru a conecta caractere in cuvinte
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 1))
+        dilated = cv2.dilate(bw, kernel, iterations=1)
+        lines = cv2.HoughLinesP(dilated, 1, np.pi / 180, threshold=80,
+                                minLineLength=w // 6, maxLineGap=20)
+        if lines is None or len(lines) == 0:
+            return None
+
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if x2 == x1:
+                continue
+            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            if -15 < angle < 15:
+                angles.append(angle)
+
+        if not angles:
+            return None
+
+        # Mediana unghiurilor — rezistenta la outlieri
+        angle = float(np.median(angles))
+        if abs(angle) < 0.3:
+            return None
+
+        center = (w // 2, h // 2)
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(gray_arr, M, (w, h),
+                                 flags=cv2.INTER_CUBIC,
+                                 borderMode=cv2.BORDER_REPLICATE)
+        return rotated
+    except Exception:
+        return None
+
+
+def _sterge_borduri_cv(arr):
+    """
+    Elimina linii de bordura de tabel cu morfologie OpenCV (mult mai rapida decat loop Python).
+    Returneaza array modificat sau None daca OpenCV lipseste.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        # Lucreaza pe binar (negru = 0 = fundal, alb = 255 = text in imagine dupa threshold)
+        # Linii orizontale lungi = borduri tabel
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, arr.shape[1] // 15), 1))
+        h_lines = cv2.morphologyEx((255 - arr), cv2.MORPH_OPEN, h_kernel)
+
+        # Linii verticale lungi = borduri tabel
+        v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, arr.shape[0] // 15)))
+        v_lines = cv2.morphologyEx((255 - arr), cv2.MORPH_OPEN, v_kernel)
+
+        mask = cv2.add(h_lines, v_lines)
+        # Unde masca e activata (borduri), punem 255 (alb = fundal)
+        result = arr.copy()
+        result[mask > 0] = 255
+        return result
+    except Exception:
+        return None
+
+
+def _preproceseaza_clean(img):
+    """
+    Profil pentru scanuri cu contrast bun: CLAHE usor + contrast moderat + deskew.
+    NU aplica threshold adaptiv agresiv care mananca diacritice si caractere fine.
+    """
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageEnhance
+
+        gray_arr = np.array(img.convert("L"))
+
+        # Deskew cu Hough
+        deskewed = _deskew_hough(gray_arr)
+        if deskewed is not None:
+            gray_arr = deskewed
+
+        # CLAHE pentru uniformizare iluminare
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray_arr = clahe.apply(gray_arr)
+
+        pil = Image.fromarray(gray_arr)
+        pil = ImageEnhance.Contrast(pil).enhance(1.4)
+        pil = ImageEnhance.Sharpness(pil).enhance(1.2)
+        return pil
+    except Exception:
+        return img.convert("L")
+
+
+def _preproceseaza_hard(img):
+    """
+    Profil pentru scanuri cu contrast slab / fond gri: threshold adaptiv + stergere borduri.
+    """
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageEnhance
+
+        gray_arr = np.array(img.convert("L"))
+
+        # Deskew cu Hough
+        deskewed = _deskew_hough(gray_arr)
+        if deskewed is not None:
+            gray_arr = deskewed
+
+        # Contrast + sharpness inainte de threshold
+        pil = Image.fromarray(gray_arr)
+        pil = ImageEnhance.Contrast(pil).enhance(1.8)
+        pil = ImageEnhance.Sharpness(pil).enhance(1.4)
+        gray_arr = np.array(pil)
+
+        # Threshold adaptiv gaussian
+        blurred = cv2.GaussianBlur(gray_arr, (3, 3), 0)
+        thresh = cv2.adaptiveThreshold(blurred, 255,
+                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 15, 4)
+
+        # Sterge borduri de tabel cu morfologie
+        cleaned = _sterge_borduri_cv(thresh)
+        if cleaned is not None:
+            thresh = cleaned
+
+        return Image.fromarray(thresh)
+    except Exception:
+        return img.convert("L")
+
+
+def _pick_profile(pil_img) -> str:
+    """Alege profilul de preprocesare pe baza contrastului imaginii."""
+    if not getattr(settings, "ocr_preprocess_auto", True):
+        return "hard"
+    try:
+        import numpy as np
+        arr = np.array(pil_img.convert("L"))
+        std = float(arr.std())
+        return "clean" if std >= 38.0 else "hard"
+    except Exception:
+        return "hard"
+
+
+def _apply_profile(img, profile: str):
+    if profile == "clean":
+        return _preproceseaza_clean(img)
+    return _preproceseaza_hard(img)
+
+
+# ---------------------------------------------------------------------------
+# Nucleul OCR: un singur apel image_to_data per incercare
+# (extragem atat textul cat si metricile de calitate dintr-un singur apel)
+# ---------------------------------------------------------------------------
+
+def _ocr_page_once(pil_img, lang: str, cfg: str, pytesseract_mod) -> Tuple[str, float, float, int]:
+    """
+    Ruleaza un singur image_to_data si returneaza (text, mean_conf, weak_ratio, n_words).
+    Evita apelul dublu image_to_string + image_to_data din versiunea anterioara.
+    """
+    from pytesseract import Output
+    weak_thr = int(getattr(settings, "ocr_weak_word_conf", 55))
+    try:
+        d = pytesseract_mod.image_to_data(pil_img, lang=lang, config=cfg,
+                                          output_type=Output.DICT)
+    except Exception:
+        return "", 0.0, 1.0, 0
+
+    n = len(d.get("text", []))
+    if n == 0:
+        return "", 0.0, 1.0, 0
+
+    words_text = []
+    confs = []
+    weak = 0
+    levels = d.get("level", [])
+    texts = d.get("text", [])
+    confs_raw = d.get("conf", [])
+
+    for i in range(n):
+        try:
+            if int(levels[i]) != 5:
+                continue
+        except (ValueError, TypeError):
+            continue
+        word = (texts[i] or "").strip()
+        if not word:
+            continue
+        try:
+            c = int(float(confs_raw[i]))
+        except (ValueError, TypeError):
+            continue
+        if c < 0:
+            continue
+        words_text.append(word)
+        confs.append(c)
+        if c < weak_thr:
+            weak += 1
+
+    text = " ".join(words_text)
+    n_w = len(confs)
+    mean_c = sum(confs) / n_w if n_w else 0.0
+    weak_r = weak / n_w if n_w else 1.0
+    return text, mean_c, weak_r, n_w
+
+
+def _ocr_quality_score(text: str, mean_c: float, weak_r: float, n_words: int, min_chars: int) -> float:
+    L = len((text or "").strip())
+    if L == 0 and n_words == 0:
+        return -1e9
+    score = mean_c * 0.45
+    score += min(L / 8.0, 45.0)
+    score -= weak_r * 38.0
+    if L < min_chars:
+        score -= (min_chars - L) * 0.55
+    if n_words == 0 and L > 5:
+        score -= 15.0
+    return score
+
+
+def _needs_retry(text: str, mean_c: float, weak_r: float, n_words: int, min_chars: int) -> bool:
+    t = (text or "").strip()
+    if len(t) < min_chars:
+        return True
+    if not getattr(settings, "ocr_use_metrics_retry", True):
+        return False
+    if n_words == 0:
+        return len(t) < max(min_chars, 80)
+    if mean_c < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)):
+        return True
+    if weak_r > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
+        return True
+    return False
+
+
+def _tesseract_cfg(oem: int, psm: int, dpi: int) -> str:
+    return f"--oem {oem} --psm {psm} -c user_defined_dpi={dpi}"
+
+
+def _best_ocr_for_page(img_rgb, pytesseract_mod, min_chars: int, dpi: int, oem: int) -> str:
+    """
+    Strategie clara si eficienta:
+    1. Determin profilul (clean/hard) din contrast
+    2. Prima incercare: PSM 6 (bloc uniform) — cel mai bun pentru tabele medicale
+    3. Daca calitate slaba: incerc PSM 4 (o coloana)
+    4. Daca calitate inca slaba: incerc profilul opus
+    5. Ultimul fallback: PSM 11 (sparse text)
+    """
+    lang = settings.ocr_lang
+    # OEM 3 = LSTM pur (mai rapid + mai precis decat OEM 2 pe Tesseract 4/5)
+    if oem == 2:
+        oem = 3
+
+    profile = _pick_profile(img_rgb)
+    img_prep = _apply_profile(img_rgb, profile)
+    alt_profile = "hard" if profile == "clean" else "clean"
+
+    best_text = ""
+    best_score = -1e9
+
+    # PSM 6: bloc uniform de text — ideal pentru tabele cu randuri aliniate
+    cfg6 = _tesseract_cfg(oem, 6, dpi)
+    t, mc, wr, nw = _ocr_page_once(img_prep, lang, cfg6, pytesseract_mod)
+    sc = _ocr_quality_score(t, mc, wr, nw, min_chars)
+    if sc > best_score:
+        best_text, best_score = t, sc
+
+    if _needs_retry(best_text, mc, wr, nw, min_chars):
+        # PSM 4: o singura coloana — unele buletine MedLife au margini
+        cfg4 = _tesseract_cfg(oem, 4, dpi)
+        t4, mc4, wr4, nw4 = _ocr_page_once(img_prep, lang, cfg4, pytesseract_mod)
+        sc4 = _ocr_quality_score(t4, mc4, wr4, nw4, min_chars)
+        if sc4 > best_score:
+            best_text, best_score = t4, sc4
+
+    if _needs_retry(best_text, mc, wr, nw, min_chars):
+        # Profil opus pe PSM 6
+        img_alt = _apply_profile(img_rgb, alt_profile)
+        ta, mca, wra, nwa = _ocr_page_once(img_alt, lang, cfg6, pytesseract_mod)
+        sca = _ocr_quality_score(ta, mca, wra, nwa, min_chars)
+        if sca > best_score:
+            best_text, best_score = ta, sca
+
+        if _needs_retry(best_text, mca, wra, nwa, min_chars):
+            # Fallback final: PSM 11 (sparse text — tabele fragmentate)
+            cfg11 = _tesseract_cfg(oem, 11, dpi)
+            t11, mc11, wr11, nw11 = _ocr_page_once(img_alt, lang, cfg11, pytesseract_mod)
+            sc11 = _ocr_quality_score(t11, mc11, wr11, nw11, min_chars)
+            if sc11 > best_score:
+                best_text = t11
+
+    return best_text
+
+
+# ---------------------------------------------------------------------------
+# Reconstructie randuri din TSV bbox (o singura trecere cu sweep liniar)
+# ---------------------------------------------------------------------------
+
+def _recluster_tsv_rows(df: dict, tolerance: int) -> str:
+    """
+    Reconstruieste randuri fizice din output-ul image_to_data (TSV cu bbox).
+    Algoritm O(n log n): sorteaza dupa Y, parcurge o singura data.
+    Returneaza text cu un rand per linie.
+    """
+    words = []
+    n = len(df.get("text", []))
+    for i in range(n):
+        txt = (df["text"][i] or "").strip()
+        if not txt:
+            continue
+        try:
+            conf = int(df["conf"][i] or 0)
+        except (ValueError, TypeError):
+            conf = 0
+        if conf < 20:
+            continue
+        try:
+            x = int(df["left"][i])
+            y = int(df["top"][i])
+        except (ValueError, TypeError):
+            continue
+        words.append((y, x, txt))
+
+    if not words:
+        return ""
+
+    words.sort()
+
+    rows: list[list[tuple]] = []
+    row_y: list[int] = []
+
+    for y, x, txt in words:
+        placed = False
+        for ri in range(len(row_y) - 1, max(len(row_y) - 8, -1), -1):
+            if abs(y - row_y[ri]) <= tolerance:
+                rows[ri].append((x, txt))
+                # Actualizeaza Y-ul reprezentativ al randului (medie rulanta simpla)
+                row_y[ri] = (row_y[ri] + y) // 2
+                placed = True
+                break
+        if not placed:
+            rows.append([(x, txt)])
+            row_y.append(y)
+
+    lines = []
+    for row in rows:
+        row.sort(key=lambda w: w[0])
+        line = " ".join(w[1] for w in row)
+        if line.strip():
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Trecere unica per pagina: render + TSV + string din acelasi image_to_data
+# ---------------------------------------------------------------------------
+
+def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
+                   pytesseract_mod, min_chars: int) -> Tuple[str, str]:
+    """
+    Dintr-un singur render de pagina produce:
+    - text_string: textul OCR optimizat (pentru parser)
+    - text_tsv: randuri reconstruite din coordonate bbox (backup pentru tabele 4-coloane)
+
+    Returneaza (text_string, text_tsv).
+    """
+    from PIL import Image
+    from pytesseract import Output
+    import io
+
+    img = Image.open(io.BytesIO(page_pix_bytes))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # OEM 3 implicit
+    if oem == 2:
+        oem = 3
+
+    # --- Text optimizat (cu preprocesare adaptiva) ---
+    text_string = _best_ocr_for_page(img, pytesseract_mod, min_chars, dpi, oem)
+
+    # --- TSV bbox pentru reconstructia randurilor (PSM 6, fara preprocesare agresiva) ---
+    # Folosim imaginea curata (fara threshold) pentru TSV — coordonatele sunt mai precise
+    cfg_tsv = _tesseract_cfg(oem, 6, dpi)
+    try:
+        profile = _pick_profile(img)
+        img_light = _apply_profile(img, profile)
+        df = pytesseract_mod.image_to_data(img_light, lang=lang, config=cfg_tsv,
+                                           output_type=Output.DICT)
+        # Toleranta = ~40% din inaltimea medie a unui caracter
+        heights = [int(df["height"][i]) for i in range(len(df["text"]))
+                   if (df["text"][i] or "").strip() and int(df.get("conf", [0])[i] or 0) >= 20]
+        if heights:
+            med_h = sorted(heights)[len(heights) // 2]
+            tolerance = max(6, int(med_h * 0.40))
+        else:
+            tolerance = 12
+        text_tsv = _recluster_tsv_rows(df, tolerance)
+    except Exception:
+        text_tsv = ""
+
+    return text_string, text_tsv
+
+
+def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None]:
+    """
+    Deschide PDF-ul O SINGURA DATA, randeaza fiecare pagina si ruleaza OCR.
+    Returneaza (text_string_combined, text_tsv_combined, eroare_sau_None).
     """
     try:
         import fitz
-        import io
-        import pytesseract
-        from PIL import Image
-        from pytesseract import Output
     except ImportError:
-        return ""
+        return "", "", "PyMuPDF nu este instalat. Ruleaza: pip install pymupdf"
 
-    ok, _ = tesseract_availability()
+    try:
+        import pytesseract
+    except ImportError:
+        return "", "", "pytesseract nu este instalat. Ruleaza: pip install pytesseract"
+
+    ok, err = tesseract_availability()
     if not ok:
-        return ""
+        return "", "", err or "Tesseract OCR nu este disponibil."
+
+    oem = getattr(settings, "ocr_oem", 3)
+    min_chars = getattr(settings, "ocr_min_chars", 100)
+    dpi = getattr(settings, "ocr_dpi_hint", 300)
+    lang = settings.ocr_lang
 
     try:
         doc = fitz.open(pdf_path)
-        page_texts = []
-        dpi = getattr(settings, "ocr_dpi_hint", 400)
-        lang = settings.ocr_lang
-        oem = getattr(settings, "ocr_oem", 2)
-        cfg = f"--oem {oem} --psm 6"  # PSM 6 = bloc uniform de text (citește TOATE coloanele)
+        strings = []
+        tsvs = []
 
         for page_num in range(len(doc)):
             page = doc[page_num]
             mat = fitz.Matrix(dpi / 72, dpi / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
-            if img.mode != "RGB":
-                img = img.convert("RGB")
+            pix_bytes = pix.tobytes("png")
 
             try:
-                df = pytesseract.image_to_data(
-                    img, lang=lang, config=cfg, output_type=Output.DICT
-                )
-            except Exception:
-                continue
+                ts, tv = _ocr_page_full(pix_bytes, lang, oem, dpi, pytesseract, min_chars)
+            except Exception as pe:
+                ts, tv = "", ""
 
-            words = []
-            for i in range(len(df["text"])):
-                txt = (df["text"][i] or "").strip()
-                if not txt:
-                    continue
-                conf = int(df["conf"][i] or 0)
-                if conf < 15:
-                    continue
-                x = int(df["left"][i])
-                y = int(df["top"][i])
-                h = int(df["height"][i])
-                words.append((y, x, txt, h))
-
-            if not words:
-                continue
-
-            # Grupare în rânduri fizice: cuvintele cu y apropiați (±½ înălțime medie)
-            words.sort(key=lambda w: (w[0], w[1]))
-            med_h = sorted(w[3] for w in words)[len(words) // 2] if words else 20
-            tolerance = max(8, int(med_h * 0.55))
-
-            rows: list[list] = []
-            for word in words:
-                placed = False
-                for row in rows:
-                    if abs(word[0] - row[0][0]) <= tolerance:
-                        row.append(word)
-                        placed = True
-                        break
-                if not placed:
-                    rows.append([word])
-
-            lines = []
-            for row in rows:
-                row.sort(key=lambda w: w[1])  # sortare X
-                line = " ".join(w[2] for w in row)
-                if line.strip():
-                    lines.append(line)
-
-            page_texts.append("\n".join(lines))
+            if ts.strip():
+                strings.append(ts)
+            if tv.strip():
+                tsvs.append(tv)
 
         doc.close()
-        return "\n".join(page_texts)
-    except Exception:
-        return ""
+        return "\n".join(strings), "\n".join(tsvs), None
+    except Exception as e:
+        return "", "", f"Eroare la OCR: {e!s}"
 
+
+# ---------------------------------------------------------------------------
+# pdfplumber: extragere tabele bordate
+# ---------------------------------------------------------------------------
 
 def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
-    """
-    Extrage continut din tabele cu borduri folosind pdfplumber extract_tables().
-    Returneaza text formatat ca linii 'parametru valoare unitate interval'.
-    Util pentru PDF-uri Bioclinica/MedLife cu celule bordate.
-    """
     linii = []
     try:
         import pdfplumber as _pdfplumber
@@ -151,12 +536,9 @@ def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
                     for rand in tabel:
                         if not rand:
                             continue
-                        # Curata celulele None/goale
                         celule = [str(c).strip() if c else "" for c in rand]
-                        # Filtreaza randuri complet goale
                         if not any(celule):
                             continue
-                        # Uneste celulele cu spatiu (parser-ul va detecta formatul)
                         linie = "  ".join(c for c in celule if c)
                         if linie:
                             linii.append(linie)
@@ -165,556 +547,21 @@ def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
     return "\n".join(linii)
 
 
-def _deskew_imagine(img):
-    """Corecteaza inclinarea paginii (deskew) cu OpenCV. Returneaza PIL Image sau None daca esueaza."""
-    try:
-        import cv2
-        import numpy as np
-        from PIL import Image
-        arr = np.array(img.convert("L"))
-        # Detecteaza unghiul de inclinare
-        coords = np.column_stack(np.where(arr < 200))
-        if len(coords) < 100:
-            return None
-        angle = cv2.minAreaRect(coords)[-1]
-        if angle < -45:
-            angle = 90 + angle
-        elif angle > 45:
-            angle = angle - 90
-        if abs(angle) < 0.5:
-            return None
-        (h, w) = arr.shape
-        center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
-        rotated = cv2.warpAffine(arr, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-        return Image.fromarray(rotated)
-    except Exception:
-        return None
-
-
-def _threshold_adaptiv(arr):
-    """Binarizare cu threshold adaptiv (bloc) pentru contrast variabil. Returneaza numpy array."""
-    try:
-        import cv2
-        import numpy as np
-        if len(arr.shape) == 3:
-            gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = arr
-        # Blur usor pentru zgomot
-        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-        thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                       cv2.THRESH_BINARY, 11, 2)
-        return thresh
-    except Exception:
-        return None
-
-
-def _gray_std_mean_pil(img) -> Tuple[float, float]:
-    """Deviație standard și medie pe L — contrastul scanului."""
-    try:
-        import numpy as np
-
-        arr = np.array(img.convert("L"))
-        return float(arr.std()), float(arr.mean())
-    except Exception:
-        return 50.0, 128.0
-
-
-def _preproceseaza_ocr_clean(img):
-    """
-    Profil „scan curat”: CLAHE ușor + contrast moderat, fără binarizare adaptivă agresivă.
-    """
-    try:
-        import cv2
-        import numpy as np
-        from PIL import Image, ImageEnhance
-
-        desk = _deskew_imagine(img)
-        base = desk if desk is not None else img.convert("L")
-        gray = base if base.mode == "L" else base.convert("L")
-        arr = np.array(gray)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        arr2 = clahe.apply(arr)
-        pil = Image.fromarray(arr2)
-        pil = ImageEnhance.Contrast(pil).enhance(1.4)
-        pil = ImageEnhance.Sharpness(pil).enhance(1.25)
-        return pil
-    except Exception:
-        return img.convert("L")
-
-
-def _apply_ocr_preprocess_profile(img, profile: str):
-    """profile: 'clean' | 'hard'"""
-    if profile == "clean":
-        return _preproceseaza_ocr_clean(img)
-    return _preproceseaza_imagine_ocr(img)
-
-
-def _pick_primary_preprocess_name(pil_img) -> str:
-    if not getattr(settings, "ocr_preprocess_auto", False):
-        return "hard"
-    try:
-        std, _mean = _gray_std_mean_pil(pil_img)
-        if std < 38.0:
-            return "hard"
-        return "clean"
-    except Exception:
-        return "hard"
-
-
-def _tesseract_word_metrics(image, lang: str, config: str, pytesseract_mod):
-    """(mean_conf, weak_ratio, digit_ratio, n_words) pe nivel cuvânt."""
-    from pytesseract import Output
-
-    weak_thr = int(getattr(settings, "ocr_weak_word_conf", 60))
-    try:
-        d = pytesseract_mod.image_to_data(
-            image, lang=lang, config=config, output_type=Output.DICT
-        )
-    except Exception:
-        return 0.0, 1.0, 0.0, 0
-
-    n = len(d.get("text", []))
-    if n == 0:
-        return 0.0, 1.0, 0.0, 0
-
-    confs: list[int] = []
-    weak = 0
-    chars_digit = 0
-    chars_alpha = 0
-    n_words = 0
-    levels = d.get("level", [0] * n)
-    texts = d.get("text", [])
-    confs_raw = d.get("conf", [])
-
-    for i in range(n):
-        try:
-            if int(levels[i]) != 5:
-                continue
-        except (ValueError, TypeError, KeyError, IndexError):
-            continue
-        word = (texts[i] or "").strip()
-        if not word:
-            continue
-        try:
-            c = int(float(confs_raw[i]))
-        except (ValueError, TypeError, KeyError, IndexError):
-            continue
-        if c < 0:
-            continue
-        n_words += 1
-        confs.append(c)
-        if c < weak_thr:
-            weak += 1
-        for ch in word:
-            if ch.isdigit():
-                chars_digit += 1
-            elif ch.isalpha():
-                chars_alpha += 1
-
-    mean_c = sum(confs) / len(confs) if confs else 0.0
-    weak_ratio = weak / n_words if n_words else 1.0
-    tot = chars_digit + chars_alpha
-    digit_ratio = (chars_digit / tot) if tot > 0 else 0.0
-    return mean_c, weak_ratio, digit_ratio, n_words
-
-
-def _ocr_quality_score(
-    text: str,
-    mean_c: float,
-    weak_ratio: float,
-    digit_ratio: float,
-    n_words: int,
-    min_chars: int,
-) -> float:
-    t = (text or "").strip()
-    L = len(t)
-    if L == 0 and n_words == 0:
-        return -1e9
-    score = mean_c * 0.45
-    score += min(L / 8.0, 45.0)
-    score -= weak_ratio * 38.0
-    score += digit_ratio * 22.0
-    if L < min_chars:
-        score -= (min_chars - L) * 0.55
-    if n_words == 0 and L > 5:
-        score -= 15.0
-    return score
-
-
-def _ocr_needs_more_passes(
-    text: str,
-    mean_c: float,
-    weak_ratio: float,
-    digit_ratio: float,
-    n_words: int,
-    min_chars: int,
-) -> bool:
-    t = (text or "").strip()
-    if len(t) < min_chars:
-        return True
-    if not getattr(settings, "ocr_use_metrics_retry", True):
-        return False
-    if n_words == 0:
-        return len(t) < max(min_chars, 80)
-    if mean_c < float(getattr(settings, "ocr_retry_min_mean_conf", 48.0)):
-        return True
-    if weak_ratio > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.45)):
-        return True
-    mdr = float(getattr(settings, "ocr_min_digit_ratio", 0.0) or 0.0)
-    if mdr > 0 and len(t) >= min_chars and digit_ratio < mdr:
-        return True
-    return False
-
-
-def _tesseract_cfg(oem: int, psm: int, dpi: int) -> str:
-    return f"--oem {oem} --psm {psm} -c user_defined_dpi={dpi}"
-
-
-def _infer_psm_from_vertical_layout(gray_arr) -> int | None:
-    """Sugerează PSM 4 dacă există faleză verticală centrală (2 coloane)."""
-    try:
-        import cv2
-        import numpy as np
-
-        h, w = gray_arr.shape
-        if w < 500 or h < 400:
-            return None
-        _, bw = cv2.threshold(gray_arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        ink = (bw < 200).astype(np.uint8)
-        proj = ink.sum(axis=0).astype(np.float64)
-        mx = proj.max()
-        if mx <= 0:
-            return None
-        projn = proj / mx
-        sm = np.convolve(projn, np.ones(15) / 15.0, mode="same")
-        low = sm < 0.11
-        best_w = 0
-        best_mid = None
-        i = 0
-        while i < w:
-            if not low[i]:
-                i += 1
-                continue
-            j = i
-            while j < w and low[j]:
-                j += 1
-            gap = j - i
-            mid = (i + j) // 2
-            if gap >= max(12, w // 55) and 0.24 * w < mid < 0.76 * w and gap > best_w:
-                best_w = gap
-                best_mid = mid
-            i = j
-        if best_mid is None or best_w < max(12, w // 55):
-            return None
-        return 4
-    except Exception:
-        return None
-
-
-def _split_page_into_column_images(pil_img):
-    import numpy as np
-    import cv2
-
-    im = pil_img if pil_img.mode == "RGB" else pil_img.convert("RGB")
-    arr = np.array(im.convert("L"))
-    h, w = arr.shape
-    if w < 400:
-        return None
-    try:
-        _, bw = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        ink = (bw < 200).astype(np.uint8)
-        proj = ink.sum(axis=0).astype(np.float64)
-        mx = proj.max()
-        if mx < h * 0.04:
-            return None
-        projn = proj / (mx + 1e-6)
-        sm = np.convolve(projn, np.ones(15) / 15.0, mode="same")
-        low = sm < 0.12
-        best_w = 0
-        best_x = None
-        i = 0
-        while i < w:
-            if not low[i]:
-                i += 1
-                continue
-            j = i
-            while j < w and low[j]:
-                j += 1
-            gap = j - i
-            mid = (i + j) // 2
-            if gap >= max(12, w // 60) and 0.22 * w < mid < 0.78 * w and gap > best_w:
-                best_w = gap
-                best_x = int(mid)
-            i = j
-        if best_x is None:
-            return None
-        lw, rw = best_x, w - best_x
-        if lw < int(0.27 * w) or rw < int(0.27 * w):
-            return None
-        return [im.crop((0, 0, best_x, h)), im.crop((best_x, 0, w, h))]
-    except Exception:
-        return None
-
-
-def _try_ocr_split_columns(
-    pil_rgb, lang: str, base_cfg: str, pytesseract_mod, min_chars: int
-) -> str | None:
-    cols = _split_page_into_column_images(pil_rgb)
-    if not cols or len(cols) < 2:
-        return None
-    parts = []
-    for c in cols:
-        try:
-            t = pytesseract_mod.image_to_string(c, lang=lang, config=base_cfg).strip()
-        except Exception:
-            t = ""
-        parts.append(t)
-    merged = "\n".join(p for p in parts if p)
-    if len(merged.strip()) < max(20, min_chars // 2):
-        return None
-    return merged
-
-
-def _ocr_pass_string_and_metrics(
-    pil_img, lang: str, tess_cfg: str, pytesseract_mod
-) -> Tuple[str, float, float, float, int]:
-    text = pytesseract_mod.image_to_string(pil_img, lang=lang, config=tess_cfg) or ""
-    mean_c, weak_r, dig_r, n_w = _tesseract_word_metrics(
-        pil_img, lang, tess_cfg, pytesseract_mod
-    )
-    return text, mean_c, weak_r, dig_r, n_w
-
-
-def _ocr_best_for_page_rgb(
-    img_rgb, pytesseract_mod, min_chars: int, dpi_hint: int, oem: int
-) -> str:
-    lang = settings.ocr_lang
-    psm_user = int(getattr(settings, "ocr_psm", 3))
-    psm_fb = int(getattr(settings, "ocr_psm_fallback", 4))
-    psm_sp = int(getattr(settings, "ocr_psm_sparse", 11))
-
-    if getattr(settings, "ocr_column_segmentation", False):
-        cfg_try = _tesseract_cfg(oem, psm_user, dpi_hint)
-        col_merged = _try_ocr_split_columns(
-            img_rgb, lang, cfg_try, pytesseract_mod, min_chars
-        )
-        if col_merged:
-            cm = col_merged.strip()
-            if len(cm) >= min_chars or (len(cm) >= 40 and re.search(r"\d", cm)):
-                return col_merged
-
-    psm_main = psm_user
-    if getattr(settings, "ocr_layout_auto", False):
-        try:
-            import numpy as np
-
-            arr = np.array(img_rgb.convert("L"))
-            guess = _infer_psm_from_vertical_layout(arr)
-            if guess is not None:
-                psm_main = guess
-        except Exception:
-            pass
-
-    primary = _pick_primary_preprocess_name(img_rgb)
-    secondary = "hard" if primary == "clean" else "clean"
-
-    def pass_(img_prep, psm: int):
-        cfg = _tesseract_cfg(oem, psm, dpi_hint)
-        return _ocr_pass_string_and_metrics(img_prep, lang, cfg, pytesseract_mod)
-
-    img_a = _apply_ocr_preprocess_profile(img_rgb, primary)
-    text, mean_c, weak_r, dig_r, n_w = pass_(img_a, psm_main)
-    best_t = text
-    best_sc = _ocr_quality_score(text, mean_c, weak_r, dig_r, n_w, min_chars)
-    img_best = img_a
-    best_mean, best_weak, best_dig, best_nw = mean_c, weak_r, dig_r, n_w
-
-    if (
-        _ocr_needs_more_passes(text, mean_c, weak_r, dig_r, n_w, min_chars)
-        and secondary != primary
-    ):
-        img_b = _apply_ocr_preprocess_profile(img_rgb, secondary)
-        t2, m2, w2, d2, n2 = pass_(img_b, psm_main)
-        s2 = _ocr_quality_score(t2, m2, w2, d2, n2, min_chars)
-        if s2 > best_sc:
-            best_t, best_sc = t2, s2
-            img_best = img_b
-            best_mean, best_weak, best_dig, best_nw = m2, w2, d2, n2
-
-    if _ocr_needs_more_passes(
-        best_t, best_mean, best_weak, best_dig, best_nw, min_chars
-    ):
-        for psm_x in (psm_fb, psm_sp):
-            if psm_x == psm_main:
-                continue
-            t3, m3, w3, d3, n3 = pass_(img_best, psm_x)
-            s3 = _ocr_quality_score(t3, m3, w3, d3, n3, min_chars)
-            if s3 > best_sc:
-                best_t, best_sc = t3, s3
-                best_mean, best_weak, best_dig, best_nw = m3, w3, d3, n3
-
-    if _ocr_needs_more_passes(
-        best_t, best_mean, best_weak, best_dig, best_nw, min_chars
-    ):
-        gimg = img_rgb.convert("L")
-        for psm_x in (psm_fb, psm_sp):
-            t4, m4, w4, d4, n4 = pass_(gimg, psm_x)
-            s4 = _ocr_quality_score(t4, m4, w4, d4, n4, min_chars)
-            if s4 > best_sc:
-                best_t, best_sc = t4, s4
-
-    return best_t
-
-
-def _preproceseaza_imagine_ocr(img):
-    """
-    Profil „dificil” pentru OCR:
-    1. Deskew (corectare inclinare) daca OpenCV disponibil
-    2. Grayscale + contrast + sharpness
-    3. Threshold adaptiv
-    4. Sterge liniile subtiri de bordura
-    Returneaza imaginea procesata (PIL Image).
-    """
-    try:
-        import numpy as np
-        from PIL import ImageEnhance
-        from PIL import Image as PILImage
-
-        # Deskew: corecteaza inclinarea
-        deskewed = _deskew_imagine(img)
-        if deskewed is not None:
-            img = deskewed
-        else:
-            img = img.convert("L")
-
-        # Grayscale daca nu e deja
-        gray = img if img.mode == "L" else img.convert("L")
-
-        # Mareste contrastul
-        gray = ImageEnhance.Contrast(gray).enhance(2.0)
-        gray = ImageEnhance.Sharpness(gray).enhance(1.5)
-
-        # Converteste la numpy
-        arr = np.array(gray)
-
-        # Threshold adaptiv (OpenCV) pentru contrast variabil, altfel pastreaza grayscale
-        thresh_arr = _threshold_adaptiv(arr)
-        if thresh_arr is not None:
-            arr = thresh_arr
-        # Fallback: ramane grayscale (bun pentru OCR), folosim binary doar pt detectie borduri
-
-        # Pentru detectie linii bordura: pixel negru (text/linie) = 1
-        binary = (arr < 200).astype(np.uint8) if arr.max() > 1 else (arr < 200).astype(np.uint8)
-
-        # Sterge liniile orizontale de bordura:
-        # O linie e "bordura" daca > 90% din pixeli sunt negri
-        # SI este subtire (1-3 pixeli consecutivi) - evita stergerea textului dens
-        i = 0
-        while i < binary.shape[0]:
-            if binary[i].mean() > 0.90:
-                # Detectam cat de groasa e linia (linii consecutive)
-                j = i + 1
-                while j < binary.shape[0] and binary[j].mean() > 0.90:
-                    j += 1
-                grosime = j - i
-                if grosime <= 4:  # bordura subtire (1-4px) - sterge
-                    arr[i:j] = 255
-                i = j
-            else:
-                i += 1
-
-        # Sterge liniile verticale de bordura (la fel, max 4px grosime)
-        j = 0
-        while j < binary.shape[1]:
-            if binary[:, j].mean() > 0.90:
-                k = j + 1
-                while k < binary.shape[1] and binary[:, k].mean() > 0.90:
-                    k += 1
-                grosime = k - j
-                if grosime <= 4:
-                    arr[:, j:k] = 255
-                j = k
-            else:
-                j += 1
-
-        from PIL import Image as PILImage
-        return PILImage.fromarray(arr)
-    except Exception:
-        # Daca preprocesarea esueaza, returneaza imaginea originala
-        return img.convert("L")
-
-
-def _run_ocr_pymupdf(pdf_path: str) -> Tuple[str, str | None]:
-    """
-    Converteste PDF la imagini cu PyMuPDF (fitz) si ruleaza Tesseract OCR.
-    Aplica preprocesare imagine pentru rezultate mai bune pe tabele cu borduri.
-    """
-    try:
-        import fitz
-    except ImportError:
-        return "", "PyMuPDF nu este instalat. Ruleaza: pip install pymupdf"
-
-    try:
-        import pytesseract
-    except ImportError:
-        return "", "pytesseract nu este instalat. Rulează: pip install pytesseract"
-
-    ok, err = tesseract_availability()
-    if not ok:
-        return "", err or "Tesseract OCR nu este disponibil."
-
-    try:
-        from PIL import Image
-        import io
-
-        doc = fitz.open(pdf_path)
-        texts = []
-
-        oem = getattr(settings, "ocr_oem", 2)
-        min_chars = getattr(settings, "ocr_min_chars", 100)
-        dpi_hint = getattr(settings, "ocr_dpi_hint", 400)
-
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            mat = fitz.Matrix(dpi_hint / 72, dpi_hint / 72)
-            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-            img_bytes = pix.tobytes("png")
-            img = Image.open(io.BytesIO(img_bytes))
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-
-            text = _ocr_best_for_page_rgb(
-                img, pytesseract, min_chars, dpi_hint, oem
-            )
-            texts.append(text)
-        doc.close()
-        return "\n".join(texts), None
-    except Exception as e:
-        return "", f"Eroare la OCR: {e!s}"
-
+# ---------------------------------------------------------------------------
+# Valori colorate (PDF text — valori anormale)
+# ---------------------------------------------------------------------------
 
 def extract_colored_tokens(pdf_path: str) -> set:
-    """
-    Extrage valorile numerice scrise cu culoare non-neagra din PDF text.
-    Returneaza un set de stringuri (ex: {'12.5', '0.8'}).
-    Folosit pentru detectie automata valori anormale colorate de laborator.
-    Functioneaza doar pentru PDF-uri text (nu scanate).
-    """
-    import re as _re
     colored = set()
     try:
         import fitz
         doc = fitz.open(pdf_path)
         for page in doc:
-            blocks = page.get_text("dict").get("blocks", [])
-            for block in blocks:
+            for block in page.get_text("dict").get("blocks", []):
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
-                        color = span.get("color", 0)
-                        if color != 0:  # non-negru (negrul pur = 0 in pymupdf)
-                            nums = _re.findall(r'\d+[.,]\d+|\d+', span.get("text", ""))
+                        if span.get("color", 0) != 0:
+                            nums = re.findall(r'\d+[.,]\d+|\d+', span.get("text", ""))
                             colored.update(nums)
         doc.close()
     except Exception:
@@ -722,29 +569,24 @@ def extract_colored_tokens(pdf_path: str) -> set:
     return colored
 
 
+# ---------------------------------------------------------------------------
+# Entry point principal
+# ---------------------------------------------------------------------------
+
 def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str]:
     """
-    Extrage text din PDF. Returneaza (text, tip, eroare_sau_None, colored_tokens).
-    - tip = 'text'  → PDF cu text direct (nu e nevoie de OCR)
-    - tip = 'ocr'   → PDF scanat, s-a folosit Tesseract
-    - colored_tokens = set de valori numerice scrise cu culoare non-neagra (doar pt text PDFs)
-
-    Strategii de extragere (in ordine):
-    1. PyMuPDF (fitz) - layout mai apropiat de ce asteapta parserul Bioclinica
-    2. pdfplumber extract_text() + extract_tables() - fallback
-    3. Tesseract OCR - pentru PDF-uri scanate
+    Extrage text din PDF. Returneaza (text, tip, eroare_sau_None, colored_tokens, extractor).
+    - tip = 'text'  — PDF cu text direct
+    - tip = 'ocr'   — PDF scanat, s-a folosit Tesseract
     """
     min_chars = getattr(settings, "pdf_text_min_chars", 200)
 
-    # Pas 1: PyMuPDF - produce layout cu o linie per element, potrivit pentru Bioclinica
-    # Folosim "import pymupdf" explicit pentru a evita conflictul cu pachetul vechi "fitz" de pe PyPI
+    # --- Pas 1: PyMuPDF text direct ---
     text_fitz = ""
     try:
         import pymupdf
         doc = pymupdf.open(pdf_path)
         for page in doc:
-            # sort=True: ordine de citire (stânga→dreapta, sus→jos) — important pentru tabele
-            # Affidea/Hiperdia și alte buletine multi-pagină; altfel textul din coloane se amestecă.
             try:
                 text_fitz += page.get_text(sort=True) + "\n"
             except TypeError:
@@ -753,7 +595,7 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
         text_fitz = (text_fitz or "").strip()
     except Exception:
         try:
-            import fitz  # fallback: pymupdf se exporta si ca fitz
+            import fitz
             doc = fitz.open(pdf_path)
             for page in doc:
                 try:
@@ -765,51 +607,42 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
         except Exception:
             pass
 
-    # Pas 2: pdfplumber (fallback) - extract_text + tabele
-    text_normal = ""
-    try:
-        import pdfplumber as _pdfplumber
-        with _pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                t = page.extract_text()
-                if t:
-                    text_normal += t + "\n"
-    except Exception:
-        pass
-    text_normal = (text_normal or "").strip()
-    text_tabele = _extrage_tabele_pdfplumber(pdf_path)
-    text_plumber = text_normal + ("\n" + text_tabele if text_tabele else "").strip()
+    # Detecteaza rapid daca PDF-ul e scanat (text insignifiant)
+    contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_fitz))
+    este_text_pdf = len(text_fitz) >= min_chars and contine_numar
+    if not este_text_pdf and len(text_fitz) >= min_chars * 2:
+        este_text_pdf = True
 
-    # COMBINĂ textul din ambele surse pentru a maximiza analizele extrase.
-    # pdfplumber și pymupdf au layout-uri diferite - unele analize apar doar într-o sursă
-    # (ex: TGO valoare pe pg.2 după header - una o extrage, cealaltă nu).
-    # Parserul are deduplicare, deci nu vom avea duplicate.
-    extractor_used = "pymupdf"
-    text_combinat = (text_fitz or "").strip()
-    text_plumber_clean = (text_plumber or "").strip()
-    if text_plumber_clean:
-        if text_combinat:
-            text_combinat = text_combinat + "\n" + text_plumber_clean
+    if este_text_pdf:
+        # --- Pas 2 (doar pentru PDF text): pdfplumber pentru tabele bordate ---
+        text_plumber = ""
+        try:
+            import pdfplumber as _pdfplumber
+            with _pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text()
+                    if t:
+                        text_plumber += t + "\n"
+        except Exception:
+            pass
+        text_tabele = _extrage_tabele_pdfplumber(pdf_path)
+        text_plumber = (text_plumber or "").strip()
+        if text_tabele:
+            text_plumber = text_plumber + "\n" + text_tabele
+
+        text_combinat = text_fitz
+        extractor_used = "pymupdf"
+        if text_plumber.strip():
+            text_combinat = text_fitz + "\n" + text_plumber.strip()
             extractor_used = "pymupdf+pdfplumber"
-        else:
-            text_combinat = text_plumber_clean
-            extractor_used = "pdfplumber"
 
-    contine_numar = bool(re.search(r'\b\d+[.,]\d+\b|\b\d{2,}\b', text_combinat))
-    # Text suficient dar fără zecimale evidente (ex. doar „Negativ”, CNP) — tot merită parsat
-    if len(text_combinat) >= min_chars and contine_numar:
-        colored = extract_colored_tokens(pdf_path)
-        return text_combinat, "text", None, colored, extractor_used
-    if len(text_combinat) >= min_chars * 2:
         colored = extract_colored_tokens(pdf_path)
         return text_combinat, "text", None, colored, extractor_used
 
-    # Pas 3: PDF scanat - PyMuPDF + Tesseract cu preprocesare
-    ocr_text, ocr_err = _run_ocr_pymupdf(pdf_path)
-    # Pas 3b: OCR TSV cu bbox — reconstruiește rânduri fizice din tabel (MedLife cu 4 coloane)
-    # Se adaugă ÎNTOTDEAUNA când ajungem la OCR; parserul deduplicează.
-    ocr_tsv = _ocr_tsv_recluster_rows(pdf_path)
-    all_parts = [p for p in [text_combinat, ocr_text, ocr_tsv] if p.strip()]
+    # --- Pas 3: PDF scanat — o singura trecere OCR ---
+    ocr_string, ocr_tsv, ocr_err = _run_ocr_all_pages(pdf_path)
+
+    all_parts = [p for p in [text_fitz, ocr_string, ocr_tsv] if p.strip()]
     combined = "\n".join(all_parts)
-    ocr_extractor = f"{extractor_used}+ocr+tsv" if text_combinat.strip() else "ocr+tsv"
-    return combined, "ocr", ocr_err, set(), ocr_extractor
+    extractor = "ocr+tsv" if not text_fitz.strip() else "pymupdf+ocr+tsv"
+    return combined, "ocr", ocr_err, set(), extractor
