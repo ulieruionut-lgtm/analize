@@ -47,6 +47,96 @@ def tesseract_availability() -> Tuple[bool, str | None]:
         return False, "Tesseract OCR nu este disponibil. " + hint
 
 
+def _ocr_tsv_recluster_rows(pdf_path: str) -> str:
+    """
+    OCR cu Tesseract image_to_data (TSV + bbox) reconstruiește rânduri fizice din tabel.
+    Fiecare cuvânt are coordonata Y; grupăm cuvintele cu Y apropiați pe același rând,
+    ordonăm după X și obținem linii «Test  Rezultat  UM  Interval».
+    Funcționează chiar dacă PSM 3/4 amestecă coloanele.
+    """
+    try:
+        import fitz
+        import io
+        import pytesseract
+        from PIL import Image
+        from pytesseract import Output
+    except ImportError:
+        return ""
+
+    ok, _ = tesseract_availability()
+    if not ok:
+        return ""
+
+    try:
+        doc = fitz.open(pdf_path)
+        page_texts = []
+        dpi = getattr(settings, "ocr_dpi_hint", 400)
+        lang = settings.ocr_lang
+        oem = getattr(settings, "ocr_oem", 2)
+        cfg = f"--oem {oem} --psm 6"  # PSM 6 = bloc uniform de text (citește TOATE coloanele)
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+
+            try:
+                df = pytesseract.image_to_data(
+                    img, lang=lang, config=cfg, output_type=Output.DICT
+                )
+            except Exception:
+                continue
+
+            words = []
+            for i in range(len(df["text"])):
+                txt = (df["text"][i] or "").strip()
+                if not txt:
+                    continue
+                conf = int(df["conf"][i] or 0)
+                if conf < 15:
+                    continue
+                x = int(df["left"][i])
+                y = int(df["top"][i])
+                h = int(df["height"][i])
+                words.append((y, x, txt, h))
+
+            if not words:
+                continue
+
+            # Grupare în rânduri fizice: cuvintele cu y apropiați (±½ înălțime medie)
+            words.sort(key=lambda w: (w[0], w[1]))
+            med_h = sorted(w[3] for w in words)[len(words) // 2] if words else 20
+            tolerance = max(8, int(med_h * 0.55))
+
+            rows: list[list] = []
+            for word in words:
+                placed = False
+                for row in rows:
+                    if abs(word[0] - row[0][0]) <= tolerance:
+                        row.append(word)
+                        placed = True
+                        break
+                if not placed:
+                    rows.append([word])
+
+            lines = []
+            for row in rows:
+                row.sort(key=lambda w: w[1])  # sortare X
+                line = " ".join(w[2] for w in row)
+                if line.strip():
+                    lines.append(line)
+
+            page_texts.append("\n".join(lines))
+
+        doc.close()
+        return "\n".join(page_texts)
+    except Exception:
+        return ""
+
+
 def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
     """
     Extrage continut din tabele cu borduri folosind pdfplumber extract_tables().
@@ -716,6 +806,10 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
 
     # Pas 3: PDF scanat - PyMuPDF + Tesseract cu preprocesare
     ocr_text, ocr_err = _run_ocr_pymupdf(pdf_path)
-    combined = (text_combinat + "\n" + ocr_text).strip() if text_combinat else ocr_text.strip()
-    ocr_extractor = f"{extractor_used}+ocr" if text_combinat.strip() else "ocr"
+    # Pas 3b: OCR TSV cu bbox — reconstruiește rânduri fizice din tabel (MedLife cu 4 coloane)
+    # Se adaugă ÎNTOTDEAUNA când ajungem la OCR; parserul deduplicează.
+    ocr_tsv = _ocr_tsv_recluster_rows(pdf_path)
+    all_parts = [p for p in [text_combinat, ocr_text, ocr_tsv] if p.strip()]
+    combined = "\n".join(all_parts)
+    ocr_extractor = f"{extractor_used}+ocr+tsv" if text_combinat.strip() else "ocr+tsv"
     return combined, "ocr", ocr_err, set(), ocr_extractor
