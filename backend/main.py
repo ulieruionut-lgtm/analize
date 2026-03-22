@@ -729,8 +729,10 @@ async def upload_pdf(
         text, tip, ocr_err, colored_tokens, extractor = extract_text_from_pdf(tmp_path)
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
+            from backend.parser import _linie_este_exclusa
             parsed_dbg = parse_full_text(text)
             lines_raw = [l.strip() for l in text.replace("\r", "\n").split("\n") if l.strip()]
+            excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
             if parsed_dbg:
                 normalize_rezultate(parsed_dbg.rezultate)
                 analize_list = [
@@ -744,15 +746,25 @@ async def upload_pdf(
                     "extractor": extractor,
                     "lungime_text": len(text),
                     "numar_linii": len(lines_raw),
-                    "text_primele_3000": text[:3000] + ("..." if len(text) > 3000 else ""),
-                    "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw[:80])],
+                    "text_primele_3000": text[:6000] + ("..." if len(text) > 6000 else ""),
+                    "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
+                    "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
                     "cnp": parsed_dbg.cnp,
                     "nume": parsed_dbg.nume,
                     "prenume": parsed_dbg.prenume,
                     "numar_analize": len(parsed_dbg.rezultate),
                     "analize": analize_list,
                 }
-            return {"debug": True, "parser_version": _PARSER_VERSION, "eroare": "CNP nespecificat", "lungime_text": len(text)}
+            return {
+                "debug": True,
+                "parser_version": _PARSER_VERSION,
+                "eroare": "CNP nespecificat",
+                "lungime_text": len(text),
+                "tip_extragere": tip,
+                "extractor": extractor,
+                "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
+                "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
+            }
         if not text or len(text.strip()) < 10:
             detail = "Nu s-a putut extrage text din PDF (gol sau prea scurt)."
             if ocr_err:
@@ -2578,12 +2590,15 @@ async function trimite(debugMode) {
               + '</ul></details>';
           }
           if (j.linii_0_80 && j.linii_0_80.length) {
-            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Linii text extras (0-79) – pentru debug</summary><pre style="margin:6px 0 0;font-size:0.72rem;max-height:220px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml((j.linii_0_80||[]).join('\n')) + '</pre></details>';
+            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Linii text extras (toate ' + j.linii_0_80.length + ') – pentru debug</summary><pre style="margin:6px 0 0;font-size:0.72rem;max-height:400px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml((j.linii_0_80||[]).join('\n')) + '</pre></details>';
+          }
+          if (j.linii_excluse && j.linii_excluse.length) {
+            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem;color:#c00">⚠ Linii EXCLUSE de parser (' + j.linii_excluse.length + ')</summary><pre style="margin:6px 0 0;font-size:0.72rem;max-height:300px;overflow:auto;white-space:pre-wrap;background:#fff0f0;padding:8px;border-radius:6px;color:#800">' + escHtml((j.linii_excluse||[]).join('\n')) + '</pre></details>';
           }
           if (j.text_primele_3000) {
-            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Text extras (primele 3000 caractere)</summary><pre style="margin:6px 0 0;font-size:0.75rem;max-height:150px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml(j.text_primele_3000) + '</pre></details>';
+            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Text extras (primele 6000 caractere)</summary><pre style="margin:6px 0 0;font-size:0.75rem;max-height:300px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml(j.text_primele_3000) + '</pre></details>';
           }
-          if (j.eroare) mesaj = '[EROARE] ' + escHtml(j.eroare);
+          if (j.eroare) mesaj = '[EROARE] ' + escHtml(j.eroare) + (j.linii_0_80 && j.linii_0_80.length ? '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Linii text extras (' + j.linii_0_80.length + ')</summary><pre style="margin:6px 0 0;font-size:0.72rem;max-height:300px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml((j.linii_0_80||[]).join('\n')) + '</pre></details>' : '');
         } else {
           pacientInfo = j.pacient || {};
           mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
