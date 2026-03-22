@@ -7,6 +7,7 @@ import re
 from typing import Optional
 
 from backend.models import PatientParsed, RezultatParsat
+from backend.ocr_corrections import corecteaza_ocr_linie_buletin, corecteaza_umar_numar_in_denumire
 
 CNP_CONTROL = (2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9)
 
@@ -38,7 +39,9 @@ _LINII_EXCLUSE = re.compile(
     # Note diagnostice
     r"Diagnosticul|Glicemie\s+bazala\s+modif|Se\s+recomanda\s+retest|"
     # Artefacte OCR si certificate
-    r"Regulamentul\s+nr|CERTIFICAT|certificat|Seria\s+[A-Z]|Nr\.\s+[A-Z]|"
+    r"Regulamentul\s+nr|CERTIFICAT|certificat|Seria\s+[A-Z]|"
+    # Nr. + cod certificat (doar litere MARI) — nu «Nr. eritrocite» (MedLife; re.I făcea «e» = match)
+    r"Nr\.\s+(?-i:[A-Z]{2,})(?:\s+[A-Z]{2,})*\s*$|Nr\.\s+(?-i:[A-Z])\s*$|"
     # Linii administrative laborator
     r"Cod\s+Cerere|Cod\s+Proba|Formular:|Act:\s+[A-Z]|Cont:\s+RO|"
     r"uz\s+personal|executate\s+de\s+parteneri|ghidului\s+KDIGO|"
@@ -106,8 +109,9 @@ _LINII_EXCLUSE = re.compile(
     # ex: "FOLATI SERICI 7.64 ng/mL >5.38 De A", "crescute 2 126.0 mg/dl"
     r"crescute?\s+\d|Normal\s*[:<>]\s*\d|Optim\s*[:<>]\s*\d|"
     # Gunoi OCR Benchea: linii de interpretare inglobate in text
+    # NU excludem «TRIGLICERIDE 123 mg/dL» — pattern-ul «TRIGL\.\.\.+mg» potrivea și rezultate valide.
     r"E\s+Moderat\s+crescut|Interpretare\s+valori\s+glicemie|"
-    r"TRIGLICERIDE\s+\d+\s+mg|Bilirubina\s+Negativ\s*:|"
+    r"Bilirubina\s+Negativ\s*:|"
     r"Eritrocite\s+Absente|Leucocite\s+Foarte\s+rare|"
     r"Culoare\*|Claritate\*|Aspect\*|Mucus\s+Absent|"
     r"^\s*rare\s*$|^\s*rara\s*$|^\s*deschis\s*$|^\s*Alte\s*$|"
@@ -151,8 +155,8 @@ _LINII_EXCLUSE = re.compile(
     r"[Vv][âa]rst[aă]?\s*:\s*\d+['\s]*ani|Vanta:|"
     r".*Varsta:\s*\d+.*ani|"
     r"^arere\s*:\s*$|"
-    # Linii foarte scurte (OCR: prilie, lil) - sub 4 caractere utile
-    r"^[a-zA-Z]{1,3}\s*$|^[a-z]{2}\s*$|"
+    # Linii foarte scurte (OCR: prilie, lil) — max 2 litere; 3 litere (VEM, MCH, MCV) pot fi analize MedLife
+    r"^[a-zA-Z]{1,2}\s*$|^[a-z]{2}\s*$|"
     # Cod Cerere (inclusiv OCR: C'ed Cerere)
     r"C'?ed\s+Cerere|Cod\s+Cerere|"
     # Rezultate pure (valori, nu analize): Negativ, Normal (Normal), Borderline crescut 150
@@ -165,9 +169,42 @@ _LINII_EXCLUSE = re.compile(
     # Coduri administrative (Act; BV, Sectia) - OCR: Acti BV'
     r"^Act[;i]\s*[A-Z]{2}|"
     # Footer/disclaimer: doza amoxicillin, vârsta cuprinsă - OCR: L'a—varste cupnnse
-    r"doza\s*\(0\.5\s*g\s*amox[a-z]*|varste\s*cup[nr]*se|v[aâ]rst[aă]\s*cuprins|^L'[aâ]?\s*[-—]",
+    r"doza\s*\(0\.5\s*g\s*amox[a-z]*|varste\s*cup[nr]*se|v[aâ]rst[aă]\s*cuprins|^L'[aâ]?\s*[-—]|"
+    # Notă clinică / administrativ (nu parametru de laborator — ghid utilizator)
+    r"^Observa[tț][ii]\s*$|Observa[tț][ii]\s*:|"
+    r"Rezultatul\s+se\s+interpret|interpretare\s+in\s+context\s+clinic|"
+    # Cod paraf / Data tipăririi / antete tabel — sursă unică: administrative_fragments
+    r"^\s*=\s*$|^\s*ani\s*,\s*3\s*luni\s*$|^\s*\d+\s*ani\s*,\s*\d+\s*luni\s*$|"
+    # Zgomot OCR / fragmente ghid (KDIGO), antete false, ore + „Alte cristale”
+    r"DNI\s+KDIGO|\bKDIGO\s+guid|\bKDIGO\s*$|"
+    r"Diagn[O0]Stipz|Diagnostipz|"
+    r"^Diagnostic\s*:\s*$|"
+    r"Ă\s+REN\s+Metoda|ĂREN\s+Metoda|"
+    r"mfarctulur\s+mrocard|mrocardrc|infarctulur\s+mrocard|"
+    r"^\d{3,5}\s+[Cc]elule\s*:|^\d{3,5}\s+[Cc]elule\s|"
+    r"^\d{1,2}:\d{2}\s+[Aa]lte\s+crist",
     re.IGNORECASE,
 )
+
+
+def _linie_este_exclusa(s: str) -> bool:
+    """
+    Linie antet administrativ / gunoi: pattern compus _LINII_EXCLUSE
+    + fragmente administrative centralizate (fără duplicare regex).
+    """
+    if not s or not isinstance(s, str):
+        return False
+    t = s.strip()
+    if not t:
+        return False
+    m_exc = _LINII_EXCLUSE.match(t)
+    # Evită alternativa goală din regex: match de lungime 0 nu înseamnă linie exclusă
+    if m_exc is not None and m_exc.end() > 0:
+        return True
+    from backend.administrative_fragments import contin_fragment_administrativ
+
+    return contin_fragment_administrativ(t)
+
 
 _LINIE_NOTA = re.compile(r"^\(|^\s*\(")
 
@@ -179,32 +216,147 @@ _RE_NUME_PACIENT_ALL_CAPS = re.compile(r"^[A-ZĂÂÎȘȚ]+\s+[A-ZĂÂÎȘȚ]+(?:
 # Rezultate pure (valori, nu analize) - ex: "Negativ", "Normal (Normal)"
 _RE_REZULTAT_PUR = re.compile(
     r"^(Negativ|Normal|Absent|Prezent)\s*$|"
+    r"^Nu\s+s-a\s+detectat\s*$|^Nu\s+s[-a]\s+detectat\s*$|"
+    r"^Nu\s+s[-a]\s+decelat\s*$|"
+    r"^Culturi\s+bacteriene\s+absente\s*$|^Culturi\s+bacteriene\s+absent[ea]?\s*$|"
+    r"^Culturi\s+bacteriene\s+absente\.?\s*$|"
+    r"^Relativ\s+frecvente\s*$|^Relativ\s+frecvent[aă]\s*$|"
     r"^Negat[il]v[,:]?\s*mg/dL|^Negativ[,:]?\s*mg/dL|^Negativ:\s*mg/dL\s*,\s*AIR|"
     r"^Normal\s*\(Normal\)\s*$|"
     r"^Borderline\s+crescut\s+\d+\s*$|^Borderllne\s+crescut\s+\d+\s*$|"
     r"flowcitometrie|flowc[:\s]tometne|tehnologie:\s*[lI]aser|"
     r"^BRASbV\s|^Act[;i]\s*[A-Z]{2}|"
     r"^Bioclinica\s+[A-Za-zăâîșț]+\s*$|^Bioclinica\s+[A-Za-zăâîșț]+\s+GENERAT|"
-    r"Varsta:\s*\d+.*ani|^arere\s*:\s*$|^PETREAN\s+ANA\s+A\s+Varsta",
+    r"Varsta:\s*\d+.*ani|^arere\s*:\s*$|^PETREAN\s+ANA\s+A\s+Varsta|"
+    r"^\d{1,4}\s*$|^\d\s*$",
     re.IGNORECASE,
 )
+
+
+def _este_linie_doar_simboluri(s: str) -> bool:
+    """Linie care e doar separator tabel / bifă OCR (nu denumire analiză)."""
+    t = (s or "").strip()
+    if not t:
+        return True
+    if t in ("=", "–", "-", "—", ":", ".", "..", "..."):
+        return True
+    if len(t) <= 8 and re.fullmatch(r"[\s√✓\u221A\u2713\u2714=\-|_\.:·]+", t):
+        return True
+    return False
+
+
+def _pare_denumire_analiza_lunga(s: str) -> bool:
+    """
+    Linii lungi tip laborator (microbiologie, metodă pe aceeași linie) — NU sunt gunoi
+    doar pentru că depășesc 14 cuvinte sau 160 caractere.
+    """
+    low = (s or "").lower()
+    return any(
+        k in low
+        for k in (
+            "cultura",
+            "microbiologic",
+            "chlamydia",
+            "mycoplasma",
+            "ureaplasma",
+            "candida",
+            "spectrofotometrie",
+            "chemiluminiscenta",
+            "chemiluminescenta",
+            "tiroxin",
+            "bilirubin",
+            "tgp",
+            "tgo",
+            "ft4",
+            "egfr",
+            "microscopic",
+            "citobacteriologic",
+            "feritin",
+            "glucoz",
+            "glicem",
+            "absente la",
+            "nu s-a detectat",
+            "nu s-a decelat",
+            "trachomatis",
+            "fungi",
+            "bacteriene",
+            "haemophilus",
+            "enterobacter",
+            "moraxella",
+            "clostridium",
+            "toxina",
+            "mrsa",
+            "gdh",
+            "difficile",
+        )
+    )
+
+
+def _este_denumire_gunoi_heuristic(s: str) -> bool:
+    """
+    Reguli suplimentare conservatoare (înaltă precizie): evităm false pozitive
+    pe denumiri medicale scurte (ex. pH, VSH, FT4).
+    """
+    if len(s) <= 1:
+        return True
+    if "@" in s:
+        return True
+    if re.search(r"https?://|www\.", s, re.IGNORECASE):
+        return True
+    lab_lunga = _pare_denumire_analiza_lunga(s)
+    if len(s) > (400 if lab_lunga else 160):
+        return True
+    words = s.split()
+    max_cuvinte = 40 if lab_lunga else 14
+    if len(words) > max_cuvinte:
+        return True
+    letters = sum(1 for c in s if c.isalpha())
+    if letters == 0 and len(s.strip()) > 2:
+        return True
+    if re.fullmatch(r"[\d\s\.,;:/\-–\(\)%µ²³°+≥≤]+", s):
+        return True
+    if re.search(r"\b\d{13}\b", s):
+        return True
+    if not any(c.isalnum() for c in s):
+        return True
+    low = s.lower()
+    if "pagina" in low and "din" in low and len(s) < 80:
+        return True
+    if "cod de bare" in low or "cod bare" in low:
+        return True
+    if "semnatura" in low or "semnătura" in low:
+        return True
+    # Doar simboluri (tabel OCR degradat)
+    if len(s) <= 6 and re.match(r"^[\s√✓\u221A\u2713\u2714=\-|_\.:]+$", s):
+        return True
+    if _este_linie_doar_simboluri(s):
+        return True
+    # Text explicativ vaginal / footer (nu parametru de tabel)
+    if "microbiotei normale vaginale" in low or (
+        "microbiota" in low and "vaginal" in low and "normal" in low
+    ):
+        return True
+    return False
 
 
 def este_denumire_gunoi(denumire: str) -> bool:
     """
     Returnează True dacă denumirea ar fi exclusă ca parametru (gunoi: nume, adrese,
-    date, unități, intervale, rezultate pure, etc.). Folosit pentru curățarea analize_necunoscuta.
+    date, unități, intervale, rezultate pure, etc.). Folosit pentru curățarea analiza_necunoscuta
+    și pentru a nu loga necunoscute din normalizer.
     """
     if not denumire or not isinstance(denumire, str):
         return True
     s = denumire.strip()
     if not s:
         return True
-    if _LINII_EXCLUSE.match(s):
+    if _linie_este_exclusa(s):
         return True
     if _RE_NUME_PACIENT_ALL_CAPS.match(s):
         return True
     if _RE_REZULTAT_PUR.match(s):
+        return True
+    if _este_denumire_gunoi_heuristic(s):
         return True
     return False
 
@@ -232,7 +384,7 @@ _SECTIUNI = [
      "Imunologie si Serologie"),
     (re.compile(r"HORMONI\s+TIROID|TIROID", re.IGNORECASE),
      "Hormoni tiroidieni"),
-    (re.compile(r"HORMONI|ENDOCRIN", re.IGNORECASE),
+    (re.compile(r"HORMONI|ENDOCRIN|ENDOCRINOLOGIE", re.IGNORECASE),
      "Hormoni"),
     (re.compile(r"COAGULARE|HEMOSTAZ", re.IGNORECASE),
      "Coagulare"),
@@ -252,10 +404,12 @@ _SECTIUNI = [
      "Inflamatie"),
     (re.compile(r"RAPORT\s+ALBUMIN|MICROALBUMIN", re.IGNORECASE),
      "Examen urina"),
-    # MedLife / alte lab: tabel microbiologie (rezultate descriptive pe mai multe linii)
+    # MedLife / alte lab: microbiologie, infecțioase, culturi (titlu secțiune)
     (re.compile(
         r"^\s*MICROBIOLOGIE\s*$|^\s*Microbiologie\s*$|"
-        r"MICROBIOLOGIE\s+(?:SI\s+)?|Sec(?:ți|ti)unea\s+Microbiologie",
+        r"MICROBIOLOGIE\s+(?:SI\s+)?|Sec(?:ți|ti)unea\s+Microbiologie|"
+        r"INFECȚIOASE|INFECTIOASE|BACTERIOLOG|PARAZITOLOG|VIROLOGIE|"
+        r"UROCULT|CULTUR[ĂA]\s+BACTER|ANTIBIOGRAM|EXAMEN\s+CITO\s*BACTER",
         re.IGNORECASE,
     ),
      "Microbiologie"),
@@ -342,15 +496,23 @@ RE_VALOARE_LINIE = re.compile(
     re.IGNORECASE,
 )
 
+# MedLife / tabele: valoare + UM + min - max FĂRĂ paranteze (ex: «4.66 *10^6/µL 3.9 - 5.3»)
+RE_VALOARE_LINIE_DASH = re.compile(
+    r"^\s*(?:[<>≤≥]\s*)?([\d.,]+)\s+"
+    r"(.+?)\s+"
+    r"([\d.,]+)\s*[-–]\s*([\d.,]+)\b",
+    re.IGNORECASE,
+)
+
 # Format valoare + referinta singulara (≤ X) la inceputul liniei - ex: "2,260mg/dL (<= 0,33)"
 RE_VALOARE_REF_SINGULAR = re.compile(
     r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
-# Format valoare simpla fara interval
+# Format valoare simpla fara interval (inclusiv UM tip *10^3/µL)
 RE_VALOARE_PARTIAL = re.compile(
-    r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\s/m]+?)$",
+    r"^\s*(?:[<>≤≥]\s*)?([\d.,]+)\s+(\*[\w/.^µμ³·]+|[a-zA-Z/%µμg·²³][\w/.^µμ³·\s/m]*)$",
     re.IGNORECASE,
 )
 
@@ -358,13 +520,13 @@ RE_VALOARE_PARTIAL = re.compile(
 # ex: "Hematii 4.650.000 /mm³ (3.700.000 - 5.150.000)" sau "Hematii 4.650.000/mm3 (3.700.000 - 5.150.000)"
 # pdfplumber: valoare lipita de unitate (4.650.000/mm3), unitate cu cifre (mm3)
 RE_BIOCLINICA_ONELINE = re.compile(
-    r"\s+([\d.,]+)\s*([a-zA-Z0-9/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
+    r"\s+([\d.,]+)\s*(\*[\d^/µμ\w\.·]+|[a-zA-Z0-9/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
 # Format cu referinta singulara: Valoare UM (≤ X) - ex: "2,260 mg/dL (≤ 0,33)" sau "2,260mg/dL (<= 0,33)"
 RE_BIOCLINICA_REF_SINGULAR = re.compile(
-    r"\s+([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
+    r"\s+([\d.,]+)\s*(\*[\d^/µμ\w\.·]+|[a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
@@ -413,8 +575,9 @@ def extract_cnp(text: str) -> Optional[str]:
 
 
 # Cuvinte-cheie dupa care taiem (nu fac parte din numele pacientului)
+# «Medicitrimitator» = OCR fără spațiu între Medic și trimitator (foarte frecvent pe buletine)
 _NUME_TAIERE = re.compile(
-    r"\s+(?:Medic\s+trimitaro?r?|Medic|Data\s+inregistrari|Data\s+inregistrare|Data\s+tipar|"
+    r"\s+(?:Medicitrimitator|Medic\s+trimitaro?r?|Medic|Data\s+inregistrari|Data\s+inregistrare|Data\s+tipar|"
     r"Data|Cabinet|Sex|Varsta|Cod|Adresa|Telefon|"
     r"Punctul|Punct|pacient\s*:|Pra\s+pacient|Beneficiar)\s*[:\s]",
     re.IGNORECASE,
@@ -484,8 +647,12 @@ def _curata_nume(raw: str) -> str:
         s = s2
     # Taie tot ce incepe cu "Varsta:" (si duplicatul) - ex: "IANCU Gheorghe 'Varsta: 83 ani, 1 luna Gheorghe 'Varsta: 83 ani, 1 luna"
     s = re.split(r"\s*['\"]?\s*Varsta\s*:", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
-    # Taie la primul "Medic" (trimitaror)
-    s = re.split(r"\s+Medic\s+trimitaro?r?\s*", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    # OCR: «Medicitrimitator» (fără spațiu) — taie înainte de medic trimitător
+    s = re.split(r"\s*Medicitrimitator\s*", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    # Taie la primul "Medic" (trimitător), cu sau fără spațiu între cuvinte
+    s = re.split(r"\s+Medic\s*trimitaro?r?\s*", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    # «Dr:» / «Dr-:» urmat de nume medic (nu pacient)
+    s = re.split(r"\s+Dr[\s.\-]*:\s*", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
     # Taie si la alte cuvinte-cheie (Data inregistrari, Varsta etc.)
     parts = _NUME_TAIERE.split(s, maxsplit=1)
     s = parts[0].strip()
@@ -606,6 +773,7 @@ def _nume_este_gunoi(nume: str) -> bool:
     if not nume or len(nume.strip()) < 2:
         return True
     s = nume.strip().lower()
+    raw = nume.strip()
     if _NUME_GUNOI.match(s):
         return True
     if _nume_e_doar_etichete_ocr(nume):
@@ -615,6 +783,24 @@ def _nume_este_gunoi(nume: str) -> bool:
     if "varsta" in s and "ani" in s and len(s) < 50:
         return True
     if s.count(" ") > 5 and ("varsta" in s or "ani" in s):
+        return True
+    # OCR: câmp medic trimitător lipit de nume
+    if "medicitrimitator" in s.replace(" ", "") or "trimitator" in s:
+        return True
+    # Paranteze goale + text (ex: RAG()MIR) — aproape niciodată nume real
+    if re.search(r"\(\)\s*\w", raw):
+        return True
+    # Mult zgomot tip OCR: puncte duble, underscore în „cuvinte”, pipe
+    if ".." in raw and len(raw) > 25:
+        return True
+    if re.search(r"\b[A-Za-zăâîșț]{2,}_+[A-Za-zăâîșț]", raw):
+        return True
+    if "|" in raw or "¬" in raw:
+        return True
+    # Prea multe semne non-literă față de litere (nume corupt)
+    lit = re.sub(r"[^a-zA-ZăâîșțĂÂÎȘȚ]", "", raw)
+    nonlit = len(re.sub(r"[a-zA-ZăâîșțĂÂÎȘȚ\s]", "", raw))
+    if len(lit) >= 4 and nonlit > len(lit):
         return True
     return False
 
@@ -694,7 +880,11 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
                 continue
             if _LINIE_HEADER_NUME.match(linie):
                 continue
-            if _LINII_EXCLUSE.match(linie) and not _LINIE_NUME_CU_VARSTA.match(linie):
+            # Antet OCR: medic trimitător / doctor pe aceeași linie cu nume fals
+            low_l = linie.lower().replace(" ", "")
+            if "medicitrimitator" in low_l or "trimitator" in linie.lower():
+                continue
+            if _linie_este_exclusa(linie) and not _LINIE_NUME_CU_VARSTA.match(linie):
                 continue
             clean = re.sub(r"\s+[FM],\s*\d+\s*(luni|ani)\s*$", "", linie, flags=re.IGNORECASE).strip()
             clean = _curata_nume(clean)
@@ -728,16 +918,23 @@ def _este_gunoi_ocr(linie: str) -> bool:
         return False
     # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi
     _CUVINTE_MEDICALE = re.compile(
-        r"\b(hemoglobin|eritrocit|leucocit|trombocit|hematocrit|neutrofil|limfocit|"
-        r"monocit|eozinofi|bazofil|creatinin|glucoz|glicemi|colesterol|triglicerid|"
+        r"\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|"
+        r"monocite?|eozinofile?|bazofile?|creatinin|glucoz|glicemi|colesterol|triglicerid|"
         r"bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|"
         r"proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|"
         r"insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|"
         r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|"
+        r"chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
+        r"tsh|lh|fsh|ft4|free\s*t4|"
         r"chlamydia|mycoplasma|ureaplasma|trachomatis)\b",
         re.IGNORECASE,
     )
     if _CUVINTE_MEDICALE.search(linie):
+        return False
+    # Rând «denumire + valoare + UM + interval» (MedLife/Synevo pe o linie): multe cifre/token-uri
+    # scurte trec pragul de mai jos și erau ignorați în Pasul 2 (_este_linie_parametru → False).
+    pl = _parse_oneline(linie)
+    if pl is not None and (pl.valoare is not None or (pl.valoare_text or "").strip()):
         return False
     # Imparte in cuvinte (secvente ne-spatiu)
     cuvinte = linie.split()
@@ -768,13 +965,20 @@ _GUNOI_SUBSTR = (
 
 
 def _este_linie_parametru(linie: str) -> bool:
-    if not linie or len(linie) > 150:
+    if not linie:
+        return False
+    # Multe lab-uri pun metoda pe același rând (ex. „... -Ser - Spectrofotometrie / Chemiluminiscență”)
+    # — depășeau 150 caractere și erau ignorate complet → 0 analize extrase din PDF.
+    _lim_lungime = 220
+    if RE_BIOCLINICA_ONELINE.search(linie) or RE_BIOCLINICA_REF_SINGULAR.search(linie):
+        _lim_lungime = 520
+    if len(linie) > _lim_lungime:
         return False
     if _RE_DOAR_VALOARE_CA_PARAMETRU.match(linie.strip()):
         return False
     if _RE_METADATE_VARSTA_LINIE.search(linie) and len(linie) < 90:
         return False
-    if _LINII_EXCLUSE.match(linie):
+    if _linie_este_exclusa(linie):
         return False
     if _RE_NUME_PACIENT_ALL_CAPS.match(linie.strip()):
         return False
@@ -797,6 +1001,9 @@ def _este_linie_parametru(linie: str) -> bool:
     # Linii cu text foarte scurt si ambiguu (< 3 litere) — exceptie pH (sumar urina)
     _lit = re.sub(r"[^a-zA-Z]", "", linie)
     if len(_lit) < 3 and not re.match(r"^pH\b", linie.strip(), re.IGNORECASE):
+        return False
+    # Valoare izolată pe rând (ex: „9”) — nu e analiză
+    if re.match(r"^\d{1,5}\s*$", linie.strip()):
         return False
     # Detecteaza gunoi OCR (tabele degradate, siruri de silabe fara sens)
     if _este_gunoi_ocr(linie):
@@ -833,7 +1040,7 @@ def _parse_bioclinica_oneline(linie: str) -> Optional[RezultatParsat]:
     param_part = linie[: m.start()].strip()
     if not param_part or len(param_part) < 2:
         return None
-    if _LINII_EXCLUSE.match(param_part):
+    if _linie_este_exclusa(param_part):
         return None
     if _RE_NUME_PACIENT_ALL_CAPS.match(param_part):
         return None
@@ -866,6 +1073,150 @@ def _parse_bioclinica_oneline(linie: str) -> Optional[RezultatParsat]:
     )
 
 
+def _extrage_valoare_text_din_fragment_dreapta(right: str) -> Optional[str]:
+    """
+    Din partea dreaptă a «Analiză = …» extrage rezultatul text (Negativ, Normal, …),
+    după ce taie UM și sufixe «Normal» repetate (ex: «Negativ mg/dL Normal»).
+    """
+    s = (right or "").strip()
+    for _ in range(4):
+        s2 = re.sub(r"\s+Normal\s*$", "", s, flags=re.IGNORECASE).strip()
+        s2 = re.sub(
+            r"\s*(?:mg/dL|mg/dl|mmol/L|g/L|UI/L|U/L|%)\s*$",
+            "",
+            s2,
+            flags=re.IGNORECASE,
+        ).strip()
+        if s2 == s:
+            break
+        s = s2
+    low = s.lower()
+    if re.search(r"\bnedetectabil", low):
+        return "Nedetectabil"
+    if re.search(r"\bnedecelabil", low):
+        return "Nedecelabil"
+    if re.search(r"\bnegativ", low):
+        return "Negativ"
+    if re.search(r"\bpozitiv", low):
+        return "Pozitiv"
+    if re.search(r"\babsent", low):
+        return "Absent"
+    if re.search(r"\bprezent", low):
+        return "Prezent"
+    if re.search(r"\breactiv", low):
+        return "Reactiv"
+    if re.search(r"^normal\s*$|^\s*normal\s+", low) or low == "normal":
+        return "Normal"
+    if re.search(r"\blimpede\b", low):
+        return "Limpede"
+    if re.search(r"\btulbure\b", low):
+        return "Tulbure"
+    if re.search(r"\burme\b", low):
+        return "Urme"
+    if re.search(r"\brar[ăae]?\b", low):
+        return "Rară"
+    return None
+
+
+def _parse_linie_egal_rezultat(linie: str) -> Optional[RezultatParsat]:
+    """
+    Format «Glucoză = Negativ mg/dL Normal» sau «Parametru = 92 mg/dL».
+    Separă denumirea analizei de rezultat (text sau numeric).
+    """
+    if "=" not in linie:
+        return None
+    linie = linie.strip()
+    m = re.match(r"^([^=\n]{2,120}?)\s*=\s*(.+)$", linie)
+    if not m:
+        return None
+    left = m.group(1).strip()
+    right = m.group(2).strip()
+    if len(left) < 2:
+        return None
+    if re.fullmatch(r"[kKcC]\s*", left):
+        return None
+    if _linie_este_exclusa(left):
+        return None
+    right_lc = right.lower()
+    has_lab_semantic = bool(
+        re.search(
+            r"\b(negativ|pozitiv|absent|prezent|normal|nedecel|nedetect|reactiv|rar|limpede|tulbure|urme)\b",
+            right_lc,
+        )
+    )
+    m_num = re.search(
+        r"(?<!\S)(\d+[.,]\d+|\d+)\s+([a-zA-Z/%µμg·²³'\/][a-zA-Z0-9/%µμg·²³'\/\*\.]*)",
+        right,
+    )
+    if not has_lab_semantic and not m_num:
+        return None
+    vt = _extrage_valoare_text_din_fragment_dreapta(right)
+    if vt:
+        d = _curata_denumire_rezultat(left, vt)
+        return RezultatParsat(
+            denumire_raw=d or left,
+            valoare=None,
+            valoare_text=vt,
+            unitate=None,
+        )
+    if m_num:
+        valoare = _parse_european_number(m_num.group(1))
+        if valoare is None:
+            try:
+                valoare = float(m_num.group(1).replace(",", "."))
+            except ValueError:
+                return None
+        unitate = (m_num.group(2) or "").strip() or None
+        return RezultatParsat(
+            denumire_raw=_curata_denumire_rezultat(left, None) or left,
+            valoare=valoare,
+            unitate=unitate,
+        )
+    return None
+
+
+def _categorie_inferata_din_denumire(
+    denumire_raw: str, categorie_pdf: Optional[str]
+) -> Optional[str]:
+    """
+    Completează categoria din PDF când OCR/antet lipsesc: microbiologie, sediment urină.
+    """
+    d = (denumire_raw or "").strip()
+    if not d:
+        return categorie_pdf
+    low = d.lower()
+    if re.search(
+        r"\b(staphylococcus|streptococcus|haemophilus|enterobacteriaceae|enterobacter\s|moraxella|"
+        r"candida\s|clostridium|klebsiella|escherichia|pseudomonas|acinetobacter|neisseria|salmonella|"
+        r"serratia|proteus|enterococcus|listeria|legionella|mycobacterium|trichomonas|chlamydia|mycoplasma|"
+        r"ureaplasma|bacillus|aspergillus|cryptococcus|bacteroides|hemocult|urocult|antibiogram|"
+        r"toxina\s+[ab]\b|toxina\s+clostridium|\bgdh\b|screening\s+mrsa|difficile)\b",
+        low,
+    ):
+        return "Microbiologie"
+    ur_sed = (
+        "celule epiteliale plate",
+        "epiteliale plate",
+        "celule epiteliale tranzi",
+        "epiteliale tranzi",
+        "alte cristale",
+    )
+    if any(k in low for k in ur_sed):
+        if categorie_pdf == "Examen urina":
+            return categorie_pdf
+        return categorie_pdf or "Examen urina"
+    if "glucoz" in low and ("urin" in low or "urinar" in low):
+        return categorie_pdf or "Examen urina"
+    if (
+        categorie_pdf is None
+        and "glucoz" in low
+        and "urin" not in low
+        and "urinar" not in low
+    ):
+        return "Biochimie"
+    return categorie_pdf
+
+
 def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     """
     Parseaza o linie de forma:  NumeAnaliza  Valoare  UM  [Min-Max [UM]] [flag]
@@ -880,8 +1231,16 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if not linie:
         return None
 
+    r_egal = _parse_linie_egal_rezultat(linie)
+    if r_egal is not None:
+        return r_egal
+
     # Elimina prefix numeric de linie (ex: "9.3 Alfa2-globuline%" -> "Alfa2-globuline%")
     linie = re.sub(r'^\d+\.\d+\s+\*?\s*', '', linie).strip()
+    if not linie:
+        return None
+
+    linie = _strip_suffix_interpretare_clasificare(linie)
     if not linie:
         return None
 
@@ -915,23 +1274,12 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                 )
 
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
-    # Linii de clasificare: "HDL COLESTEROL 68.2 mg/dL > 60 Normal" sau "TRIGLICERIDE 112 mg/dL <150 mg"
-    # Acestea contin ANALIZA + valoare + UM + comparator + clasificare => NU sunt rezultate simple
-    _CLASIFICARE_RE = re.compile(
-        r'\d+[.,]?\d*\s+[a-zA-Z/%µμg·²³]+.*(?:normal|scazut|crescut|optim|borderline|risc|acceptable|'
-        r'deficit|toxic|diabet|patolog|referinta|recomandat)',
-        re.IGNORECASE
-    )
-    if _CLASIFICARE_RE.search(linie):
-        return None
-
-    # Gaseste primul numar izolat (valoarea) - nu face parte din nume
-    # Numele poate contine cifre, dar valoarea e un numar singur dupa spatiu
+    # Unități MedLife: *10^6/µL; valori «< 73» cu comparator opțional
     m_val = re.search(
-        r"(?<!\S)(\d+[.,]\d+|\d+)\s+"        # valoare numerica
-        r"([a-zA-Z%µμg·²³'\/][a-zA-Z0-9%µμg·²³'\/\*\.]*)"  # unitate (incepe cu litera/%)
+        r"(?<!\S)(?:[<>≤≥]\s*)?(\d+[.,]\d+|\d+)\s+"
+        r"(\*[\w/.^µμ·]+|[a-zA-Z%µμg·²³'\/][a-zA-Z0-9%µμg·²³'\/\*\^\.·]*)"
         r"(?:\s+|$)",
-        linie
+        linie,
     )
     if not m_val:
         # Incearca sa gaseasca o valoare TEXT (negativ, pozitiv, absent etc.)
@@ -1098,7 +1446,7 @@ def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denu
 
 
 _RE_VAL_UM_SIMPLU = re.compile(
-    r"^([\d.,]+)\s+([a-zA-Z%µμg·²³\u00b3/][a-zA-Z0-9%µμg·²³\u00b3/²³]*)\s*$",
+    r"^([\d.,]+)\s+(\*[\w/.^µμ³·]+|[a-zA-Z%µμg·²³\u00b3/][a-zA-Z0-9%µμg·²³\u00b3/²³]*)\s*$",
     re.IGNORECASE,
 )
 _RE_INTERVAL_PARANTEZE = re.compile(
@@ -1125,6 +1473,146 @@ _RE_TRAILING_DATE_LABELED = re.compile(
     re.IGNORECASE,
 )
 _RE_TRAILING_DATE_EOL = re.compile(r"\s+\d{1,2}\.\d{2}\.\d{4}(?:\s+\d{1,2}:\d{2})?\s*$")
+
+
+def _strip_suffix_interpretare_clasificare(linie: str) -> str:
+    """
+    Elimină sufixe de tip lipidogramă / glicemie: «> 60 Normal», «<150 mg/dL risc scăzut»,
+    «(40-60) Optim» etc., astfel încât rămâne analiză + valoare (+ eventual interval în paranteze).
+    Fără asta, _parse_oneline respingea întreaga linie ca „clasificare” și pierdeau zeci de analize.
+    """
+    if not linie or len(linie) < 6:
+        return linie
+    s = linie.strip()
+    # După «)» care închide intervalul de referință, text de interpretare
+    if ")" in s:
+        idx = s.rfind(")")
+        tail = s[idx + 1 :].strip()
+        if tail and len(tail) < 120 and re.match(
+            r"^(?:[<>≤≥]\s*[\d.,]+\s*(?:mg/dL|mmol/L|g/L|U/L|%|UI/L|ng/mL)?\s*)?"
+            r"(?:Normal|Optim|Borderline|scazut|scăzut|crescut|Nivel|risc|acceptable|deficit|toxic|"
+            r"diabet|patolog|referinta|recomandat|De\s+[A-Z])\b",
+            tail,
+            re.IGNORECASE,
+        ):
+            s = s[: idx + 1].rstrip()
+    # Comparator + prag + (opțional UM) + cuvânt cheie interpretare
+    for _ in range(4):
+        m = re.search(
+            r"\s+[<>≤≥]\s*[\d.,]+\s*(?:mg/dL|mmol/L|g/L|U/L|UI/L|%|ng/mL|µg/dL|µg/L)?\s*"
+            r"(?:Normal|Optim|Borderline|scazut|scăzut|crescut|risc|acceptable|deficit|toxic|"
+            r"diabet|patolog|referinta|recomandat|De\s+[A-Z])\b.*$",
+            s,
+            re.IGNORECASE,
+        )
+        if not m:
+            break
+        s = s[: m.start()].rstrip()
+    # Doar cuvânt de clasificare la sfârșit (ex: «... mg/dL Normal»)
+    m2 = re.search(
+        r"\s+(?:Normal|Optim|Borderline|scazut[ăa]?|crescut[ăe]?|Nivel\s+toxic|Acceptabil)\s*$",
+        s,
+        re.IGNORECASE,
+    )
+    if m2:
+        s = s[: m2.start()].rstrip()
+    # OCR: resturi scurte după valoare («enma V», «ME)»)
+    s = re.sub(r"\s+[A-Za-z]{2,5}\s+[Vv]\s*$", "", s).strip()
+    s = re.sub(r"\s+ME\)\s*$", "", s, flags=re.IGNORECASE).strip()
+    return s
+
+
+_RE_MEDLIFE_METHOD_LINE = re.compile(
+    r"(?i)^(Ser,|Plasma\b|Urin[aă]\b|Whole\s+blood\b|"
+    r".{0,40}\bmetoda\b|CMIA\b|ECLIA\b|spectrofotometric)",
+)
+
+
+def _line_has_extractable_value_row(s: str) -> bool:
+    """True dacă linia arată ca rând de tabel cu valoare numerică (MedLife / generic)."""
+    t = (s or "").strip()
+    if not t:
+        return False
+    if RE_VALOARE_LINIE.match(t) or RE_VALOARE_REF_SINGULAR.match(t):
+        return True
+    if RE_VALOARE_LINIE_DASH.match(t):
+        return True
+    if RE_VALOARE_PARTIAL.match(t):
+        return True
+    if RE_BIOCLINICA_ONELINE.search(t) or RE_BIOCLINICA_REF_SINGULAR.search(t):
+        return True
+    return False
+
+
+def _looks_like_medlife_test_only_line(s: str) -> bool:
+    """Linia pare denumire analiză fără valoare pe același rând (MedLife cu metoda pe rând separat)."""
+    t = (s or "").strip()
+    if not t or len(t) > 180:
+        return False
+    low = t.lower()
+    if low in ("test", "rezultat", "um", "interval de referinta", "interval de referință"):
+        return False
+    if _linie_este_exclusa(t) or _RE_NUME_PACIENT_ALL_CAPS.match(t):
+        return False
+    if _line_has_extractable_value_row(t):
+        return False
+    if not re.search(r"[A-Za-zĂÂÎȘȚăâîșț]{3,}", t):
+        return False
+    # Are deja model «nume valoare UM» pe același rând
+    if re.search(r"(?<!\S)(?:[<>≤≥]\s*)?\d+[.,]\d+\s+[\w%µ*/]", t) or re.search(
+        r"(?<!\S)(?:[<>≤≥]\s*)?\d+\s+(?:g/|mg|µ|fL|pg|U/|mIU|pmol|ng/|UI/)", t, re.I
+    ):
+        return False
+    return True
+
+
+def _combina_linii_medlife(lines: list[str]) -> list[str]:
+    """
+    Unește rânduri MedLife: denumire pe un rând, opțional «Ser, metoda…» pe următoarele,
+    apoi rând cu «valoare UM interval» (uneori fără paranteze).
+    """
+    result: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        cur = lines[i]
+        stripped = cur.strip()
+        if not stripped:
+            result.append(cur)
+            i += 1
+            continue
+        if _line_has_extractable_value_row(stripped) or not _looks_like_medlife_test_only_line(
+            stripped
+        ):
+            result.append(cur)
+            i += 1
+            continue
+        j = i + 1
+        while j < n and _RE_MEDLIFE_METHOD_LINE.match(lines[j].strip()):
+            j += 1
+        if j >= n:
+            result.append(cur)
+            i += 1
+            continue
+        tail = lines[j].strip()
+        if _line_has_extractable_value_row(tail):
+            merged = f"{stripped} {tail}"
+            result.append(merged)
+            i = j + 1
+            continue
+        # Valoare pe rând, interval pe următorul (OCR fragmentat)
+        if j + 1 < n:
+            t2 = lines[j + 1].strip()
+            if RE_VALOARE_PARTIAL.match(tail) and re.search(
+                r"[\d.,]+\s*[-–]\s*[\d.,]+", t2
+            ):
+                merged = f"{stripped} {tail} {t2}"
+                result.append(merged)
+                i = j + 2
+                continue
+        result.append(cur)
+        i += 1
+    return result
 
 
 def _strip_trailing_date_recoltare(linie: str) -> str:
@@ -1189,7 +1677,7 @@ def _combina_linii_bioclinica(lines: list) -> list:
                     # Insereaza parametrul duplicat cu sufix % (look-back in result)
                     param_precedent = ""
                     for prev in reversed(result[:-1]):
-                        if prev and not _LINII_EXCLUSE.match(prev) and not _RE_NUME_PACIENT_ALL_CAPS.match(prev.strip()):
+                        if prev and not _linie_este_exclusa(prev) and not _RE_NUME_PACIENT_ALL_CAPS.match(prev.strip()):
                             if not RE_VALOARE_LINIE.match(prev) and not _RE_VAL_UM_SIMPLU.match(prev):
                                 if len(re.sub(r'[^a-zA-Z]', '', prev)) >= 3:
                                     param_precedent = prev
@@ -1221,6 +1709,22 @@ def _combina_linii_bioclinica(lines: list) -> list:
     return result
 
 
+_RE_GENUS_MICRO_LINIE = re.compile(
+    r"(?i)^(Staphylococcus|Streptococcus|Escherichia|Enterococcus|Candida|Klebsiella|"
+    r"Pseudomonas|Enterobacteriaceae|Enterobacter\b|Proteus|Salmonella|Shigella|Neisseria|Acinetobacter|"
+    r"Haemophilus|Bacteroides|Clostridium|Listeria|Mycobacterium|Legionella|Bacillus|"
+    r"Aspergillus|Cryptococcus|Trichomonas|Giardia|Moraxella|Serratia|Eriaceae)\b",
+)
+
+
+def _organism_din_denumire_micro(denumire: str) -> Optional[str]:
+    """Dacă denumirea arată ca organism (gen), o returnează pentru meta structurată."""
+    d = (denumire or "").strip()
+    if not d or len(d) > 120:
+        return None
+    return d if _RE_GENUS_MICRO_LINIE.match(d) else None
+
+
 def _e_nou_rand_test_micro(s: str) -> bool:
     """
     Început de rând tipic în tabelul MedLife Microbiologie (titlu test),
@@ -1229,6 +1733,8 @@ def _e_nou_rand_test_micro(s: str) -> bool:
     s = (s or "").strip()
     if not s or len(s) > 200:
         return False
+    if _RE_GENUS_MICRO_LINIE.match(s):
+        return True
     patterns = (
         r"(?i)^Ex\.\s+microscopic",
         r"(?i)^Examen\s+microbiologic",
@@ -1239,6 +1745,11 @@ def _e_nou_rand_test_micro(s: str) -> bool:
         r"(?i)\(Imunocromatografie\)\s*$",
         r"(?i)\(Identificare/antibiograma\)\s*$",
         r"(?i)\(Cultura\)\s*$",
+        r"(?i)^Toxina\s+[AB]\b",
+        r"(?i)^Toxina\s+Clostridium",
+        r"(?i)^Screening\s+MRSA\b",
+        r"(?i)Toxina\s+Clostridium.*\bGDH\b",
+        r"(?i)\btest\s+rapid\s+GDH\b",
     )
     return any(re.search(p, s) for p in patterns)
 
@@ -1252,9 +1763,12 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
-    lines_raw = [_strip_trailing_date_recoltare(l.strip()) for l in text.replace("\r", "\n").split("\n")]
-    # Combina perechile 'VALOARE UM' + '(min - max)' intr-o singura linie
-    lines = _combina_linii_bioclinica(lines_raw)
+    lines_raw = [
+        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(l.strip()))
+        for l in text.replace("\r", "\n").split("\n")
+    ]
+    # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica
+    lines = _combina_linii_bioclinica(_combina_linii_medlife(lines_raw))
     results: list[RezultatParsat] = []
     seen: set = set()
 
@@ -1272,8 +1786,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
 
     def _key_denumire(raw: str) -> str:
         """Cheie normalizata pentru deduplicare - evita duplicate la variatii OCR (umar->Numar)."""
-        s = (raw or "")[:80].lower().strip()
-        s = re.sub(r"\bumar\s+de\b", "numar de", s)
+        s = corecteaza_umar_numar_in_denumire((raw or "")[:80].lower().strip())
         s = re.sub(r"\s*:\s*$", "", s)
         return s
 
@@ -1283,6 +1796,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         r.denumire_raw = _curata_denumire_rezultat(r.denumire_raw, r.valoare_text)
         if not r.denumire_raw or len(r.denumire_raw.strip()) < 2:
             return
+        categorie = _categorie_inferata_din_denumire(r.denumire_raw, categorie)
         if _RE_DOAR_VALOARE_CA_PARAMETRU.match(r.denumire_raw.strip()):
             return
         if r.valoare is not None:
@@ -1327,7 +1841,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             if not ln:
                 j += 1
                 continue
-            if _LINII_EXCLUSE.match(lines[j]):
+            if _linie_este_exclusa(lines[j]):
                 break
             if re.match(r"(?i)^Pagina\s+\d", ln):
                 break
@@ -1342,12 +1856,15 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                 None,
             )
             if den and len(den) >= 2:
+                org_micro = _organism_din_denumire_micro(den)
                 _add(
                     RezultatParsat(
                         denumire_raw=den,
                         valoare=None,
                         valoare_text=blob,
                         unitate=None,
+                        organism_raw=org_micro,
+                        rezultat_tip="microbiology",
                     ),
                     categorie="Microbiologie",
                 )
@@ -1402,12 +1919,21 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                         results.append(r)
             continue
 
-        m = RE_VALOARE_LINIE.match(linie_val)
+        # Tăiem interpretarea lipită de valoare («… (74-106) Normal», «… mg/dL > 60 Normal»)
+        lv = _strip_suffix_interpretare_clasificare(linie_val.strip())
+        m = RE_VALOARE_LINIE.match(lv)
         # Daca nu e format min-max, incearca format singular (≤ X) - ex: "2,260mg/dL (<= 0,33)"
         m_sing = None
         if not m:
-            m_sing = RE_VALOARE_REF_SINGULAR.match(linie_val) or RE_BIOCLINICA_REF_SINGULAR.match(linie_val)
+            m_sing = RE_VALOARE_REF_SINGULAR.match(lv) or RE_BIOCLINICA_REF_SINGULAR.match(lv)
+        m_dash = None
         if not m and not m_sing:
+            m_dash = RE_VALOARE_LINIE_DASH.match(lv)
+        m_part = None
+        if not m and not m_sing and not m_dash:
+            lv2 = re.sub(r"^[\s\•\-\*\.:;]+", "", lv).strip()
+            m_part = RE_VALOARE_PARTIAL.match(lv2)
+        if not m and not m_sing and not m_dash and not m_part:
             continue
         if m:
             valoare = _parse_european_number(m.group(1))
@@ -1427,7 +1953,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                     interval_min = interval_max = None
             if interval_min is not None and interval_max is not None and interval_min >= interval_max:
                 interval_min = interval_max = None
-        else:
+        elif m_sing:
             # Format singular (≤ X): valoare si limita superioara
             valoare = _parse_european_number(m_sing.group(1))
             if valoare is None:
@@ -1435,6 +1961,34 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             unitate = m_sing.group(2).strip().replace(" ", "") or None
             interval_min = None
             interval_max = _parse_european_number(m_sing.group(3))
+        elif m_dash:
+            valoare = _parse_european_number(m_dash.group(1))
+            if valoare is None:
+                try:
+                    valoare = float(m_dash.group(1).replace(",", "."))
+                except ValueError:
+                    continue
+            unitate = m_dash.group(2).strip().replace(" ", "") or None
+            interval_min = _parse_european_number(m_dash.group(3))
+            interval_max = _parse_european_number(m_dash.group(4))
+            if interval_min is None or interval_max is None:
+                try:
+                    interval_min = float(m_dash.group(3).replace(",", "."))
+                    interval_max = float(m_dash.group(4).replace(",", "."))
+                except ValueError:
+                    interval_min = interval_max = None
+            if interval_min is not None and interval_max is not None and interval_min >= interval_max:
+                interval_min = interval_max = None
+        else:
+            # Doar «valoare UM» pe linie (fără paranteze) — Bioclinica/Synevo pe 2 rânduri
+            valoare = _parse_european_number(m_part.group(1))
+            if valoare is None:
+                try:
+                    valoare = float(m_part.group(1).replace(",", "."))
+                except ValueError:
+                    continue
+            unitate = (m_part.group(2) or "").strip().replace(" ", "") or None
+            interval_min = interval_max = None
         denumire = ""
         cat_linie = line_sectiune[i]
         # Fereastra extinsa (30 linii) pentru a traversa headerele de pagina Bioclinica
@@ -1444,13 +1998,16 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             if not cand or _LINIE_NOTA.match(cand):
                 continue
             # Sarim peste linii de header/footer de pagina (nu suntem "blocati")
-            if _LINII_EXCLUSE.match(cand):
+            if _linie_este_exclusa(cand):
                 continue
             # NU folosi ca parametru o linie care arata ca "Param Val UM (interval)" pe aceeasi linie
             # (format Bioclinica oneline) - altfel riscam: Trombocite pe linia 1, Leucocite pe 2,
             # valoare 267.000 pe 3 -> asociem gresit Leucocite cu 267.000
             if RE_BIOCLINICA_ONELINE.search(cand) or RE_BIOCLINICA_REF_SINGULAR.search(cand):
                 break  # e un alt parametru complet - ne oprim
+            # Nu folosi un rând deja complet (ex. Hematocrit 35.5 % …) ca „parametru” pentru valoarea de dedesubt
+            if _parse_oneline(cand) is not None:
+                continue
             if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
                 denumire = cand
                 cat_linie = line_sectiune[j]
