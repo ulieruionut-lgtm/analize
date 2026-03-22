@@ -1549,6 +1549,9 @@ def _line_has_extractable_value_row(s: str) -> bool:
         return True
     if RE_BIOCLINICA_ONELINE.search(t) or RE_BIOCLINICA_REF_SINGULAR.search(t):
         return True
+    # «Parametru valoare UM min - max» pe aceeași linie (OCR uneori lipește tot rândul)
+    if _RE_TABULAR_ROW_VAL_UM_INTERVAL.search(t):
+        return True
     return False
 
 
@@ -1603,10 +1606,36 @@ def _combina_linii_medlife(lines: list[str]) -> list[str]:
             i += 1
             continue
         tail = lines[j].strip()
+        k_tail = j
+        # OCR: «4.66» pe un rând, «*10^6/µL 3.9 - 5.3» pe următorul
+        if tail and not _line_has_extractable_value_row(tail) and re.match(
+            r"^\s*(?:[<>≤≥]\s*)?[\d.,]+\s*$", tail
+        ):
+            glued = tail
+            kk = j
+            found_row = False
+            while kk + 1 < n and kk - j < 8:
+                nxt = lines[kk + 1].strip()
+                if not nxt or _RE_MEDLIFE_METHOD_LINE.match(nxt):
+                    break
+                if len(nxt) > 120:
+                    break
+                if not re.search(r"[\d%µ/<≥≤>ˣ\^a-zA-Z]", nxt, re.I):
+                    break
+                glued = glued + " " + nxt
+                kk += 1
+                if _line_has_extractable_value_row(glued):
+                    tail = glued
+                    k_tail = kk
+                    found_row = True
+                    break
+            if not found_row:
+                tail = lines[j].strip()
+                k_tail = j
         if _line_has_extractable_value_row(tail):
             merged = f"{stripped} {tail}"
             result.append(merged)
-            i = j + 1
+            i = k_tail + 1
             continue
         # Valoare pe rând, interval pe următorul (OCR fragmentat)
         if j + 1 < n:
@@ -1621,6 +1650,52 @@ def _combina_linii_medlife(lines: list[str]) -> list[str]:
         result.append(cur)
         i += 1
     return result
+
+
+def _combina_linii_ocr_fragmente_valoare(lines: list[str]) -> list[str]:
+    """
+    După MedLife: unește linii care încep doar cu număr (OCR a tăiat valoarea de UM+interval).
+    Dacă ultima linie emisă pare doar denumire analiză, lipește rândul de valoare de ea.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        raw = lines[i]
+        s = raw.strip()
+        if not s:
+            out.append(raw)
+            i += 1
+            continue
+        if not _line_has_extractable_value_row(s) and re.match(
+            r"^\s*(?:[<>≤≥]\s*)?[\d.,]+\s*$", s
+        ):
+            glued = s
+            k = i
+            found = False
+            while k + 1 < n and k - i < 8:
+                nxt = lines[k + 1].strip()
+                if not nxt or _RE_MEDLIFE_METHOD_LINE.match(nxt):
+                    break
+                if len(nxt) > 120:
+                    break
+                if not re.search(r"[\d%µ/<≥≤>ˣ\^a-zA-Z]", nxt, re.I):
+                    break
+                glued = glued + " " + nxt
+                k += 1
+                if _line_has_extractable_value_row(glued):
+                    found = True
+                    break
+            if found:
+                if out and _looks_like_medlife_test_only_line(out[-1].strip()):
+                    out[-1] = out[-1].strip() + " " + glued
+                else:
+                    out.append(glued)
+                i = k + 1
+                continue
+        out.append(raw)
+        i += 1
+    return out
 
 
 def _strip_trailing_date_recoltare(linie: str) -> str:
@@ -1776,7 +1851,9 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         for l in text.replace("\r", "\n").split("\n")
     ]
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica
-    lines = _combina_linii_bioclinica(_combina_linii_medlife(lines_raw))
+    lines = _combina_linii_bioclinica(
+        _combina_linii_ocr_fragmente_valoare(_combina_linii_medlife(lines_raw))
+    )
     results: list[RezultatParsat] = []
     seen: set = set()
 

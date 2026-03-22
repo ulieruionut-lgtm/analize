@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     ocr_min_digit_ratio: float = 0.0        # >0 = cere cifre în text (ex. 0.02); 0 = dezactivat
     # Preprocesare: False = mereu profil „dificil” (comportament clasic); True = curat vs dificil după contrast
     ocr_preprocess_auto: bool = False
-    # Detectare layout: PSM principal 4 dacă proiecție verticală sugerează 2 coloane (experimental)
-    ocr_layout_auto: bool = False
+    # Detectare layout: PSM 4 când proiecția verticală sugerează 2 coloane (buletine MedLife/Synevo scanate)
+    ocr_layout_auto: bool = True
     # OCR per coloană cu gap vertical detectat (experimental; fallback la pagină întreagă)
     ocr_column_segmentation: bool = False
 
