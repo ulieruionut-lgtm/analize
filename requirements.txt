@@ -1,6 +1,7 @@
 # Backend (versiuni flexibile pentru Python 3.11+)
 fastapi>=0.109
 uvicorn[standard]>=0.27
+click>=8.1,<9.0          # pinned: evita coruptia 'click.core' la reinstalare partiala
 python-multipart>=0.0.9
 
 # PDF & OCR
@@ -22,6 +23,9 @@ python-jose[cryptography]>=3.3
 
 # Excel (import dictionar analize)
 openpyxl>=3.1
+
+# Matching alias (OCR lung / alias scurt)
+rapidfuzz>=3.6
 
 # Utils
 pydantic>=2.6

@@ -7,8 +7,6 @@ import re
 from pathlib import Path
 from typing import Tuple
 
-import pdfplumber
-
 from backend.config import settings
 
 
@@ -145,7 +143,8 @@ def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
     """
     linii = []
     try:
-        with pdfplumber.open(pdf_path) as pdf:
+        import pdfplumber as _pdfplumber
+        with _pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
                 tabele = page.extract_tables()
                 for tabel in tabele:
@@ -769,7 +768,8 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
     # Pas 2: pdfplumber (fallback) - extract_text + tabele
     text_normal = ""
     try:
-        with pdfplumber.open(pdf_path) as pdf:
+        import pdfplumber as _pdfplumber
+        with _pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
                 t = page.extract_text()
                 if t:
