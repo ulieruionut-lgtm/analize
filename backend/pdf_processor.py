@@ -12,7 +12,7 @@ Principii de performanta:
 """
 import re
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 from backend.config import settings
 
@@ -275,6 +275,13 @@ def _ocr_quality_score(text: str, mean_c: float, weak_r: float, n_words: int, mi
     L = len((text or "").strip())
     if L == 0 and n_words == 0:
         return -1e9
+    letters = sum(1 for ch in text if ch.isalpha())
+    digits = sum(1 for ch in text if ch.isdigit())
+    spaces = sum(1 for ch in text if ch.isspace())
+    punct = max(0, L - letters - digits - spaces)
+    letter_ratio = (letters / L) if L else 0.0
+    punct_ratio = (punct / L) if L else 0.0
+
     score = mean_c * 0.45
     score += min(L / 8.0, 45.0)
     score -= weak_r * 38.0
@@ -282,6 +289,11 @@ def _ocr_quality_score(text: str, mean_c: float, weak_r: float, n_words: int, mi
         score -= (min_chars - L) * 0.55
     if n_words == 0 and L > 5:
         score -= 15.0
+    # Penalizeaza textul "zgomot" (multe simboluri/punctuatie, putine litere).
+    if L >= 140 and letter_ratio < 0.42:
+        score -= (0.42 - letter_ratio) * 95.0
+    if L >= 140 and punct_ratio > 0.22:
+        score -= (punct_ratio - 0.22) * 110.0
     return score
 
 
@@ -304,7 +316,7 @@ def _tesseract_cfg(oem: int, psm: int, dpi: int) -> str:
     return f"--oem {oem} --psm {psm} -c user_defined_dpi={dpi}"
 
 
-def _best_ocr_for_page(img_rgb, pytesseract_mod, min_chars: int, dpi: int, oem: int) -> str:
+def _best_ocr_for_page(img_rgb, pytesseract_mod, min_chars: int, dpi: int, oem: int) -> Tuple[str, Dict[str, Any]]:
     """
     Strategie clara si eficienta:
     1. Determin profilul (clean/hard) din contrast
@@ -324,39 +336,38 @@ def _best_ocr_for_page(img_rgb, pytesseract_mod, min_chars: int, dpi: int, oem: 
 
     best_text = ""
     best_score = -1e9
+    best_meta: Dict[str, Any] = {
+        "mean_conf": 0.0,
+        "weak_ratio": 1.0,
+        "n_words": 0,
+        "score": -1e9,
+        "profile": profile,
+        "psm": 6,
+    }
 
-    # PSM 6: bloc uniform de text — ideal pentru tabele cu randuri aliniate
-    cfg6 = _tesseract_cfg(oem, 6, dpi)
-    t, mc, wr, nw = _ocr_page_once(img_prep, lang, cfg6, pytesseract_mod)
-    sc = _ocr_quality_score(t, mc, wr, nw, min_chars)
-    if sc > best_score:
-        best_text, best_score = t, sc
+    img_alt = _apply_profile(img_rgb, alt_profile)
+    candidates = [
+        (img_prep, profile, 6),
+        (img_prep, profile, 4),
+        (img_alt, alt_profile, 6),
+        (img_alt, alt_profile, 11),
+    ]
+    for img_try, prof_try, psm_try in candidates:
+        cfg = _tesseract_cfg(oem, psm_try, dpi)
+        t, mc, wr, nw = _ocr_page_once(img_try, lang, cfg, pytesseract_mod)
+        sc = _ocr_quality_score(t, mc, wr, nw, min_chars)
+        if sc > best_score:
+            best_text, best_score = t, sc
+            best_meta = {
+                "mean_conf": round(float(mc), 2),
+                "weak_ratio": round(float(wr), 4),
+                "n_words": int(nw),
+                "score": round(float(sc), 2),
+                "profile": prof_try,
+                "psm": psm_try,
+            }
 
-    if _needs_retry(best_text, mc, wr, nw, min_chars):
-        # PSM 4: o singura coloana — unele buletine MedLife au margini
-        cfg4 = _tesseract_cfg(oem, 4, dpi)
-        t4, mc4, wr4, nw4 = _ocr_page_once(img_prep, lang, cfg4, pytesseract_mod)
-        sc4 = _ocr_quality_score(t4, mc4, wr4, nw4, min_chars)
-        if sc4 > best_score:
-            best_text, best_score = t4, sc4
-
-    if _needs_retry(best_text, mc, wr, nw, min_chars):
-        # Profil opus pe PSM 6
-        img_alt = _apply_profile(img_rgb, alt_profile)
-        ta, mca, wra, nwa = _ocr_page_once(img_alt, lang, cfg6, pytesseract_mod)
-        sca = _ocr_quality_score(ta, mca, wra, nwa, min_chars)
-        if sca > best_score:
-            best_text, best_score = ta, sca
-
-        if _needs_retry(best_text, mca, wra, nwa, min_chars):
-            # Fallback final: PSM 11 (sparse text — tabele fragmentate)
-            cfg11 = _tesseract_cfg(oem, 11, dpi)
-            t11, mc11, wr11, nw11 = _ocr_page_once(img_alt, lang, cfg11, pytesseract_mod)
-            sc11 = _ocr_quality_score(t11, mc11, wr11, nw11, min_chars)
-            if sc11 > best_score:
-                best_text = t11
-
-    return best_text
+    return best_text, best_meta
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +435,7 @@ def _recluster_tsv_rows(df: dict, tolerance: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
-                   pytesseract_mod, min_chars: int) -> Tuple[str, str]:
+                   pytesseract_mod, min_chars: int) -> Tuple[str, str, Dict[str, Any]]:
     """
     Dintr-un singur render de pagina produce:
     - text_string: textul OCR optimizat (pentru parser)
@@ -445,7 +456,7 @@ def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
         oem = 3
 
     # --- Text optimizat (cu preprocesare adaptiva) ---
-    text_string = _best_ocr_for_page(img, pytesseract_mod, min_chars, dpi, oem)
+    text_string, page_metrics = _best_ocr_for_page(img, pytesseract_mod, min_chars, dpi, oem)
 
     # --- TSV bbox pentru reconstructia randurilor (PSM 6, fara preprocesare agresiva) ---
     # Folosim imaginea curata (fara threshold) pentru TSV — coordonatele sunt mai precise
@@ -467,10 +478,10 @@ def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
     except Exception:
         text_tsv = ""
 
-    return text_string, text_tsv
+    return text_string, text_tsv, page_metrics
 
 
-def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None]:
+def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None, Dict[str, Any]]:
     """
     Deschide PDF-ul O SINGURA DATA, randeaza fiecare pagina si ruleaza OCR.
     Returneaza (text_string_combined, text_tsv_combined, eroare_sau_None).
@@ -478,16 +489,16 @@ def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None]:
     try:
         import fitz
     except ImportError:
-        return "", "", "PyMuPDF nu este instalat. Ruleaza: pip install pymupdf"
+        return "", "", "PyMuPDF nu este instalat. Ruleaza: pip install pymupdf", {}
 
     try:
         import pytesseract
     except ImportError:
-        return "", "", "pytesseract nu este instalat. Ruleaza: pip install pytesseract"
+        return "", "", "pytesseract nu este instalat. Ruleaza: pip install pytesseract", {}
 
     ok, err = tesseract_availability()
     if not ok:
-        return "", "", err or "Tesseract OCR nu este disponibil."
+        return "", "", err or "Tesseract OCR nu este disponibil.", {}
 
     oem = getattr(settings, "ocr_oem", 3)
     min_chars = getattr(settings, "ocr_min_chars", 100)
@@ -498,6 +509,7 @@ def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None]:
         doc = fitz.open(pdf_path)
         strings = []
         tsvs = []
+        per_page: list[Dict[str, Any]] = []
 
         for page_num in range(len(doc)):
             page = doc[page_num]
@@ -506,19 +518,46 @@ def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None]:
             pix_bytes = pix.tobytes("png")
 
             try:
-                ts, tv = _ocr_page_full(pix_bytes, lang, oem, dpi, pytesseract, min_chars)
+                ts, tv, pm = _ocr_page_full(pix_bytes, lang, oem, dpi, pytesseract, min_chars)
             except Exception as pe:
-                ts, tv = "", ""
+                ts, tv, pm = "", "", {}
 
             if ts.strip():
                 strings.append(ts)
             if tv.strip():
                 tsvs.append(tv)
+            if pm:
+                per_page.append(
+                    {
+                        "page": page_num + 1,
+                        "mean_conf": pm.get("mean_conf", 0.0),
+                        "weak_ratio": pm.get("weak_ratio", 1.0),
+                        "n_words": pm.get("n_words", 0),
+                        "score": pm.get("score", -1e9),
+                        "profile": pm.get("profile"),
+                        "psm": pm.get("psm"),
+                    }
+                )
 
         doc.close()
-        return "\n".join(strings), "\n".join(tsvs), None
+        if per_page:
+            avg_conf = sum(float(p.get("mean_conf", 0.0)) for p in per_page) / len(per_page)
+            avg_weak = sum(float(p.get("weak_ratio", 1.0)) for p in per_page) / len(per_page)
+            avg_score = sum(float(p.get("score", 0.0)) for p in per_page) / len(per_page)
+            ocr_metrics: Dict[str, Any] = {
+                "pages": per_page,
+                "summary": {
+                    "pages_count": len(per_page),
+                    "avg_mean_conf": round(avg_conf, 2),
+                    "avg_weak_ratio": round(avg_weak, 4),
+                    "avg_score": round(avg_score, 2),
+                },
+            }
+        else:
+            ocr_metrics = {"pages": [], "summary": {"pages_count": 0, "avg_mean_conf": 0.0, "avg_weak_ratio": 1.0, "avg_score": 0.0}}
+        return "\n".join(strings), "\n".join(tsvs), None, ocr_metrics
     except Exception as e:
-        return "", "", f"Eroare la OCR: {e!s}"
+        return "", "", f"Eroare la OCR: {e!s}", {}
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +612,7 @@ def extract_colored_tokens(pdf_path: str) -> set:
 # Entry point principal
 # ---------------------------------------------------------------------------
 
-def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str]:
+def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False):
     """
     Extrage text din PDF. Returneaza (text, tip, eroare_sau_None, colored_tokens, extractor).
     - tip = 'text'  — PDF cu text direct
@@ -637,12 +676,23 @@ def extract_text_from_pdf(pdf_path: str) -> Tuple[str, str, str | None, set, str
             extractor_used = "pymupdf+pdfplumber"
 
         colored = extract_colored_tokens(pdf_path)
-        return text_combinat, "text", None, colored, extractor_used
+        result = (text_combinat, "text", None, colored, extractor_used)
+        if include_metrics:
+            return result + ({},)
+        return result
 
     # --- Pas 3: PDF scanat — o singura trecere OCR ---
-    ocr_string, ocr_tsv, ocr_err = _run_ocr_all_pages(pdf_path)
+    ocr_string, ocr_tsv, ocr_err, ocr_metrics = _run_ocr_all_pages(pdf_path)
 
     all_parts = [p for p in [text_fitz, ocr_string, ocr_tsv] if p.strip()]
     combined = "\n".join(all_parts)
     extractor = "ocr+tsv" if not text_fitz.strip() else "pymupdf+ocr+tsv"
-    return combined, "ocr", ocr_err, set(), extractor
+    result = (combined, "ocr", ocr_err, set(), extractor)
+    if include_metrics:
+        return result + (ocr_metrics,)
+    return result
+
+
+def extract_text_with_metrics(pdf_path: str):
+    """Compat helper: aceleași date ca extract_text_from_pdf + ocr_metrics."""
+    return extract_text_from_pdf(pdf_path, include_metrics=True)
