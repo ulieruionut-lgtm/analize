@@ -80,6 +80,29 @@ def _is_pdf_signature(content: bytes) -> bool:
     return sample.startswith(b"%PDF-")
 
 
+def _rezultat_pare_gunoi(denumire: Optional[str], unitate: Optional[str]) -> bool:
+    d = (denumire or "").strip()
+    if not d:
+        return True
+    if len(d) <= 2:
+        return True
+    letters = sum(1 for ch in d if ch.isalpha())
+    digits = sum(1 for ch in d if ch.isdigit())
+    punct = sum(1 for ch in d if not ch.isalnum() and not ch.isspace())
+    total = max(len(d), 1)
+    if letters / total < 0.25 and digits / total < 0.20:
+        return True
+    if punct / total > 0.35:
+        return True
+    # Exemple de artefacte OCR: "ies", "a pea", "SN SAS..."
+    if re.match(r"^[a-z]{1,4}$", d):
+        return True
+    u = (unitate or "").strip()
+    if u and len(u) <= 2 and letters <= 3:
+        return True
+    return False
+
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_HTTP_BEARER),
 ):
@@ -888,6 +911,38 @@ async def upload_pdf(
                         extractor = f"{extractor2}+dpi{dpi_retry}"
         if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
+        if tip == "ocr":
+            total_rez = len(parsed.rezultate)
+            nec = sum(1 for r in parsed.rezultate if getattr(r, "analiza_standard_id", None) is None)
+            zg = sum(1 for r in parsed.rezultate if _rezultat_pare_gunoi(getattr(r, "denumire_raw", ""), getattr(r, "unitate", "")))
+            unknown_ratio = (nec / total_rez) if total_rez else 1.0
+            noise_ratio = (zg / total_rez) if total_rez else 1.0
+            suspect_flags = 0
+            if (parsed.nume or "").strip().lower() == "necunoscut":
+                suspect_flags += 1
+            if total_rez < 12:
+                suspect_flags += 1
+            if unknown_ratio > 0.55:
+                suspect_flags += 1
+            if noise_ratio > 0.35:
+                suspect_flags += 1
+            # Nu salvam automat buletinele foarte corupte OCR: evitam "gunoi" persistent in DB.
+            if suspect_flags >= 2:
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "detail": "OCR de calitate slaba: extragerea pare corupta. Buletinul NU a fost salvat.",
+                        "tip_extragere": tip,
+                        "extractor": extractor,
+                        "ocr_metrics": ocr_metrics,
+                        "numar_analize_detectate": total_rez,
+                        "procente": {
+                            "necunoscute": round(unknown_ratio, 3),
+                            "zgomot": round(noise_ratio, 3),
+                        },
+                        "hint": "Refa upload-ul cu PDF mai clar (scan 300 DPI) sau foloseste Verificare inainte de salvare.",
+                    },
+                )
         if not parsed.rezultate:
             return JSONResponse(
                 status_code=422,
