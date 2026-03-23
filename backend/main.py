@@ -1198,8 +1198,8 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             merged_result.append(row)
     analize_result = merged_result
 
-    # 6. Collapse final: un singur rând per (denumire, unitate, categorie),
-    # chiar dacă au rămas conflicte între upload-uri duplicate.
+    # 6. Collapse final: un singur rând per denumire analiză,
+    # chiar dacă au rămas conflicte între upload-uri duplicate sau categorii.
     # Alegem cea mai "curată" valoare pentru fiecare coloană.
     def _pick_best_value(values: list):
         valid = [v for v in values if not _is_missing(v)]
@@ -1230,11 +1230,7 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
 
     collapsed = {}
     for row in analize_result:
-        key = (
-            (row.get("denumire_standard") or "").strip().lower(),
-            (row.get("unitate") or "").strip().lower(),
-            (row.get("categorie") or "").strip().lower(),
-        )
+        key = (row.get("denumire_standard") or "").strip().lower()
         if key not in collapsed:
             collapsed[key] = {
                 "denumire_standard": row.get("denumire_standard"),
