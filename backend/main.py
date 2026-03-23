@@ -465,7 +465,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
