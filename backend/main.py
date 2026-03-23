@@ -478,18 +478,24 @@ async def run_migrations():
                     path = sql_dir / fname
                     if path.exists():
                         try:
-                            cur.execute(path.read_text(encoding="utf-8"))
+                            sql_text = path.read_text(encoding="utf-8")
+                            if "INSERT OR IGNORE" in sql_text.upper():
+                                continue
+                            cur.execute(sql_text)
                             conn.commit()
                             done.append(fname)
                         except Exception as ex:
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "015_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
-                            cur.execute(path.read_text(encoding="utf-8"))
+                            sql_text = path.read_text(encoding="utf-8")
+                            if "INSERT OR IGNORE" in sql_text.upper():
+                                continue
+                            cur.execute(sql_text)
                             conn.commit()
                             done.append(fname)
                         except Exception as ex:
