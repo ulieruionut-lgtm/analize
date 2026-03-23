@@ -1142,6 +1142,56 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             "flags": flags,
             "categorie": info.get("categorie") or "",
         })
+
+    # 5. Compactare rânduri complementare (aceeași analiză split-uită pe două rânduri).
+    # Se unesc doar dacă nu există conflict de valoare/flag pe aceeași coloană.
+    def _is_missing(v) -> bool:
+        return v is None or (isinstance(v, str) and not v.strip())
+
+    merged_result = []
+    for row in analize_result:
+        den = (row.get("denumire_standard") or "").strip().lower()
+        unt = (row.get("unitate") or "").strip().lower()
+        cat = (row.get("categorie") or "").strip().lower()
+        valori_row = list(row.get("valori") or [])
+        flags_row = list(row.get("flags") or [])
+
+        merged = False
+        for target in merged_result:
+            t_den = (target.get("denumire_standard") or "").strip().lower()
+            t_unt = (target.get("unitate") or "").strip().lower()
+            t_cat = (target.get("categorie") or "").strip().lower()
+            if (den, unt, cat) != (t_den, t_unt, t_cat):
+                continue
+
+            compat = True
+            t_valori = target.get("valori") or []
+            t_flags = target.get("flags") or []
+            for i in range(min(len(valori_row), len(t_valori))):
+                v_new, v_old = valori_row[i], t_valori[i]
+                if not _is_missing(v_new) and not _is_missing(v_old) and str(v_new).strip() != str(v_old).strip():
+                    compat = False
+                    break
+                f_new, f_old = flags_row[i], t_flags[i]
+                if not _is_missing(f_new) and not _is_missing(f_old) and str(f_new).strip() != str(f_old).strip():
+                    compat = False
+                    break
+            if not compat:
+                continue
+
+            for i in range(min(len(valori_row), len(t_valori))):
+                if _is_missing(t_valori[i]) and not _is_missing(valori_row[i]):
+                    t_valori[i] = valori_row[i]
+                if _is_missing(t_flags[i]) and not _is_missing(flags_row[i]):
+                    t_flags[i] = flags_row[i]
+            target["valori"] = t_valori
+            target["flags"] = t_flags
+            merged = True
+            break
+
+        if not merged:
+            merged_result.append(row)
+    analize_result = merged_result
     
     rezultate_in_baza = sum(len(b.get("rezultate") or []) for b in buletine_sorted)
     return {
