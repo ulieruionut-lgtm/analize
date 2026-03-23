@@ -772,7 +772,12 @@ def get_laborator_analize(laborator_id: int) -> list:
 
 # --- Lista analize standard ---
 def get_all_analize_standard() -> list:
-    from backend.analiza_categorii import categorie_grup_pentru_cod
+    try:
+        from backend.analiza_categorii import categorie_grup_pentru_cod
+    except Exception:
+        # Fallback sigur pentru medii unde fisierul optional nu este in pachetul deploy.
+        def categorie_grup_pentru_cod(_cod: str) -> str:
+            return ""
 
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT id, cod_standard, denumire_standard FROM analiza_standard ORDER BY denumire_standard")
