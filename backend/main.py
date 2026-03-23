@@ -493,6 +493,36 @@ async def run_migrations():
         return {"ok": False, "detail": str(e)}
 
 
+@app.get("/api/fix-schema")
+@app.post("/api/fix-schema")
+async def fix_schema():
+    """Adaugă coloanele lipsă direct (ALTER TABLE IF NOT EXISTS). Fara fisiere SQL."""
+    from backend.config import settings
+    url = (settings.database_url or "").strip()
+    if not url or not url.lower().startswith("postgresql"):
+        return {"ok": False, "detail": "Nu folosești PostgreSQL."}
+    fixes = [
+        ("rezultat_meta", "ALTER TABLE rezultate_analize ADD COLUMN IF NOT EXISTS rezultat_meta TEXT"),
+        ("necunoscuta_categorie", "ALTER TABLE analize_necunoscute ADD COLUMN IF NOT EXISTS categorie TEXT"),
+    ]
+    done, errors = [], []
+    try:
+        conn = _postgresql_connect(url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        for name, sql in fixes:
+            try:
+                cur.execute(sql)
+                done.append(name)
+            except Exception as ex:
+                errors.append(f"{name}: {ex}")
+        cur.close()
+        conn.close()
+        return {"ok": True, "done": done, "errors": errors}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
 @app.get("/login")
 async def login_redirect():
     """Redirect GET /login -> / (formularul de login e pe pagina principala)."""
