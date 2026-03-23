@@ -1042,6 +1042,10 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
     
     for idx_buletin, b in enumerate(buletine_sorted):
         buletin_id = b.get("id")
+        # Pentru aliniere intre buletine, folosim aparitia in ordinea PDF per analiza.
+        # Astfel aceeasi analiza standard ramane pe acelasi rand chiar daca denumirea OCR variaza.
+        aparitii_sid: dict[int, int] = {}
+        aparitii_unknown: dict[str, int] = {}
         for rez in b.get("rezultate", []):
             raw = (rez.get("denumire_raw") or "").strip()
             sid = rez.get("analiza_standard_id")
@@ -1050,18 +1054,19 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             if n_buletine == 1 and rid is not None:
                 cheie = ("rez", int(rid))
             else:
-                o = rez.get("ordine")
-                if o is None:
-                    ord_key = int(rid) if rid is not None else 0
-                else:
-                    try:
-                        ord_key = int(o)
-                    except (TypeError, ValueError):
-                        ord_key = int(rid) if rid is not None else 0
                 if sid is not None:
-                    cheie = ("m", int(sid), raw or std or "?", ord_key)
+                    try:
+                        sid_int = int(sid)
+                    except (TypeError, ValueError):
+                        sid_int = 0
+                    aparitie = aparitii_sid.get(sid_int, 0)
+                    aparitii_sid[sid_int] = aparitie + 1
+                    cheie = ("m", sid_int, aparitie)
                 else:
-                    cheie = ("u", raw or "Necunoscuta", ord_key)
+                    unk_label = re.sub(r"\s+", " ", (raw or std or "Necunoscuta").strip()).lower()
+                    aparitie = aparitii_unknown.get(unk_label, 0)
+                    aparitii_unknown[unk_label] = aparitie + 1
+                    cheie = ("u", unk_label, aparitie)
             
             if cheie not in analize_map:
                 # Etichetă rând: denumirea din PDF (raw) distinge liniile; fallback la standard din catalog
