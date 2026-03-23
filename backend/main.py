@@ -431,9 +431,18 @@ _PARSER_VERSION = "medlife-tsv-bbox-20260322"
 async def health():
     """Returneaza 200 imediat - Railway healthcheck. Fara query DB."""
     from backend.config import settings
-    url = (settings.database_url or "").strip().lower()
-    db_type = "postgresql" if url and url.startswith("postgres") else "sqlite"
-    return {"status": "ok", "database_type": db_type, "parser_version": _PARSER_VERSION}
+    url = (settings.database_url or "").strip()
+    db_type = "postgresql" if url.lower().startswith("postgres") else "sqlite"
+    # Afișează host-ul DB (fără parolă) pentru diagnostic
+    db_host = ""
+    try:
+        import re
+        m = re.search(r"@([^/]+)", url)
+        if m:
+            db_host = m.group(1)
+    except Exception:
+        pass
+    return {"status": "ok", "database_type": db_type, "parser_version": _PARSER_VERSION, "db_host": db_host}
 
 
 @app.get("/api/migrate")
@@ -465,7 +474,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "015_alias_clinice_necunoscute.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:

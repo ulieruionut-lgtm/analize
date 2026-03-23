@@ -487,14 +487,29 @@ def insert_rezultat(buletin_id: int, analiza_standard_id: Optional[int], denumir
             )
             cur.execute("SELECT id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at FROM rezultate_analize ORDER BY id DESC LIMIT 1")
             return _fetchone_dict(cur) or {}
-        cur.execute(
-            """
-            INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at
-            """,
-            (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta),
-        )
+        try:
+            cur.execute(
+                """
+                INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta, created_at
+                """,
+                (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, rezultat_meta),
+            )
+        except Exception as e:
+            if "rezultat_meta" in str(e):
+                # Coloana nu exista inca — fallback fara rezultat_meta
+                cur.connection.rollback()
+                cur.execute(
+                    """
+                    INSERT INTO rezultate_analize (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie, created_at
+                    """,
+                    (buletin_id, analiza_standard_id, denumire_raw, valoare, valoare_text, unitate, interval_min, interval_max, flag, ordine, categorie),
+                )
+            else:
+                raise
         return _fetchone_dict(cur) or {}
 
 
