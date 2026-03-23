@@ -1,4 +1,5 @@
 """FastAPI – Analize medicale PDF. Interfata medic + API REST."""
+import asyncio
 import json
 import os
 import re
@@ -822,7 +823,11 @@ async def upload_pdf(
         from backend.parser import parse_full_text
         from backend.pdf_processor import extract_text_with_metrics
 
-        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path)
+        # OCR-ul pe PDF scanat poate dura mult; rulam in thread ca sa nu blocam serverul.
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.to_thread(
+            extract_text_with_metrics,
+            tmp_path,
+        )
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
             from backend.parser import _linie_este_exclusa
@@ -884,9 +889,10 @@ async def upload_pdf(
             unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
             if unknown_name or count_now < 12:
                 dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
-                text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = extract_text_with_metrics(
+                text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.to_thread(
+                    extract_text_with_metrics,
                     tmp_path,
-                    dpi_override=dpi_retry,
+                    dpi_retry,
                 )
                 parsed2: Optional[PatientParsed] = parse_full_text(text2)
                 if not parsed2:
