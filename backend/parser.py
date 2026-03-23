@@ -1167,6 +1167,30 @@ def _parse_linie_egal_rezultat(linie: str) -> Optional[RezultatParsat]:
             right_lc,
         )
     )
+    # Format special: "1,70 <30 mg/g" (valoare + comparator_limita + unitate)
+    # Ex: "Raport albumina creatinina = 1,70 <30 mg/g"
+    m_val_limit = re.search(
+        r"^(\d+[.,]\d+|\d+)\s+([<>≤≥]=?)\s*(\d+[.,]?\d*)\s+([a-zA-Z/%µμg²³·\/]+)",
+        right.strip(),
+    )
+    if m_val_limit:
+        valoare_raw = m_val_limit.group(1)
+        op = m_val_limit.group(2)
+        lim_raw = m_val_limit.group(3)
+        unitate_raw = m_val_limit.group(4).strip()
+        val_v = _parse_european_number(valoare_raw)
+        lim_v = _parse_european_number(lim_raw)
+        if val_v is not None and lim_v is not None:
+            int_min = 0.0 if op in ("<", "<=", "≤") else lim_v
+            int_max = lim_v if op in ("<", "<=", "≤") else lim_v * 10
+            return RezultatParsat(
+                denumire_raw=_curata_denumire_rezultat(left, None) or left,
+                valoare=val_v,
+                unitate=unitate_raw or None,
+                interval_min=int_min,
+                interval_max=int_max,
+            )
+
     m_num = re.search(
         r"(?<!\S)(\d+[.,]\d+|\d+)\s+([a-zA-Z/%µμg·²³'\/][a-zA-Z0-9/%µμg·²³'\/\*\.]*)",
         right,
@@ -1190,10 +1214,25 @@ def _parse_linie_egal_rezultat(linie: str) -> Optional[RezultatParsat]:
             except ValueError:
                 return None
         unitate = (m_num.group(2) or "").strip() or None
+        # Extrage intervalul din restul dupa valoare+unitate
+        rest_num = right[m_num.end():]
+        m_int = re.search(r"([\d.,]+)\s*[-–]\s*([\d.,]+)", rest_num)
+        int_min = int_max = None
+        if m_int:
+            int_min = _parse_european_number(m_int.group(1))
+            int_max = _parse_european_number(m_int.group(2))
+            if int_min is not None and int_max is not None and int_min >= int_max:
+                int_min = int_max = None
+        den = _curata_denumire_rezultat(left, None) or left
+        # Curatam trailing "=" din denumire (ex: "Hemoglobina(HGB) =")
+        den = re.sub(r'\s*=\s*$', '', den).strip()
+        valoare = _corecteaza_decimal_pierdut(valoare, int_min, int_max, den)
         return RezultatParsat(
-            denumire_raw=_curata_denumire_rezultat(left, None) or left,
+            denumire_raw=den,
             valoare=valoare,
             unitate=unitate,
+            interval_min=int_min,
+            interval_max=int_max,
         )
     return None
 
@@ -1433,6 +1472,7 @@ _CORECTIE_FARA_INTERVAL = [
     ("volum mediu erit", 120.0),  # Volum mediu eritrocitar (MCV)
     ("mch", 40.0),       # MCH tipic 27-33 pg
     ("mchc", 40.0),      # MCHC tipic 32-36 g/dL
+    ("hemoglobin", 25.0),  # Hemoglobina tipic 12-17 g/dL; 168 -> 16.8
 ]
 
 
@@ -2217,6 +2257,40 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     return results
 
 
+def _evalueaza_review_rezultat(r: RezultatParsat) -> list[str]:
+    """
+    Reguli conservative pentru semnalare semi-auto:
+    nu blocăm salvarea, doar marcăm rezultatul pentru verificare.
+    """
+    reasons: list[str] = []
+    den = (r.denumire_raw or "").strip()
+    if not den:
+        reasons.append("denumire_lipsa")
+    if r.valoare is not None:
+        if r.interval_min is not None and r.interval_max is not None:
+            if r.interval_min >= r.interval_max:
+                reasons.append("interval_invalid")
+            elif (r.valoare < r.interval_min and r.flag == "H") or (r.valoare > r.interval_max and r.flag == "L"):
+                reasons.append("flag_incongruent_interval")
+        if abs(r.valoare) > 1_000_000:
+            reasons.append("valoare_extrema")
+    else:
+        if not (r.valoare_text or "").strip():
+            reasons.append("valoare_lipsa")
+    if r.unitate and len(r.unitate.strip()) > 32:
+        reasons.append("unitate_suspect_lunga")
+    return reasons
+
+
+def aplica_validari_review(rezultate: list[RezultatParsat]) -> list[RezultatParsat]:
+    """Atașează markerul needs_review și motivele pentru audit post-upload."""
+    for r in rezultate:
+        reasons = _evalueaza_review_rezultat(r)
+        r.review_reasons = reasons
+        r.needs_review = bool(reasons)
+    return rezultate
+
+
 def parse_full_text(text: str, cnp_optional: bool = False) -> Optional[PatientParsed]:
     """Parsează text PDF. Dacă cnp_optional=True și CNP nu e găsit, folosește un CNP temporar."""
     cnp = extract_cnp(text)
@@ -2230,5 +2304,5 @@ def parse_full_text(text: str, cnp_optional: bool = False) -> Optional[PatientPa
     # Siguranță suplimentară: OCR uneori lasă «CNP:» în câmpul Prenume
     if prenume and _prenume_invalid(_curata_camp_prenume(prenume)):
         prenume = None
-    rezultate = extract_rezultate(text)
+    rezultate = aplica_validari_review(extract_rezultate(text))
     return PatientParsed(cnp=cnp, nume=nume or "Necunoscut", prenume=prenume, rezultate=rezultate)

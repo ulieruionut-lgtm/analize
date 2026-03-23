@@ -52,6 +52,10 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
 
     # --- Prefix numeric N. sau _N. inainte de denumire (Sante Vie: "3.Acid uric", "_5.Glicemie") ---
     s = re.sub(r"^_?\d{1,2}\.\s*", "", s)
+    # Prefix cifra + litere mici la incepul denumirii, inainte de separarea generala
+    # (Sante Vie: "4dUreeserica" -> "Ureeserica"; trebuie sa fie inainte de regula de separare
+    #  care ar da "4d" -> "4 d" si ar strica pattern-ul)
+    s = re.sub(r"^\d+[a-zA-Z]{1,4}([A-ZĂÂÎȘȚ])", r"\1", s)
 
     # --- Simboluri parazite între denumire și valoare (MedLife / Sante Vie scanat) ---
     # 'Hemoglobina Glicozilata . """-—14,80 %' → 'Hemoglobina Glicozilata . 14,80 %'
@@ -92,6 +96,9 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"(\d)(mgl)\b", r"\1 mg/L", s, flags=re.IGNORECASE)
     # ngml → ng/mL (PSA)
     s = re.sub(r"\bngml\b", "ng/mL", s, flags=re.IGNORECASE)
+    # Cifra lipita de % (fara spatiu): 470% → 470 %
+    # (\b nu prinde % deoarece % e non-word char, deci regula generala urmatoare il ratează)
+    s = re.sub(r"(\d)%(?=[\s,;|]|$)", r"\1 %", s)
     # Valoare lipita de unitate: "30,8pg" → "30,8 pg", "18Bgdl" → "18,8 g/dL"
     s = re.sub(r"(\d)([a-zA-ZµμfL%][a-zA-Z/\^0-9µμ]*)\b", lambda m: m.group(1) + " " + m.group(2) if not m.group(2).startswith(("e", "E")) else m.group(0), s)
     # gdl / gal / g/al → g/dL
@@ -131,11 +138,15 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     # © ca separator intre valoare si interval (Sante Vie: "168 g/dL © 12,6-17,4")
     # Transformam in spatiu ca sa nu blocheze parsarea intervalului
     s = re.sub(r"\s*©\s*", " ", s)
-    # Prefix cifra+litere mici la incepul denumirii (Sante Vie: "4dUreeserica" → "Ureeserica")
-    # Complementar regulii ^\d{1,2}\. (care prinde "4." dar nu "4d")
-    s = re.sub(r"^\d+[a-z]{1,3}([A-ZĂÂÎȘȚ])", r"\1", s)
-    # „ (ghilimele deschise romanesti) la incepul liniei → remove
-    s = re.sub(r"^[„"]+", "", s)
+    # " „ " " (ghilimele ASCII si tipografice) la incepul liniei -> remove
+    s = re.sub(r'^[""\u201e\u201c\u201d]+', "", s)
+    # mgdi / mgdl dupa separarea generala (cand nu s-a prins inainte: "465 mgdi" -> "465 mg/dL")
+    s = re.sub(r"\bmgdi\b", "mg/dL", s, flags=re.IGNORECASE)
+    # # simbol parasit inainte de valoare numerica (Sante Vie: "# 470 %")
+    s = re.sub(r"\s*#\s*(?=\d)", " ", s)
+    # f singur ca unitate (OCR rata "fl"): " f " sau " f\n" (dupa separare) -> " fl "
+    s = re.sub(r"\s+f\s+(?=[a-z])", " fl ", s)  # "857 f fl" -> "857 fl fl" -> redundant dar ok
+    s = re.sub(r"\bf\b(?=\s|$)", "fl", s)
     # Valoare numerica lipita de f (OCR: fl citit ca f): 857f → 857 fl
     # Evitam sa stricam "g/dL" sau alte unitati cu litere
     s = re.sub(r"(\d)f\b(?![a-zA-Z/])", r"\1 fl", s)
