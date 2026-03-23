@@ -1148,6 +1148,11 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
     def _is_missing(v) -> bool:
         return v is None or (isinstance(v, str) and not v.strip())
 
+    def _norm_cmp(v) -> str:
+        if _is_missing(v):
+            return ""
+        return re.sub(r"\s+", " ", str(v).strip())
+
     merged_result = []
     for row in analize_result:
         den = (row.get("denumire_standard") or "").strip().lower()
@@ -1169,11 +1174,11 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             t_flags = target.get("flags") or []
             for i in range(min(len(valori_row), len(t_valori))):
                 v_new, v_old = valori_row[i], t_valori[i]
-                if not _is_missing(v_new) and not _is_missing(v_old) and str(v_new).strip() != str(v_old).strip():
+                if not _is_missing(v_new) and not _is_missing(v_old) and _norm_cmp(v_new) != _norm_cmp(v_old):
                     compat = False
                     break
                 f_new, f_old = flags_row[i], t_flags[i]
-                if not _is_missing(f_new) and not _is_missing(f_old) and str(f_new).strip() != str(f_old).strip():
+                if not _is_missing(f_new) and not _is_missing(f_old) and _norm_cmp(f_new) != _norm_cmp(f_old):
                     compat = False
                     break
             if not compat:
