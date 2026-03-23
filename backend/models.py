@@ -79,6 +79,9 @@ class RezultatParsat(BaseModel):
     # Microbiologie / meta (serializată JSON în coloana rezultat_meta la salvare)
     organism_raw: Optional[str] = None
     rezultat_tip: Optional[str] = None  # ex. "microbiology"
+    needs_review: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
+    ocr_confidence: Optional[float] = None
 
 
 class PatientParsed(BaseModel):
