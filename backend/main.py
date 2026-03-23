@@ -854,6 +854,38 @@ async def upload_pdf(
         parsed: Optional[PatientParsed] = parse_full_text(text)
         if not parsed:
             parsed = parse_full_text(text, cnp_optional=True)
+        if tip == "ocr":
+            # Fallback pentru scanuri dificile: rerulam OCR la DPI mai mare daca pacientul e Necunoscut
+            # sau s-au extras prea putine analize.
+            count_now = len(parsed.rezultate) if parsed else 0
+            unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
+            if unknown_name or count_now < 12:
+                dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
+                text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = extract_text_with_metrics(
+                    tmp_path,
+                    dpi_override=dpi_retry,
+                )
+                parsed2: Optional[PatientParsed] = parse_full_text(text2)
+                if not parsed2:
+                    parsed2 = parse_full_text(text2, cnp_optional=True)
+                if parsed2 and parsed2.rezultate:
+                    count2 = len(parsed2.rezultate)
+                    name2 = (parsed2.nume or "").strip().lower()
+                    is_better = (
+                        count2 >= max(count_now + 5, 14)
+                        or (name2 != "necunoscut" and unknown_name)
+                    )
+                    if is_better:
+                        parsed = parsed2
+                        text = text2
+                        tip = tip2
+                        if ocr_err2:
+                            ocr_err = ocr_err2
+                        if colored_tokens2:
+                            colored_tokens = colored_tokens2
+                        if ocr_metrics2:
+                            ocr_metrics = ocr_metrics2
+                        extractor = f"{extractor2}+dpi{dpi_retry}"
         if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
         if not parsed.rezultate:

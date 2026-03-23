@@ -481,7 +481,7 @@ def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
     return text_string, text_tsv, page_metrics
 
 
-def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None, Dict[str, Any]]:
+def _run_ocr_all_pages(pdf_path: str, dpi_override: int | None = None) -> Tuple[str, str, str | None, Dict[str, Any]]:
     """
     Deschide PDF-ul O SINGURA DATA, randeaza fiecare pagina si ruleaza OCR.
     Returneaza (text_string_combined, text_tsv_combined, eroare_sau_None).
@@ -502,7 +502,7 @@ def _run_ocr_all_pages(pdf_path: str) -> Tuple[str, str, str | None, Dict[str, A
 
     oem = getattr(settings, "ocr_oem", 3)
     min_chars = getattr(settings, "ocr_min_chars", 100)
-    dpi = getattr(settings, "ocr_dpi_hint", 300)
+    dpi = int(dpi_override) if dpi_override is not None else int(getattr(settings, "ocr_dpi_hint", 300))
     lang = settings.ocr_lang
 
     try:
@@ -612,7 +612,7 @@ def extract_colored_tokens(pdf_path: str) -> set:
 # Entry point principal
 # ---------------------------------------------------------------------------
 
-def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False):
+def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False, dpi_override: int | None = None):
     """
     Extrage text din PDF. Returneaza (text, tip, eroare_sau_None, colored_tokens, extractor).
     - tip = 'text'  — PDF cu text direct
@@ -682,7 +682,7 @@ def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False):
         return result
 
     # --- Pas 3: PDF scanat — o singura trecere OCR ---
-    ocr_string, ocr_tsv, ocr_err, ocr_metrics = _run_ocr_all_pages(pdf_path)
+    ocr_string, ocr_tsv, ocr_err, ocr_metrics = _run_ocr_all_pages(pdf_path, dpi_override=dpi_override)
 
     all_parts = [p for p in [text_fitz, ocr_string, ocr_tsv] if p.strip()]
     combined = "\n".join(all_parts)
@@ -693,6 +693,6 @@ def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False):
     return result
 
 
-def extract_text_with_metrics(pdf_path: str):
+def extract_text_with_metrics(pdf_path: str, dpi_override: int | None = None):
     """Compat helper: aceleași date ca extract_text_from_pdf + ocr_metrics."""
-    return extract_text_from_pdf(pdf_path, include_metrics=True)
+    return extract_text_from_pdf(pdf_path, include_metrics=True, dpi_override=dpi_override)
