@@ -187,6 +187,12 @@ _LINII_EXCLUSE = re.compile(
 )
 
 
+_RE_PAGINA_COMPLETA_OCR = re.compile(
+    r"Buletin\s+de\s+analize|Punct\s+de\s+recoltare|SANTE\s+VIE|SmartLabs\s+5",
+    re.IGNORECASE,
+)
+
+
 def _linie_este_exclusa(s: str) -> bool:
     """
     Linie antet administrativ / gunoi: pattern compus _LINII_EXCLUSE
@@ -197,6 +203,9 @@ def _linie_este_exclusa(s: str) -> bool:
     t = s.strip()
     if not t:
         return False
+    # Linie masiva OCR (toata pagina pe o linie) — contine antet de laborator
+    if len(t) > 400 and _RE_PAGINA_COMPLETA_OCR.search(t):
+        return True
     m_exc = _LINII_EXCLUSE.match(t)
     # Evită alternativa goală din regex: match de lungime 0 nu înseamnă linie exclusă
     if m_exc is not None and m_exc.end() > 0:
@@ -1142,6 +1151,8 @@ def _parse_linie_egal_rezultat(linie: str) -> Optional[RezultatParsat]:
     if not m:
         return None
     left = m.group(1).strip()
+    # Trailing pipe (SANTE VIE: "Rata filtrarii glomerulare =")
+    left = re.sub(r'\s*\|+\s*$', '', left).strip()
     right = m.group(2).strip()
     if len(left) < 2:
         return None
@@ -1286,10 +1297,10 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                 )
 
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
-    # Unități MedLife: *10^6/µL; valori «< 73» cu comparator opțional
+    # Unități MedLife: *10^6/µL; Sante Vie: 10^9/L; valori «< 73» cu comparator opțional
     m_val = re.search(
         r"(?<!\S)(?:[<>≤≥]\s*)?(\d+[.,]\d+|\d+)\s+"
-        r"(\*[\w/.^µμ·]+|[a-zA-Z%µμg·²³'\/][a-zA-Z0-9%µμg·²³'\/\*\^\.·]*)"
+        r"(\*[\w/.^µμ·]+|10\^[\d]+/[a-zA-ZµμL]+|[a-zA-Z%µμg·²³'\/][a-zA-Z0-9%µμg·²³'\/\*\^\.·]*)"
         r"(?:\s+|$)",
         linie,
     )
@@ -1328,8 +1339,10 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if not name or len(name) < 2:
         return None
 
-    # Curata artefacte OCR din nume (ghilimele, asteriscuri la inceput)
+    # Curata artefacte OCR din nume (ghilimele, asteriscuri, pipe la inceput/sfarsit)
     name = re.sub(r'^["\'\*%\s]+', '', name).strip()
+    # Trailing pipe (separator SANTE VIE: "Colesterol seric total | 488 mg/dL" -> name="Colesterol seric total |")
+    name = re.sub(r'\s*\|+\s*$', '', name).strip()
     if not name or len(name) < 2:
         return None
 
@@ -1415,9 +1428,11 @@ _CORECTIE_FARA_INTERVAL = [
     ("rdw", 20.0),       # RDW-CV tipic 11-15%
     ("mpv", 15.0),       # MPV tipic 7-12 fL
     ("pdw", 20.0),       # PDW tipic 9-14 fL
-    ("vem", 120.0),      # MCV tipic 80-100 fL
+    ("vem", 120.0),      # MCV tipic 80-100 fL (Bioclinica/Regina Maria)
+    ("mcv", 120.0),      # MCV tipic 80-100 fL (Sante Vie / alte lab)
+    ("volum mediu erit", 120.0),  # Volum mediu eritrocitar (MCV)
     ("mch", 40.0),       # MCH tipic 27-33 pg
-    ("mchc", 40.0),     # MCHC tipic 32-36 g/dL
+    ("mchc", 40.0),      # MCHC tipic 32-36 g/dL
 ]
 
 
@@ -1684,10 +1699,32 @@ def _combina_linii_medlife(lines: list[str]) -> list[str]:
     return result
 
 
+_RE_SANTE_VIE_VAL_LINIE = re.compile(
+    r"^(?:[<>≤≥]\s*)?[\d.,]+\s+[a-zA-Z%µμg\^/\*][\w\^/\*\.]*",
+)
+
+
+def _linie_sante_vie_fara_valoare(s: str) -> bool:
+    """Linia are denumire + interval dar valoarea lipseste (Sante Vie: 'Uree serica . 10-50 mg/dl -')."""
+    if not re.search(r"\d", s):
+        return False
+    if _line_has_extractable_value_row(s):
+        return False
+    # Are un interval de forma N-M undeva
+    if re.search(r"\b\d+[,.]?\d*\s*[-–]\s*\d+[,.]?\d*", s):
+        # Nu are valoare numerica inainte de interval (valoarea ar fi prima cifra izolata)
+        m_first_num = re.search(r"(?<![0-9,.])\b(\d+[,.]?\d*)\b", s)
+        m_interval = re.search(r"\b(\d+[,.]?\d*)\s*[-–]\s*(\d+[,.]?\d*)", s)
+        if m_first_num and m_interval and m_first_num.start() >= m_interval.start():
+            return True
+    return False
+
+
 def _combina_linii_ocr_fragmente_valoare(lines: list[str]) -> list[str]:
     """
     După MedLife: unește linii care încep doar cu număr (OCR a tăiat valoarea de UM+interval).
     Dacă ultima linie emisă pare doar denumire analiză, lipește rândul de valoare de ea.
+    Sante Vie: unește linia 'Denumire . interval' cu linia 'valoare UM interval' de pe linia urm.
     """
     out: list[str] = []
     i = 0
@@ -1699,6 +1736,13 @@ def _combina_linii_ocr_fragmente_valoare(lines: list[str]) -> list[str]:
             out.append(raw)
             i += 1
             continue
+        # Sante Vie: linie cu denumire + interval fara valoare → lipeste linia urmatoare cu valoarea
+        if _linie_sante_vie_fara_valoare(s) and i + 1 < n:
+            nxt = lines[i + 1].strip()
+            if nxt and _RE_SANTE_VIE_VAL_LINIE.match(nxt) and not _linie_este_exclusa(nxt):
+                out.append(s + " " + nxt)
+                i += 2
+                continue
         if not _line_has_extractable_value_row(s) and re.match(
             r"^\s*(?:[<>≤≥]\s*)?[\d.,]+\s*$", s
         ):
