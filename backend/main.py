@@ -1,5 +1,6 @@
 """FastAPI – Analize medicale PDF. Interfata medic + API REST."""
 import asyncio
+import io
 import json
 import os
 import re
@@ -9,9 +10,11 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from starlette.datastructures import Headers
 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -68,6 +71,10 @@ def _postgresql_connect(url: str):
 _ERORI_LOG = Path(__file__).resolve().parent.parent / "upload_eroare.txt"
 _HTTP_BEARER = HTTPBearer(auto_error=False)
 _ALLOWED_PDF_MIME = {"application/pdf", "application/x-pdf", "application/octet-stream"}
+_UPLOAD_ASYNC_JOBS: dict[str, dict] = {}
+_UPLOAD_ASYNC_LOCK = threading.Lock()
+_UPLOAD_ASYNC_TTL_SECONDS = 6 * 3600
+_UPLOAD_ASYNC_MAX_JOBS = 300
 
 
 def _max_upload_bytes() -> int:
@@ -79,6 +86,46 @@ def _is_pdf_signature(content: bytes) -> bool:
     # Semnătura standard PDF; ignorăm whitespace de la început.
     sample = (content or b"")[:16].lstrip()
     return sample.startswith(b"%PDF-")
+
+
+def _now_iso_utc() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _prune_upload_async_jobs() -> None:
+    now_ts = datetime.utcnow().timestamp()
+    with _UPLOAD_ASYNC_LOCK:
+        to_delete: list[str] = []
+        for jid, job in _UPLOAD_ASYNC_JOBS.items():
+            finished_ts = float(job.get("finished_ts") or 0.0)
+            if finished_ts and (now_ts - finished_ts) > _UPLOAD_ASYNC_TTL_SECONDS:
+                to_delete.append(jid)
+        for jid in to_delete:
+            _UPLOAD_ASYNC_JOBS.pop(jid, None)
+
+        if len(_UPLOAD_ASYNC_JOBS) <= _UPLOAD_ASYNC_MAX_JOBS:
+            return
+        ordered = sorted(
+            _UPLOAD_ASYNC_JOBS.items(),
+            key=lambda item: float(item[1].get("created_ts") or 0.0),
+        )
+        extra = len(_UPLOAD_ASYNC_JOBS) - _UPLOAD_ASYNC_MAX_JOBS
+        for jid, _ in ordered[:extra]:
+            _UPLOAD_ASYNC_JOBS.pop(jid, None)
+
+
+def _set_upload_async_job(job_id: str, **fields) -> dict:
+    with _UPLOAD_ASYNC_LOCK:
+        current = _UPLOAD_ASYNC_JOBS.get(job_id, {})
+        current.update(fields)
+        _UPLOAD_ASYNC_JOBS[job_id] = current
+        return dict(current)
+
+
+def _get_upload_async_job(job_id: str) -> Optional[dict]:
+    with _UPLOAD_ASYNC_LOCK:
+        job = _UPLOAD_ASYNC_JOBS.get(job_id)
+        return dict(job) if job else None
 
 
 def _rezultat_pare_gunoi(denumire: Optional[str], unitate: Optional[str]) -> bool:
@@ -785,6 +832,136 @@ async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_curre
     if not ok:
         raise HTTPException(status_code=404, detail="Pacientul nu a fost găsit.")
     return {"message": "Pacient șters complet."}
+
+
+async def _run_upload_async_job(
+    job_id: str,
+    *,
+    owner_username: str,
+    filename: str,
+    content: bytes,
+    content_type: str,
+) -> None:
+    _set_upload_async_job(
+        job_id,
+        status="processing",
+        started_at=_now_iso_utc(),
+        started_ts=datetime.utcnow().timestamp(),
+    )
+    internal = UploadFile(
+        file=io.BytesIO(content),
+        filename=filename,
+        headers=Headers({"content-type": content_type or "application/pdf"}),
+    )
+    try:
+        result = await upload_pdf(
+            file=internal,
+            debug=False,
+            traceback_debug=False,
+            current_user={"username": owner_username},
+        )
+        if isinstance(result, JSONResponse):
+            status_code = int(result.status_code or 500)
+            try:
+                payload = json.loads((result.body or b"{}").decode("utf-8", errors="ignore"))
+            except Exception:
+                payload = {"detail": "Raspuns JSON invalid de la worker-ul de upload."}
+        else:
+            status_code = 200
+            payload = result
+    except Exception as ex:
+        status_code = 500
+        payload = {"detail": str(ex)[:800]}
+    finally:
+        try:
+            await internal.close()
+        except Exception:
+            pass
+
+    done_state = "success" if status_code < 400 else "error"
+    _set_upload_async_job(
+        job_id,
+        status=done_state,
+        response_status=status_code,
+        result=payload,
+        finished_at=_now_iso_utc(),
+        finished_ts=datetime.utcnow().timestamp(),
+    )
+
+
+@app.post("/upload-async")
+async def upload_pdf_async(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not file or not file.filename or not file.filename.lower().endswith(".pdf"):
+        return JSONResponse(status_code=400, content={"detail": "Fisierul trebuie sa fie PDF."})
+    if file.content_type and file.content_type.lower() not in _ALLOWED_PDF_MIME:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Tip fisier neacceptat ({file.content_type}). Sunt acceptate doar PDF-uri."},
+        )
+    content = await file.read()
+    if len(content) > _max_upload_bytes():
+        return JSONResponse(
+            status_code=413,
+            content={"detail": f"Fisierul depaseste limita de {settings.upload_max_mb} MB."},
+        )
+    if not _is_pdf_signature(content):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Fisierul incarcat nu are semnatura PDF valida."},
+        )
+
+    _prune_upload_async_jobs()
+    created_ts = datetime.utcnow().timestamp()
+    job_id = uuid4().hex
+    _set_upload_async_job(
+        job_id,
+        job_id=job_id,
+        owner=(current_user or {}).get("username", ""),
+        file_name=file.filename,
+        status="queued",
+        created_at=_now_iso_utc(),
+        created_ts=created_ts,
+    )
+    asyncio.create_task(
+        _run_upload_async_job(
+            job_id,
+            owner_username=(current_user or {}).get("username", ""),
+            filename=file.filename,
+            content=content,
+            content_type=file.content_type or "application/pdf",
+        )
+    )
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "file_name": file.filename,
+    }
+
+
+@app.get("/upload-async/{job_id}")
+async def upload_pdf_async_status(job_id: str, current_user: dict = Depends(get_current_user)):
+    job = _get_upload_async_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job inexistent sau expirat.")
+    is_owner = (job.get("owner") or "") == (current_user or {}).get("username", "")
+    if not is_owner and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Nu ai acces la acest job.")
+
+    result = {
+        "job_id": job.get("job_id"),
+        "status": job.get("status", "queued"),
+        "file_name": job.get("file_name"),
+        "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "response_status": job.get("response_status"),
+    }
+    if job.get("status") in {"success", "error"}:
+        result["result"] = job.get("result")
+    return result
 
 
 @app.post("/upload")
@@ -2857,6 +3034,44 @@ function selecteazaFisiere(files) {
   document.getElementById('upload-out').innerHTML = '';
 }
 
+async function uploadAsyncCuPolling(fd, fileName, progEl) {
+  const startResp = await fetch('/upload-async', { method: 'POST', body: fd, headers: getAuthHeaders() });
+  if (handle401(startResp)) return { aborted: true };
+  const startJson = await startResp.json().catch(() => ({}));
+  if (!startResp.ok) {
+    return { ok: false, status: startResp.status, payload: startJson };
+  }
+  const jobId = startJson.job_id;
+  if (!jobId) {
+    return { ok: false, status: 500, payload: { detail: 'Serverul nu a returnat job_id pentru upload asincron.' } };
+  }
+
+  for (let i = 0; i < 240; i++) {
+    await new Promise(res => setTimeout(res, 1500));
+    const st = await fetch('/upload-async/' + encodeURIComponent(jobId), { headers: getAuthHeaders() });
+    if (handle401(st)) return { aborted: true };
+    const sj = await st.json().catch(() => ({}));
+    if (!st.ok) {
+      return { ok: false, status: st.status, payload: sj };
+    }
+    if (progEl && (sj.status === 'queued' || sj.status === 'processing')) {
+      progEl.textContent = fileName + ' – ' + (sj.status === 'queued' ? 'în coadă…' : 'se procesează…');
+    }
+    if (sj.status === 'success' || sj.status === 'error') {
+      return {
+        ok: sj.status === 'success',
+        status: sj.response_status || (sj.status === 'success' ? 200 : 500),
+        payload: sj.result || {}
+      };
+    }
+  }
+  return {
+    ok: false,
+    status: 504,
+    payload: { detail: 'Timeout procesare asincronă. Verifică starea și încearcă din nou.' }
+  };
+}
+
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -2879,20 +3094,27 @@ async function trimite(debugMode) {
 
     const fd = new FormData();
     fd.append('file', f);
-    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
-      if (handle401(r)) return;
-      const txt = await r.text();
+      let r;
       let j;
-      try { j = JSON.parse(txt); } catch {
-        // Serverul a returnat non-JSON (ex: 503 la restart) - reincercam o data
-        if (r.status === 503 || r.status === 502 || r.status === 504) {
-          j = { detail: 'Serverul se restartează (eroare ' + r.status + '). Încearcă din nou în 10-20 secunde.' };
-        } else {
-          j = { detail: 'Răspuns neașteptat de la server (status ' + r.status + '). Încearcă din nou.' };
+      if (debugMode) {
+        const uploadUrl = '/upload?debug=1';
+        r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
+        if (handle401(r)) return;
+        const txt = await r.text();
+        try { j = JSON.parse(txt); } catch {
+          if (r.status === 503 || r.status === 502 || r.status === 504) {
+            j = { detail: 'Serverul se restartează (eroare ' + r.status + '). Încearcă din nou în 10-20 secunde.' };
+          } else {
+            j = { detail: 'Răspuns neașteptat de la server (status ' + r.status + '). Încearcă din nou.' };
+          }
         }
+      } else {
+        const asyncResp = await uploadAsyncCuPolling(fd, f.name, prog);
+        if (asyncResp.aborted) return;
+        r = { ok: !!asyncResp.ok, status: asyncResp.status || 500 };
+        j = asyncResp.payload || {};
       }
       if (r.ok) {
         reusit++;
