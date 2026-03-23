@@ -31,8 +31,7 @@ from backend.database import (
     export_backup_data,
     restore_from_backup,
     get_all_analize_standard,
-    count_pacienti,
-    get_all_pacienti,
+    get_pacienti_paginat,
     get_all_users,
     get_analize_necunoscute,
     get_historicul_analiza,
@@ -67,6 +66,18 @@ def _postgresql_connect(url: str):
 
 _ERORI_LOG = Path(__file__).resolve().parent.parent / "upload_eroare.txt"
 _HTTP_BEARER = HTTPBearer(auto_error=False)
+_ALLOWED_PDF_MIME = {"application/pdf", "application/x-pdf", "application/octet-stream"}
+
+
+def _max_upload_bytes() -> int:
+    mb = max(1, int(getattr(settings, "upload_max_mb", 20)))
+    return mb * 1024 * 1024
+
+
+def _is_pdf_signature(content: bytes) -> bool:
+    # Semnătura standard PDF; ignorăm whitespace de la început.
+    sample = (content or b"")[:16].lstrip()
+    return sample.startswith(b"%PDF-")
 
 
 async def get_current_user(
@@ -425,7 +436,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-tsv-bbox-20260322"
+_PARSER_VERSION = "medlife-tsv-bbox-20260323a"
 
 @app.get("/health")
 async def health():
@@ -474,7 +485,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "015_alias_clinice_necunoscute.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "015_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
@@ -758,14 +769,31 @@ async def upload_pdf(
     try:
         if not file or not file.filename or not file.filename.lower().endswith(".pdf"):
             return JSONResponse(status_code=400, content={"detail": "Fisierul trebuie sa fie PDF."})
+        if file.content_type and file.content_type.lower() not in _ALLOWED_PDF_MIME:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": f"Tip fisier neacceptat ({file.content_type}). Sunt acceptate doar PDF-uri."},
+            )
         content = await file.read()
+        if len(content) > _max_upload_bytes():
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Fisierul depaseste limita de {settings.upload_max_mb} MB."},
+            )
+        if not _is_pdf_signature(content):
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Fisierul incarcat nu are semnatura PDF valida."},
+            )
+        debug = bool(debug and _is_admin(current_user))
+        traceback_debug = bool(traceback_debug and _is_admin(current_user) and settings.upload_enable_detailed_errors)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
         from backend.parser import parse_full_text
-        from backend.pdf_processor import extract_text_from_pdf
+        from backend.pdf_processor import extract_text_with_metrics
 
-        text, tip, ocr_err, colored_tokens, extractor = extract_text_from_pdf(tmp_path)
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path)
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
             from backend.parser import _linie_este_exclusa
@@ -775,7 +803,13 @@ async def upload_pdf(
             if parsed_dbg:
                 normalize_rezultate(parsed_dbg.rezultate)
                 analize_list = [
-                    {"denumire": r.denumire_raw, "valoare": r.valoare, "unitate": r.unitate}
+                    {
+                        "denumire": r.denumire_raw,
+                        "valoare": r.valoare,
+                        "unitate": r.unitate,
+                        "needs_review": getattr(r, "needs_review", False),
+                        "review_reasons": getattr(r, "review_reasons", []),
+                    }
                     for r in parsed_dbg.rezultate
                 ]
                 return {
@@ -783,6 +817,7 @@ async def upload_pdf(
                     "parser_version": _PARSER_VERSION,
                     "tip_extragere": tip,
                     "extractor": extractor,
+                    "ocr_metrics": ocr_metrics,
                     "lungime_text": len(text),
                     "numar_linii": len(lines_raw),
                     "text_primele_3000": text[:6000] + ("..." if len(text) > 6000 else ""),
@@ -801,6 +836,7 @@ async def upload_pdf(
                 "lungime_text": len(text),
                 "tip_extragere": tip,
                 "extractor": extractor,
+                "ocr_metrics": ocr_metrics,
                 "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
                 "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
             }
@@ -825,9 +861,33 @@ async def upload_pdf(
                     "lungime_text": len(text.strip()),
                     "tip_extragere": tip,
                     "extractor": extractor,
+                    "ocr_metrics": ocr_metrics,
                 },
             )
         normalize_rezultate(parsed.rezultate)
+        upload_warnings: list[str] = []
+        ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
+        if tip == "ocr" and ocr_summary:
+            avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
+            avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
+            ocr_suspect = (
+                avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0))
+                or avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40))
+            )
+            if ocr_suspect:
+                upload_warnings.append(
+                    f"OCR cu încredere scăzută (mean_conf={avg_conf:.1f}, weak_ratio={avg_weak:.2f}). "
+                    "Rezultatele au fost marcate pentru verificare."
+                )
+                for r in parsed.rezultate:
+                    if "ocr_conf_scazut" not in r.review_reasons:
+                        r.review_reasons.append("ocr_conf_scazut")
+                    r.needs_review = True
+            for r in parsed.rezultate:
+                r.ocr_confidence = avg_conf
+                if r.analiza_standard_id is None and "alias_necunoscut" not in r.review_reasons:
+                    r.review_reasons.append("alias_necunoscut")
+                    r.needs_review = True
         # Aplica colored_tokens: daca valoarea unui rezultat apare cu culoare non-neagra in PDF
         # si nu are deja un flag, o marcam ca anormala (H implicit = atentie)
         if colored_tokens:
@@ -877,6 +937,9 @@ async def upload_pdf(
                     rezultat_meta=rezultat_meta_pentru_insert(
                         getattr(r, "organism_raw", None),
                         getattr(r, "rezultat_tip", None),
+                        getattr(r, "needs_review", False),
+                        getattr(r, "review_reasons", []),
+                        getattr(r, "ocr_confidence", None),
                     ),
                 )
             except (IndexError, TypeError) as ex:
@@ -888,10 +951,13 @@ async def upload_pdf(
             "message": "PDF procesat cu succes.",
             "tip_extragere": tip,
             "extractor": extractor,
+            "ocr_metrics": ocr_metrics,
             "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
             "buletin_id": buletin["id"],
             "data_buletin": buletin.get("data_buletin"),
             "numar_analize": len(parsed.rezultate),
+            "numar_de_verificat": sum(1 for r in parsed.rezultate if getattr(r, "needs_review", False)),
+            "warnings": upload_warnings,
         }
     except Exception as e:
         tb = traceback.format_exc()
@@ -901,8 +967,7 @@ async def upload_pdf(
             pass
         detail = str(e)
         status = 503 if ("connection" in detail.lower() or "role" in detail or "database" in detail.lower()) else 500
-        # Include traceback mereu la erori "tuple index" sau "index" pt debug
-        include_tb = traceback_debug or "tuple index" in detail.lower() or ("index" in detail.lower() and "range" in detail.lower())
+        include_tb = bool(traceback_debug)
         return JSONResponse(
             status_code=status,
             content={"detail": detail[:800], "traceback": tb if include_tb else None},
@@ -924,8 +989,7 @@ async def lista_pacienti(
     current_user: dict = Depends(get_current_user),
 ):
     """Lista pacienti paginata. ?q=text pentru cautare, ?limit=50&offset=0 pentru paginare."""
-    total = count_pacienti(q)
-    items = get_all_pacienti(limit=limit, offset=offset, q=q)
+    items, total = get_pacienti_paginat(limit=limit, offset=offset, q=q)
     return {"items": items, "total": total}
 
 

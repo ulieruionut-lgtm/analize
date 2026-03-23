@@ -141,8 +141,14 @@ def _row_get(row, key_or_index, default=None):
     if row is None:
         return default
     try:
-        if hasattr(row, "keys") and isinstance(key_or_index, str):
-            return row.get(key_or_index, default)
+        if hasattr(row, "keys"):
+            if isinstance(key_or_index, str):
+                return row.get(key_or_index, default)
+            if isinstance(key_or_index, int):
+                keys = list(row.keys())
+                if 0 <= key_or_index < len(keys):
+                    return row.get(keys[key_or_index], default)
+                return default
         if isinstance(key_or_index, int) and hasattr(row, "__getitem__"):
             if 0 <= key_or_index < len(row):
                 return row[key_or_index]
@@ -184,8 +190,17 @@ def _nume_invalid(nume: Optional[str]) -> bool:
         "medic", "varsta", "pacient", "nume pacient", "beneficiar", "cod client",
         "data inregistrari", "data inregistrare", "data tipar",
         "trimitator", "medicitrimitator",
+        "materno-fetala", "materno fetala", "rejuvenare vaginala",
     )):
         return True
+    # Dublare OCR de prenume/sintagma la final: "X Y Z Y Z"
+    toks = re.split(r"\s+", s)
+    if len(toks) >= 5:
+        rest = toks[1:]
+        if len(rest) % 2 == 0:
+            h = len(rest) // 2
+            if [x.lower() for x in rest[:h]] == [x.lower() for x in rest[h:]]:
+                return True
     # Nume care incep cu apostrof parazit
     if re.match(r"^['\u2018\u2019\u201c\u201d\"]", s):
         return True
@@ -236,7 +251,9 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR (LOWER(nume) LIKE '%prenume%' AND LOWER(nume) LIKE '%cnp%') "
         # MedLife: proceduri/specialitate lipite de nume (Histeroscopie, OG,)
         "OR LOWER(nume) LIKE '%histeroscop%' OR LOWER(nume) LIKE '%colposcop%' "
-        "OR LOWER(nume) LIKE '%laparoscop%' OR LOWER(nume) LIKE '% og,%'"
+        "OR LOWER(nume) LIKE '%laparoscop%' OR LOWER(nume) LIKE '% og,%' "
+        "OR LOWER(nume) LIKE '%materno-fetala%' OR LOWER(nume) LIKE '%materno fetala%' "
+        "OR LOWER(nume) LIKE '%rejuvenare vaginala%'"
     )
     if _use_sqlite():
         with get_cursor() as cur:
@@ -266,7 +283,9 @@ def upsert_pacient(cnp: str, nume: str, prenume: Optional[str] = None) -> dict:
         "OR (pacienti.nume LIKE '%%, 1%%' AND (pacienti.nume LIKE '%%MATEI%%' OR pacienti.nume LIKE '%%GHEORGHE%%' OR pacienti.nume LIKE '%%ALEXANDRA%%')) "
         "OR (LOWER(pacienti.nume) LIKE '%%prenume%%' AND LOWER(pacienti.nume) LIKE '%%cnp%%') "
         "OR LOWER(pacienti.nume) LIKE '%%histeroscop%%' OR LOWER(pacienti.nume) LIKE '%%colposcop%%' "
-        "OR LOWER(pacienti.nume) LIKE '%%laparoscop%%' OR LOWER(pacienti.nume) LIKE '%% og,%%'"
+        "OR LOWER(pacienti.nume) LIKE '%%laparoscop%%' OR LOWER(pacienti.nume) LIKE '%% og,%%' "
+        "OR LOWER(pacienti.nume) LIKE '%%materno-fetala%%' OR LOWER(pacienti.nume) LIKE '%%materno fetala%%' "
+        "OR LOWER(pacienti.nume) LIKE '%%rejuvenare vaginala%%'"
     )
     with get_cursor() as cur:
         cur.execute(
@@ -438,7 +457,13 @@ _REZ_VALOARE_TEXT_MAX = 500_000
 _REZ_META_MAX = 16_384
 
 
-def rezultat_meta_pentru_insert(organism_raw: Optional[str], rezultat_tip: Optional[str]) -> Optional[str]:
+def rezultat_meta_pentru_insert(
+    organism_raw: Optional[str],
+    rezultat_tip: Optional[str],
+    needs_review: bool = False,
+    review_reasons: Optional[List[str]] = None,
+    ocr_confidence: Optional[float] = None,
+) -> Optional[str]:
     """Construiește JSON pentru coloana rezultat_meta (microbiologie etc.)."""
     import json
 
@@ -451,6 +476,21 @@ def rezultat_meta_pentru_insert(organism_raw: Optional[str], rezultat_tip: Optio
         clipped_tip = _clip_str(str(rezultat_tip).strip(), 64)
         if clipped_tip:
             d["rezultat_tip"] = clipped_tip
+    if needs_review:
+        d["needs_review"] = True
+    if review_reasons:
+        cleaned_reasons = []
+        for reason in review_reasons:
+            rr = _clip_str(str(reason), 80)
+            if rr:
+                cleaned_reasons.append(rr)
+        if cleaned_reasons:
+            d["review_reasons"] = cleaned_reasons[:20]
+    if ocr_confidence is not None:
+        try:
+            d["ocr_confidence"] = round(float(ocr_confidence), 3)
+        except (TypeError, ValueError):
+            pass
     if not d:
         return None
     raw_json = json.dumps(d, ensure_ascii=False)
@@ -592,6 +632,70 @@ def get_all_pacienti(limit: int = 100, offset: int = 0, q: Optional[str] = None)
                     (limit, offset),
                 )
         return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def get_pacienti_paginat(limit: int = 100, offset: int = 0, q: Optional[str] = None) -> tuple[list, int]:
+    """
+    Returneaza (items, total) pentru lista pacienti.
+    PostgreSQL: un singur query (COUNT OVER) pentru a reduce latenta.
+    SQLite/MySQL: fallback la implementarea existenta.
+    """
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
+
+    if _use_sqlite() or _detect_db_type() == "mysql":
+        items = get_all_pacienti(limit=limit, offset=offset, q=q)
+        total = count_pacienti(q=q)
+        return items, total
+
+    q_clean = (q or "").strip()
+    params: list = []
+    where_sql = ""
+    if q_clean:
+        q_like = f"%{q_clean}%"
+        q_like_lower = f"%{q_clean.lower()}%"
+        where_sql = (
+            "WHERE p.cnp LIKE %s OR "
+            "LOWER(CONCAT(COALESCE(p.nume,''), ' ', COALESCE(p.prenume,''))) LIKE %s"
+        )
+        params.extend([q_like, q_like_lower])
+
+    params.extend([limit, offset])
+    with get_cursor(commit=False) as cur:
+        cur.execute(
+            f"""
+            SELECT
+                p.id, p.cnp, p.nume, p.prenume, p.created_at,
+                COALESCE(bc.nr_buletine, 0)::int AS nr_buletine,
+                COUNT(*) OVER()::int AS total_count
+            FROM pacienti p
+            LEFT JOIN (
+                SELECT pacient_id, COUNT(*)::int AS nr_buletine
+                FROM buletine
+                GROUP BY pacient_id
+            ) bc ON bc.pacient_id = p.id
+            {where_sql}
+            ORDER BY p.nume
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return [], 0
+        total = int(_row_get(rows[0], "total_count", 0) or 0)
+        items = []
+        for r in rows:
+            d = _row_to_dict(r) or {}
+            d.pop("total_count", None)
+            items.append(d)
+        return items, total
 
 
 def search_pacienti(q: str) -> list:
