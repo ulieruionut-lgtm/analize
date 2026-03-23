@@ -1197,6 +1197,67 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
         if not merged:
             merged_result.append(row)
     analize_result = merged_result
+
+    # 6. Collapse final: un singur rând per (denumire, unitate, categorie),
+    # chiar dacă au rămas conflicte între upload-uri duplicate.
+    # Alegem cea mai "curată" valoare pentru fiecare coloană.
+    def _pick_best_value(values: list):
+        valid = [v for v in values if not _is_missing(v)]
+        if not valid:
+            return None
+        numeric = []
+        texty = []
+        for v in valid:
+            if isinstance(v, (int, float)):
+                numeric.append(v)
+                continue
+            s = _norm_cmp(v)
+            try:
+                numeric.append(float(s.replace(",", ".")))
+            except (TypeError, ValueError):
+                texty.append(s)
+        if numeric:
+            return numeric[0]
+        # Pentru text, preferăm varianta cea mai scurtă (evită șiruri OCR concatenate).
+        texty = [t for t in texty if t]
+        if not texty:
+            return None
+        return sorted(texty, key=lambda t: (len(t), t))[0]
+
+    def _pick_best_flag(flags: list):
+        valid = [_norm_cmp(f) for f in flags if not _is_missing(f)]
+        return valid[0] if valid else ""
+
+    collapsed = {}
+    for row in analize_result:
+        key = (
+            (row.get("denumire_standard") or "").strip().lower(),
+            (row.get("unitate") or "").strip().lower(),
+            (row.get("categorie") or "").strip().lower(),
+        )
+        if key not in collapsed:
+            collapsed[key] = {
+                "denumire_standard": row.get("denumire_standard"),
+                "unitate": row.get("unitate"),
+                "categorie": row.get("categorie"),
+                "valori": list(row.get("valori") or []),
+                "flags": list(row.get("flags") or []),
+            }
+            continue
+
+        target = collapsed[key]
+        t_vals = target.get("valori") or []
+        t_flags = target.get("flags") or []
+        s_vals = list(row.get("valori") or [])
+        s_flags = list(row.get("flags") or [])
+        n = min(len(t_vals), len(s_vals))
+        for i in range(n):
+            t_vals[i] = _pick_best_value([t_vals[i], s_vals[i]])
+            t_flags[i] = _pick_best_flag([t_flags[i], s_flags[i]])
+        target["valori"] = t_vals
+        target["flags"] = t_flags
+
+    analize_result = list(collapsed.values())
     
     rezultate_in_baza = sum(len(b.get("rezultate") or []) for b in buletine_sorted)
     return {
