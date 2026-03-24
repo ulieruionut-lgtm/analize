@@ -3033,44 +3033,6 @@ function selecteazaFisiere(files) {
   document.getElementById('upload-out').innerHTML = '';
 }
 
-async function uploadAsyncCuPolling(fd, fileName, progEl) {
-  const startResp = await fetch('/upload-async', { method: 'POST', body: fd, headers: getAuthHeaders() });
-  if (handle401(startResp)) return { aborted: true };
-  const startJson = await startResp.json().catch(() => ({}));
-  if (!startResp.ok) {
-    return { ok: false, status: startResp.status, payload: startJson };
-  }
-  const jobId = startJson.job_id;
-  if (!jobId) {
-    return { ok: false, status: 500, payload: { detail: 'Serverul nu a returnat job_id pentru upload asincron.' } };
-  }
-
-  for (let i = 0; i < 240; i++) {
-    await new Promise(res => setTimeout(res, 1500));
-    const st = await fetch('/upload-async/' + encodeURIComponent(jobId), { headers: getAuthHeaders() });
-    if (handle401(st)) return { aborted: true };
-    const sj = await st.json().catch(() => ({}));
-    if (!st.ok) {
-      return { ok: false, status: st.status, payload: sj };
-    }
-    if (progEl && (sj.status === 'queued' || sj.status === 'processing')) {
-      progEl.textContent = fileName + ' – ' + (sj.status === 'queued' ? 'în coadă…' : 'se procesează…');
-    }
-    if (sj.status === 'success' || sj.status === 'error') {
-      return {
-        ok: sj.status === 'success',
-        status: sj.response_status || (sj.status === 'success' ? 200 : 500),
-        payload: sj.result || {}
-      };
-    }
-  }
-  return {
-    ok: false,
-    status: 504,
-    payload: { detail: 'Timeout procesare asincronă. Verifică starea și încearcă din nou.' }
-  };
-}
-
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -3095,25 +3057,18 @@ async function trimite(debugMode) {
     fd.append('file', f);
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      let r;
+      const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
+      const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
+      if (handle401(r)) return;
+      const txt = await r.text();
       let j;
-      if (debugMode) {
-        const uploadUrl = '/upload?debug=1';
-        r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
-        if (handle401(r)) return;
-        const txt = await r.text();
-        try { j = JSON.parse(txt); } catch {
-          if (r.status === 503 || r.status === 502 || r.status === 504) {
-            j = { detail: 'Serverul se restartează (eroare ' + r.status + '). Încearcă din nou în 10-20 secunde.' };
-          } else {
-            j = { detail: 'Răspuns neașteptat de la server (status ' + r.status + '). Încearcă din nou.' };
-          }
+      try { j = JSON.parse(txt); } catch {
+        // Serverul a returnat non-JSON (ex: 503 la restart) - reincercam o data
+        if (r.status === 503 || r.status === 502 || r.status === 504) {
+          j = { detail: 'Serverul se restartează (eroare ' + r.status + '). Încearcă din nou în 10-20 secunde.' };
+        } else {
+          j = { detail: 'Răspuns neașteptat de la server (status ' + r.status + '). Încearcă din nou.' };
         }
-      } else {
-        const asyncResp = await uploadAsyncCuPolling(fd, f.name, prog);
-        if (asyncResp.aborted) return;
-        r = { ok: !!asyncResp.ok, status: asyncResp.status || 500 };
-        j = asyncResp.payload || {};
       }
       if (r.ok) {
         reusit++;
