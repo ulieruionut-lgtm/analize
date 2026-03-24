@@ -53,6 +53,15 @@ FRAGMENTE_ADMINISTRATIVE_NORMALIZATE: FrozenSet[str] = frozenset(
         "analize subcontractate",
         "act zv",
         "medic trimitator",
+        "cod document",
+        "examen complet de urina",
+        "valvulara mecanica",
+        "god proba",
+        "denumiretest",
+        "tipareste",
+        "foarte crescut",
+        "proba numarul",
+        "medicina de laborato",
     }
 )
 
