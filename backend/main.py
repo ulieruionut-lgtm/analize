@@ -75,7 +75,7 @@ _UPLOAD_ASYNC_JOBS: dict[str, dict] = {}
 _UPLOAD_ASYNC_LOCK = threading.Lock()
 _UPLOAD_ASYNC_TTL_SECONDS = 6 * 3600
 _UPLOAD_ASYNC_MAX_JOBS = 300
-_OCR_UPLOAD_TIMEOUT_SECONDS = int(getattr(settings, "upload_ocr_timeout_seconds", 45))
+_OCR_UPLOAD_TIMEOUT_SECONDS = int(getattr(settings, "upload_ocr_timeout_seconds", 120))
 
 
 def _max_upload_bytes() -> int:
@@ -103,6 +103,16 @@ def _pdf_signature_detail(content: bytes) -> str:
             "Re-descarca documentul folosind butonul de export PDF."
         )
     return "Fisierul incarcat nu are semnatura PDF valida."
+
+
+def _ocr_timeout_seconds_for_upload(content_len: int, debug_mode: bool = False) -> int:
+    # Timeout dinamic: fisierele scanate mari au nevoie de mai mult timp OCR.
+    base = max(30, int(_OCR_UPLOAD_TIMEOUT_SECONDS))
+    mb = max(1.0, float(content_len or 0) / (1024.0 * 1024.0))
+    extra = int(min(180, mb * 20))
+    if debug_mode:
+        extra += 60
+    return base + extra
 
 
 def _now_iso_utc() -> str:
@@ -1010,6 +1020,7 @@ async def upload_pdf(
             )
         debug = bool(debug and _is_admin(current_user))
         traceback_debug = bool(traceback_debug and _is_admin(current_user) and settings.upload_enable_detailed_errors)
+        ocr_timeout_seconds = _ocr_timeout_seconds_for_upload(len(content), debug_mode=debug)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
@@ -1021,7 +1032,7 @@ async def upload_pdf(
         try:
             text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
                 asyncio.to_thread(extract_text_with_metrics, tmp_path),
-                timeout=max(15, _OCR_UPLOAD_TIMEOUT_SECONDS),
+                timeout=ocr_timeout_seconds,
             )
         except asyncio.TimeoutError:
             return JSONResponse(
@@ -1095,7 +1106,7 @@ async def upload_pdf(
                 try:
                     text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
                         asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
-                        timeout=max(15, _OCR_UPLOAD_TIMEOUT_SECONDS),
+                        timeout=ocr_timeout_seconds,
                     )
                 except asyncio.TimeoutError:
                     text2 = ""
