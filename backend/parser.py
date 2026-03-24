@@ -216,6 +216,8 @@ def _linie_este_exclusa(s: str) -> bool:
     # Evită alternativa goală din regex: match de lungime 0 nu înseamnă linie exclusă
     if m_exc is not None and m_exc.end() > 0:
         return True
+    if _RE_NUME_MEDIC.match(t):
+        return True
     from backend.administrative_fragments import contin_fragment_administrativ
 
     return contin_fragment_administrativ(t)
@@ -226,6 +228,11 @@ _LINIE_NOTA = re.compile(r"^\(|^\s*\(")
 # Nume pacienți (2+ cuvinte toate majuscule: NITU MATEI, MANDACHE OANA ALEXANDRA)
 # Fără IGNORECASE ca să nu excludem "Creatinina urinară"
 _RE_NUME_PACIENT_ALL_CAPS = re.compile(r"^[A-ZĂÂÎȘȚ]+\s+[A-ZĂÂÎȘȚ]+(?:\s+[A-ZĂÂÎȘȚ]+)*\s*$")
+_RE_NUME_MEDIC = re.compile(
+    r"(?i)^(?:dr\.?|doctor|medic(?:ul)?|medic(?:a)?\s+primar)\s+"
+    r"[A-ZĂÂÎȘȚ][A-Za-zĂÂÎȘȚăâîșț'\-]+"
+    r"(?:\s+[A-ZĂÂÎȘȚ][A-Za-zĂÂÎȘȚăâîșț'\-]+){1,3}\s*$"
+)
 
 
 # Rezultate pure (valori, nu analize) - ex: "Negativ", "Normal (Normal)"
@@ -2099,6 +2106,8 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         if not r.denumire_raw or len(r.denumire_raw.strip()) < 2:
             return
         den_clean = (r.denumire_raw or "").strip()
+        if _RE_NUME_MEDIC.match(den_clean):
+            return
         # Curata prefixe OCR frecvente: "1 * ", "i 8 * ", "a 3 ", etc.
         den_clean = re.sub(r"^(?:[a-z]\s+){1,3}(?=(?:\d|\*|[A-ZĂÂÎȘȚa-zăâîșț]))", "", den_clean, flags=re.IGNORECASE)
         den_clean = re.sub(r"^\d+\s*[\*\.\-]?\s*", "", den_clean)
