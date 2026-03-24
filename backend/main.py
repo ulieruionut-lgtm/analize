@@ -918,7 +918,6 @@ async def upload_pdf_async(
     job_id = uuid4().hex
     _set_upload_async_job(
         job_id,
-        job_id=job_id,
         owner=(current_user or {}).get("username", ""),
         file_name=file.filename,
         status="queued",
