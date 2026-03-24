@@ -1008,6 +1008,7 @@ async def upload_pdf(
                 content={"detail": f"Tip fisier neacceptat ({file.content_type}). Sunt acceptate doar PDF-uri."},
             )
         content = await file.read()
+        file_mb = float(len(content or b"")) / (1024.0 * 1024.0)
         if len(content) > _max_upload_bytes():
             return JSONResponse(
                 status_code=413,
@@ -1029,9 +1030,13 @@ async def upload_pdf(
 
         # OCR-ul pe PDF scanat poate dura mult; rulam in thread ca sa nu blocam serverul.
         # Impunem timeout ca sa evitam 502 de la gateway cand OCR ramane blocat prea mult.
+        dpi_first: Optional[int] = None
+        if file_mb >= 3.0:
+            # Pentru scanuri mari reducem DPI-ul initial, altfel OCR poate depasi fereastra de request.
+            dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
         try:
             text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
-                asyncio.to_thread(extract_text_with_metrics, tmp_path),
+                asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),
                 timeout=ocr_timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -1102,7 +1107,10 @@ async def upload_pdf(
             count_now = len(parsed.rezultate) if parsed else 0
             unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
             if unknown_name or count_now < 12:
-                dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
+                if file_mb >= 3.0:
+                    dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 60, 340), 380)
+                else:
+                    dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
                 try:
                     text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
                         asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
