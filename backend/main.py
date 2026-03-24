@@ -88,6 +88,22 @@ def _is_pdf_signature(content: bytes) -> bool:
     return sample.startswith(b"%PDF-")
 
 
+def _pdf_signature_detail(content: bytes) -> str:
+    sample = (content or b"")[:32].lstrip()
+    upper = sample.upper()
+    if upper.startswith(b"HTTP/"):
+        return (
+            "Fisierul nu este PDF real (pare raspuns web/redirect salvat ca .pdf). "
+            "Deschide fisierul in browser si salveaza/exporta din nou PDF-ul original."
+        )
+    if upper.startswith(b"<!DOCTYPE") or upper.startswith(b"<HTML"):
+        return (
+            "Fisierul incarcat este pagina HTML, nu PDF. "
+            "Re-descarca documentul folosind butonul de export PDF."
+        )
+    return "Fisierul incarcat nu are semnatura PDF valida."
+
+
 def _now_iso_utc() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -910,7 +926,7 @@ async def upload_pdf_async(
     if not _is_pdf_signature(content):
         return JSONResponse(
             status_code=400,
-            content={"detail": "Fisierul incarcat nu are semnatura PDF valida."},
+            content={"detail": _pdf_signature_detail(content)},
         )
 
     _prune_upload_async_jobs()
@@ -989,7 +1005,7 @@ async def upload_pdf(
         if not _is_pdf_signature(content):
             return JSONResponse(
                 status_code=400,
-                content={"detail": "Fisierul incarcat nu are semnatura PDF valida."},
+                content={"detail": _pdf_signature_detail(content)},
             )
         debug = bool(debug and _is_admin(current_user))
         traceback_debug = bool(traceback_debug and _is_admin(current_user) and settings.upload_enable_detailed_errors)
