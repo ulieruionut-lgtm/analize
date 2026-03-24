@@ -2099,7 +2099,40 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         if not r.denumire_raw or len(r.denumire_raw.strip()) < 2:
             return
         den_clean = (r.denumire_raw or "").strip()
+        # Curata prefixe OCR frecvente: "1 * ", "i 8 * ", "a 3 ", etc.
+        den_clean = re.sub(r"^(?:[a-z]\s+){1,3}(?=(?:\d|\*|[A-ZĂÂÎȘȚa-zăâîșț]))", "", den_clean, flags=re.IGNORECASE)
+        den_clean = re.sub(r"^\d+\s*[\*\.\-]?\s*", "", den_clean)
+        # Daca OCR a lipit rezultat/UM dupa separator de coloana, pastram doar denumirea.
+        den_clean = re.sub(r"\s*\|.*$", "", den_clean).strip()
+        den_clean = den_clean.strip(" -:;.,")
+        if not den_clean:
+            return
+        r.denumire_raw = den_clean
         den_low = den_clean.lower()
+        den_norm = re.sub(r"[^a-z0-9]+", " ", den_low).strip()
+        if den_low.startswith("metoda:"):
+            return
+        if any(
+            kw in den_norm
+            for kw in (
+                "tiparit de",
+                "cod document",
+                "cod proba",
+                "proba numarul",
+                "punct ambulator",
+                "punct recolta",
+                "diagnostic",
+                "medicina de laborator",
+                "data inregistrarii",
+                "valori in afara limitelor",
+                "opiniile si interpretarile",
+                "aceste rezultate pot fi folosite",
+                "adresa jud",
+                "act zv",
+                "formular",
+            )
+        ):
+            return
         if len(den_clean) < 3 and den_low != "ph":
             return
         if re.fullmatch(r"[a-z]{2,3}", den_low) and den_low != "ph":
