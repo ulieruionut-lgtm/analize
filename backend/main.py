@@ -75,6 +75,7 @@ _UPLOAD_ASYNC_JOBS: dict[str, dict] = {}
 _UPLOAD_ASYNC_LOCK = threading.Lock()
 _UPLOAD_ASYNC_TTL_SECONDS = 6 * 3600
 _UPLOAD_ASYNC_MAX_JOBS = 300
+_OCR_UPLOAD_TIMEOUT_SECONDS = int(getattr(settings, "upload_ocr_timeout_seconds", 45))
 
 
 def _max_upload_bytes() -> int:
@@ -1016,10 +1017,20 @@ async def upload_pdf(
         from backend.pdf_processor import extract_text_with_metrics
 
         # OCR-ul pe PDF scanat poate dura mult; rulam in thread ca sa nu blocam serverul.
-        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.to_thread(
-            extract_text_with_metrics,
-            tmp_path,
-        )
+        # Impunem timeout ca sa evitam 502 de la gateway cand OCR ramane blocat prea mult.
+        try:
+            text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
+                asyncio.to_thread(extract_text_with_metrics, tmp_path),
+                timeout=max(15, _OCR_UPLOAD_TIMEOUT_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "Procesarea OCR a depasit timpul limita pentru acest fisier. Incearca din nou sau foloseste un PDF mai clar/mai mic.",
+                    "hint": "Daca problema persista, ruleaza Verificare (fara salvare) sau split pe pagini.",
+                },
+            )
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
             from backend.parser import _linie_este_exclusa
@@ -1081,11 +1092,18 @@ async def upload_pdf(
             unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
             if unknown_name or count_now < 12:
                 dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
-                text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.to_thread(
-                    extract_text_with_metrics,
-                    tmp_path,
-                    dpi_retry,
-                )
+                try:
+                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
+                        asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
+                        timeout=max(15, _OCR_UPLOAD_TIMEOUT_SECONDS),
+                    )
+                except asyncio.TimeoutError:
+                    text2 = ""
+                    tip2 = tip
+                    ocr_err2 = "OCR retry timeout"
+                    colored_tokens2 = []
+                    extractor2 = extractor
+                    ocr_metrics2 = ocr_metrics
                 parsed2: Optional[PatientParsed] = parse_full_text(text2)
                 if not parsed2:
                     parsed2 = parse_full_text(text2, cnp_optional=True)
@@ -3049,6 +3067,25 @@ function selecteazaFisiere(files) {
   document.getElementById('upload-out').innerHTML = '';
 }
 
+async function _uploadCuRetry(uploadUrl, fd) {
+  let lastResp = null;
+  let lastText = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
+    if (handle401(r)) return { aborted: true };
+    const txt = await r.text();
+    if (r.ok) return { response: r, text: txt };
+    lastResp = r;
+    lastText = txt;
+    if ((r.status === 502 || r.status === 503 || r.status === 504) && attempt === 0) {
+      await new Promise(res => setTimeout(res, 8000));
+      continue;
+    }
+    break;
+  }
+  return { response: lastResp, text: lastText };
+}
+
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -3071,12 +3108,13 @@ async function trimite(debugMode) {
 
     const fd = new FormData();
     fd.append('file', f);
+    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
-      const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
-      if (handle401(r)) return;
-      const txt = await r.text();
+      const rq = await _uploadCuRetry(uploadUrl, fd);
+      if (rq.aborted) return;
+      const r = rq.response;
+      const txt = rq.text || '';
       let j;
       try { j = JSON.parse(txt); } catch {
         // Serverul a returnat non-JSON (ex: 503 la restart) - reincercam o data
