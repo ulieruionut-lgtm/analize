@@ -2148,6 +2148,30 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         categorie = _categorie_inferata_din_denumire(r.denumire_raw, categorie)
         if _este_zgomot_microbiologie(r, categorie):
             return
+        val_txt = (r.valoare_text or "").strip()
+        if (categorie or "") != "Microbiologie":
+            # In afara microbiologiei, ignoram pseudo-randurile fara rezultat real.
+            if r.valoare is None and not val_txt:
+                return
+            if r.valoare is None and val_txt:
+                vlow = val_txt.lower()
+                if len(vlow) > 60 and not re.search(
+                    r"(negativ|pozitiv|absent|prezent|normal|rar|frecvent|urme|reactiv)",
+                    vlow,
+                    re.IGNORECASE,
+                ):
+                    return
+        if any(
+            kw in den_norm
+            for kw in (
+                "foarte crescut",
+                "nivel de risc",
+                "valoare egfr",
+                "infarct miocardic",
+                "proteza valvulara",
+            )
+        ):
+            return
         if _pare_rand_tabel_concatenat(r):
             return
         if _RE_DOAR_VALOARE_CA_PARAMETRU.match(r.denumire_raw.strip()):
