@@ -35,6 +35,24 @@ FRAGMENTE_ADMINISTRATIVE_NORMALIZATE: FrozenSet[str] = frozenset(
         "ani, 3 luni",
         "ani 3 luni",
         "luni 3 ani",
+        # Fragmente recurente in PDF-uri OCR unde se salveaza "gunoi" ca analize
+        "tiparit de",
+        "punct recolta",
+        "punct de recoltare",
+        "proba conforma",
+        "proba:",
+        "cod proba",
+        "cod client",
+        "data inregistrarii",
+        "data rezultatului",
+        "diagnostic",
+        "adresa jud",
+        "valori in afara limitelor admise",
+        "opiniile si interpretarile",
+        "aceste rezultate pot fi folosite",
+        "analize subcontractate",
+        "act zv",
+        "medic trimitator",
     }
 )
 
@@ -47,6 +65,9 @@ def _normalizeaza_pentru_fragmente(text: str) -> str:
     s = "".join(
         c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
     )
+    # OCR-ul introduce des simboluri/paraziti intre cuvinte; ii transformam in spatii
+    # pentru matching robust al fragmentelor administrative.
+    s = re.sub(r"[^a-z0-9]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 

@@ -182,7 +182,13 @@ _LINII_EXCLUSE = re.compile(
     r"Ă\s+REN\s+Metoda|ĂREN\s+Metoda|"
     r"mfarctulur\s+mrocard|mrocardrc|infarctulur\s+mrocard|"
     r"^\d{3,5}\s+[Cc]elule\s*:|^\d{3,5}\s+[Cc]elule\s|"
-    r"^\d{1,2}:\d{2}\s+[Aa]lte\s+crist",
+    r"^\d{1,2}:\d{2}\s+[Aa]lte\s+crist|"
+    # Antete de tabel (PDF text) care nu sunt analize
+    r"^Denumire\s+Rezultat(?:\s+UM)?(?:\s+Interval)?|"
+    r"^Interval\s+de\s+referin[tț]a|"
+    r"^Suma\s+analizelor\s+de\s+pe\s+buletin|"
+    r"^Copii\s+[șs]i\s+adolescen[tț]i|"
+    r"^Ser\s*/\s*Metoda|^Ser\s*/\s*metoda|^Ser\s*/\s*Test\s+calculat",
     re.IGNORECASE,
 )
 
@@ -616,7 +622,7 @@ _RE_SEGMENT_PROCEDURA_MEDLIFE = re.compile(
     r"(?i)^(OG|Histeroscopie|Colposcopie|Laparoscopie|FIV|IVF|AMIOC|"
     r"Histerosonografie|Ecografie|Consulta|Consultatie|Consult\s|"
     r"Obstetric|Ginecologic|Obstetrica|Chirurgie|Endoscop|Patologie|"
-    r"Spitalul|Clinic|Cabinet)\b",
+    r"Spitalul|Clinic|Cabinet|materno[\s\-]?fetala|rejuvenare|uroginecolog|perineolog)\b",
 )
 
 
@@ -628,6 +634,13 @@ def _taie_suffix_medlife_proceduri(s: str) -> str:
     if not s or not s.strip():
         return s or ""
     s = s.strip()
+    # Sufixe procedurale frecvente (MedLife) lipite de nume
+    s = re.sub(
+        r"\s+(?:materno[\s\-]?fetala|rejuvenare\s+vaginala|uroginecolog(?:ie)?|perineolog(?:ie)?)\b.*$",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    ).strip()
     # OG urmat de listă cu virgulă (frecvent lipit de ultimul prenume)
     s = re.sub(r"\s+OG\s*,.*$", "", s, flags=re.IGNORECASE).strip()
     # Virgulă + proceduri fără OG în față
@@ -702,6 +715,14 @@ def _curata_nume(raw: str) -> str:
     s = re.sub(r"\bvladasel\b", "VLADASEL", s, flags=re.IGNORECASE)
     # MedLife: specialitate / proceduri lipite de Nume/Prenume
     s = _taie_suffix_medlife_proceduri(s)
+    # OCR: dublare prenume după tăiere sufix (ex: "TUTUNGIU GABRIELA CRISTINA GABRIELA CRISTINA")
+    toks = s.split()
+    if len(toks) >= 5:
+        rest = toks[1:]
+        if len(rest) % 2 == 0:
+            half = len(rest) // 2
+            if rest[:half] == rest[half:]:
+                s = " ".join([toks[0]] + rest[:half])
     return s
 
 
@@ -824,6 +845,34 @@ def _nume_este_gunoi(nume: str) -> bool:
     if len(lit) >= 4 and nonlit > len(lit):
         return True
     return False
+
+
+def _sanitize_nume_prenume_final(nume: str, prenume: Optional[str]) -> tuple[str, Optional[str]]:
+    """
+    Curățare finală defensivă (post-extracție) pentru cazuri OCR unde specialități/proceduri
+    rămân lipite de nume sau se dublează fragmentele de prenume.
+    """
+    full = " ".join([x for x in [(nume or "").strip(), (prenume or "").strip()] if x]).strip()
+    if not full:
+        return (nume or "").strip(), (prenume or None)
+    # taie orice după tokeni procedurali (indiferent de punctuație/case)
+    full = re.sub(
+        r"(?i)\b(materno[\s\-]?fetala|rejuvenare|uroginecolog(?:ie)?|perineolog(?:ie)?)\b.*$",
+        "",
+        full,
+    ).strip(" ,;:-")
+    # dedupe pe jumătate: "X Y Z Y Z"
+    toks = full.split()
+    if len(toks) >= 5:
+        rest = toks[1:]
+        if len(rest) % 2 == 0:
+            h = len(rest) // 2
+            if [x.lower() for x in rest[:h]] == [x.lower() for x in rest[h:]]:
+                full = " ".join([toks[0]] + rest[:h]).strip()
+    parts = full.split(None, 1)
+    if not parts:
+        return (nume or "").strip(), (prenume or None)
+    return parts[0], (parts[1] if len(parts) > 1 else None)
 
 
 def extract_nume(text: str) -> tuple[str, Optional[str]]:
@@ -1991,19 +2040,93 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         s = re.sub(r"\s*:\s*$", "", s)
         return s
 
+    def _pare_rand_tabel_concatenat(r: RezultatParsat) -> bool:
+        """
+        Elimină rezultate false unde denumirea și valoarea_text sunt de fapt două rânduri
+        concatenate din tabel (ex: "Trombocite ...", valoare_text="Leucocite ...").
+        """
+        den = (r.denumire_raw or "").strip()
+        vt = (r.valoare_text or "").strip()
+        if r.valoare is not None or not den or not vt:
+            return False
+        den_has_numeric_unit = bool(re.search(r"\d+[.,]?\d*\s*(?:10\^\d|%|mg/dL|U/L|pg|ng|mm/h|/)", den, re.IGNORECASE))
+        vt_has_numeric_unit = bool(re.search(r"\d+[.,]?\d*\s*(?:10\^\d|%|mg/dL|U/L|pg|ng|mm/h|/)", vt, re.IGNORECASE))
+        vt_has_param = bool(re.search(r"\b(leucocite|hemoglob|hematocrit|trombocite|neutrofile|limfocite|monocite|eozinofile|bazofile|urobilinogen)\b", vt, re.IGNORECASE))
+        return den_has_numeric_unit and vt_has_numeric_unit and vt_has_param
+
+    def _este_zgomot_tabel_header(den: str) -> bool:
+        d = (den or "").strip()
+        if not d:
+            return True
+        return bool(
+            re.match(
+                r"(?i)^(Denumire\s+Rezultat|Interval\s+de\s+referin[tț]a|Ser\s*/\s*Metoda|Ser\s*/\s*metoda|Ser\s*/\s*Test\s+calculat)",
+                d,
+            )
+        )
+
+    def _este_zgomot_microbiologie(r: RezultatParsat, categorie: Optional[str]) -> bool:
+        if (categorie or "") != "Microbiologie":
+            return False
+        den = (r.denumire_raw or "").strip().lower()
+        if den in {"microbiotei normale vaginale", "staphylococcus, streptococcus, genurile"}:
+            return True
+        if den.startswith("staphylococcus, streptococcus, genurile"):
+            return True
+        return False
+
+    def _pare_mojibake_gunoi(den: str) -> bool:
+        d = (den or "").strip()
+        if not d:
+            return True
+        low = d.lower()
+        if any(tok in d for tok in ("ÔÇ", "┬", "├", "�")):
+            # Permitem trecerea doar daca linia are un nucleu clar de analiza.
+            if not re.search(
+                r"(bilirubin|tgo|ast|alt|rbc|wbc|hgb|hemoglob|hematocrit|"
+                r"eozinofil|bazofil|creatinin|uree|glucoz|glicem|potasiu|sodiu|"
+                r"toxina|mrsa|esbl|clostridium|enterobacter|moraxella)",
+                low,
+                re.IGNORECASE,
+            ):
+                return True
+        return False
+
     def _add(r: Optional[RezultatParsat], categorie: Optional[str] = None) -> None:
         if r is None:
             return
         r.denumire_raw = _curata_denumire_rezultat(r.denumire_raw, r.valoare_text)
         if not r.denumire_raw or len(r.denumire_raw.strip()) < 2:
             return
+        den_clean = (r.denumire_raw or "").strip()
+        den_low = den_clean.lower()
+        if len(den_clean) < 3 and den_low != "ph":
+            return
+        if re.fullmatch(r"[a-z]{2,3}", den_low) and den_low != "ph":
+            return
+        if _pare_mojibake_gunoi(den_clean):
+            return
+        # Reutilizam filtrul central de "denumire gunoi" pentru a opri pseudo-analizele
+        # administrative/artefact OCR care ajung in continuare dupa parse.
+        if este_denumire_gunoi(den_clean):
+            return
+        if _este_zgomot_tabel_header(r.denumire_raw):
+            return
         categorie = _categorie_inferata_din_denumire(r.denumire_raw, categorie)
+        if _este_zgomot_microbiologie(r, categorie):
+            return
+        if _pare_rand_tabel_concatenat(r):
+            return
         if _RE_DOAR_VALOARE_CA_PARAMETRU.match(r.denumire_raw.strip()):
             return
         if r.valoare is not None:
             val_key: object = round(r.valoare, 3)
         else:
             val_key = (r.valoare_text or "").strip().lower()
+        if getattr(r, "rezultat_tip", None) == "microbiology":
+            # Dedupe mai agresiv pentru descrierile microbiologice multi-linie.
+            val_key = re.sub(r"\s+", " ", str(val_key)).strip()
+            val_key = re.sub(r"[^a-z0-9ăâîșț\s\-\.,:/]", "", val_key)[:180]
         # Include categoria în cheie: aceeași denumire (Leucocite, Hematii, Glucoză) poate apărea
         # în hemogramă și la sumar urină cu aceeași valoare text (ex. „negativ”) — altfel pierdem rânduri.
         cat_key = (categorie if categorie is not None else "") or ""
@@ -2301,6 +2424,7 @@ def parse_full_text(text: str, cnp_optional: bool = False) -> Optional[PatientPa
         else:
             return None
     nume, prenume = extract_nume(text)
+    nume, prenume = _sanitize_nume_prenume_final(nume, prenume)
     # Siguranță suplimentară: OCR uneori lasă «CNP:» în câmpul Prenume
     if prenume and _prenume_invalid(_curata_camp_prenume(prenume)):
         prenume = None
