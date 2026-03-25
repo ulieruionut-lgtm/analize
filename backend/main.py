@@ -178,6 +178,78 @@ def _rezultat_pare_gunoi(denumire: Optional[str], unitate: Optional[str]) -> boo
     return False
 
 
+def _calc_upload_quality(parsed: Optional[PatientParsed]) -> dict:
+    rezultate = list(getattr(parsed, "rezultate", []) or [])
+    total_rez = len(rezultate)
+    nec = sum(1 for r in rezultate if getattr(r, "analiza_standard_id", None) is None)
+    zg = sum(
+        1
+        for r in rezultate
+        if _rezultat_pare_gunoi(getattr(r, "denumire_raw", ""), getattr(r, "unitate", ""))
+    )
+    unknown_ratio = (nec / total_rez) if total_rez else 1.0
+    noise_ratio = (zg / total_rez) if total_rez else 1.0
+    unknown_name = (not parsed) or ((getattr(parsed, "nume", "") or "").strip().lower() == "necunoscut")
+    return {
+        "total_rez": total_rez,
+        "nec": nec,
+        "zg": zg,
+        "unknown_ratio": float(unknown_ratio),
+        "noise_ratio": float(noise_ratio),
+        "unknown_name": bool(unknown_name),
+    }
+
+
+def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Optional[dict]) -> dict:
+    q = _calc_upload_quality(parsed)
+    score = 100
+    reasons: list[str] = []
+
+    if q["unknown_name"]:
+        score -= 25
+        reasons.append("nume_necunoscut")
+    if q["total_rez"] < 12:
+        score -= 20
+        reasons.append("prea_putine_analize")
+    if q["unknown_ratio"] > 0.55:
+        score -= 20
+        reasons.append("procent_necunoscute_mare")
+    if q["noise_ratio"] > 0.35:
+        score -= 20
+        reasons.append("procent_zgomot_mare")
+
+    ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
+    avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
+    avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
+    if tip == "ocr":
+        if avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)):
+            score -= 15
+            reasons.append("ocr_conf_scazut")
+        if avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
+            score -= 10
+            reasons.append("ocr_weak_ratio_mare")
+
+    score = max(0, min(100, int(round(score))))
+    decision = "auto"
+    if score < 60:
+        decision = "ai"
+    elif score < 75:
+        decision = "review"
+
+    return {
+        "score": score,
+        "decision": decision,
+        "reasons": reasons,
+        "stats": {
+            "total_analize": q["total_rez"],
+            "unknown_ratio": round(q["unknown_ratio"], 3),
+            "noise_ratio": round(q["noise_ratio"], 3),
+            "avg_mean_conf": round(avg_conf, 2),
+            "avg_weak_ratio": round(avg_weak, 3),
+        },
+    }
+
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_HTTP_BEARER),
 ):
@@ -1055,6 +1127,7 @@ async def upload_pdf(
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
             if parsed_dbg:
                 normalize_rezultate(parsed_dbg.rezultate)
+                triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
                 analize_list = [
                     {
                         "denumire": r.denumire_raw,
@@ -1081,6 +1154,7 @@ async def upload_pdf(
                     "prenume": parsed_dbg.prenume,
                     "numar_analize": len(parsed_dbg.rezultate),
                     "analize": analize_list,
+                    "triere_ai": triage_dbg,
                 }
             return {
                 "debug": True,
@@ -1147,11 +1221,10 @@ async def upload_pdf(
         if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
         if tip == "ocr":
-            total_rez = len(parsed.rezultate)
-            nec = sum(1 for r in parsed.rezultate if getattr(r, "analiza_standard_id", None) is None)
-            zg = sum(1 for r in parsed.rezultate if _rezultat_pare_gunoi(getattr(r, "denumire_raw", ""), getattr(r, "unitate", "")))
-            unknown_ratio = (nec / total_rez) if total_rez else 1.0
-            noise_ratio = (zg / total_rez) if total_rez else 1.0
+            q = _calc_upload_quality(parsed)
+            total_rez = int(q["total_rez"])
+            unknown_ratio = float(q["unknown_ratio"])
+            noise_ratio = float(q["noise_ratio"])
             suspect_flags = 0
             if (parsed.nume or "").strip().lower() == "necunoscut":
                 suspect_flags += 1
@@ -1163,6 +1236,7 @@ async def upload_pdf(
                 suspect_flags += 1
             # Nu salvam automat buletinele foarte corupte OCR: evitam "gunoi" persistent in DB.
             if suspect_flags >= 2:
+                triage = _calc_triage_ai(parsed, tip, ocr_metrics)
                 return JSONResponse(
                     status_code=422,
                     content={
@@ -1175,6 +1249,7 @@ async def upload_pdf(
                             "necunoscute": round(unknown_ratio, 3),
                             "zgomot": round(noise_ratio, 3),
                         },
+                        "triere_ai": triage,
                         "hint": "Refa upload-ul cu PDF mai clar (scan 300 DPI) sau foloseste Verificare inainte de salvare.",
                     },
                 )
@@ -1216,6 +1291,17 @@ async def upload_pdf(
                 if r.analiza_standard_id is None and "alias_necunoscut" not in r.review_reasons:
                     r.review_reasons.append("alias_necunoscut")
                     r.needs_review = True
+        triage = _calc_triage_ai(parsed, tip, ocr_metrics)
+        if triage["decision"] in ("review", "ai"):
+            upload_warnings.append(f"Triage document: {triage['decision'].upper()} (score={triage['score']}).")
+            for r in parsed.rezultate:
+                if triage["decision"] == "ai":
+                    if "triere_ai" not in r.review_reasons:
+                        r.review_reasons.append("triere_ai")
+                else:
+                    if "triere_review" not in r.review_reasons:
+                        r.review_reasons.append("triere_review")
+                r.needs_review = True
         # Aplica colored_tokens: daca valoarea unui rezultat apare cu culoare non-neagra in PDF
         # si nu are deja un flag, o marcam ca anormala (H implicit = atentie)
         if colored_tokens:
@@ -1286,6 +1372,7 @@ async def upload_pdf(
             "numar_analize": len(parsed.rezultate),
             "numar_de_verificat": sum(1 for r in parsed.rezultate if getattr(r, "needs_review", False)),
             "warnings": upload_warnings,
+            "triere_ai": triage,
         }
     except Exception as e:
         tb = traceback.format_exc()
@@ -3056,16 +3143,52 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 let fisierSelectat = [];
 
-fileInput.onchange = e => selecteazaFisiere(Array.from(e.target.files));
+fileInput.onchange = e => { void selecteazaFisiere(Array.from(e.target.files)); };
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('drag-over');
-  selecteazaFisiere(Array.from(e.dataTransfer.files));
+  void selecteazaFisiere(Array.from(e.dataTransfer.files));
 });
 
-function selecteazaFisiere(files) {
+/** Citește primii octeți și verifică semnătura reală %PDF- (nu doar extensia .pdf). */
+async function _verificaContinutPdfReal(file) {
+  const n = Math.min(file.size || 0, 2048);
+  if (n < 5) return { ok: false, cod: 'gol', mesaj: 'Fișierul este gol sau prea mic.' };
+  const ab = await file.slice(0, n).arrayBuffer();
+  const b = new Uint8Array(ab);
+  let i = 0;
+  while (i < b.length && (b[i] === 9 || b[i] === 10 || b[i] === 13 || b[i] === 32)) i++;
+  if (i + 5 > b.length) return { ok: false, cod: 'necunoscut', mesaj: 'Nu începe cu un PDF valid.' };
+  const sig = String.fromCharCode(b[i], b[i+1], b[i+2], b[i+3], b[i+4]);
+  if (sig === '%PDF-') return { ok: true };
+  let head = '';
+  for (let j = 0; j < Math.min(48, b.length - i); j++) head += String.fromCharCode(b[i + j]);
+  const u = head.toUpperCase();
+  if (u.startsWith('HTTP/')) {
+    return {
+      ok: false,
+      cod: 'http',
+      mesaj: 'Fișierul nu este PDF: conține un răspuns HTTP (redirect sau eroare de la site), salvat greșit cu extensia .pdf. '
+        + 'Deschide rezultatul în browser, așteaptă să se încarce buletinul, apoi folosește „Print / Imprimă” → „Salvare ca PDF” sau butonul laboratorului „Descarcă PDF”.'
+    };
+  }
+  if (u.startsWith('<!DOCTYPE') || u.startsWith('<HTML') || u.startsWith('<HEAD') || u.startsWith('<?XML')) {
+    return {
+      ok: false,
+      cod: 'html',
+      mesaj: 'Fișierul este pagină web (HTML), nu PDF. Salvează buletinul ca PDF din browser sau descarcă fișierul direct de pe site-ul laboratorului.'
+    };
+  }
+  return {
+    ok: false,
+    cod: 'necunoscut',
+    mesaj: 'Fișierul nu începe cu semnătura PDF (%PDF-). Probabil nu este un document PDF real; refă descărcarea de pe sursa originală.'
+  };
+}
+
+async function selecteazaFisiere(files) {
   if (!files || !files.length) return;
   const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
   const nonPdf = files.length - pdfs.length;
@@ -3073,36 +3196,134 @@ function selecteazaFisiere(files) {
     afiseazaMesaj('upload-out','eroare','Fișierele trebuie să fie PDF.');
     return;
   }
-  fisierSelectat = pdfs;
-  const totalKB = pdfs.reduce((s, f) => s + f.size, 0) / 1024;
-  let info = pdfs.length === 1
-    ? '📎 ' + pdfs[0].name + ' (' + (pdfs[0].size/1024).toFixed(1) + ' KB)'
-    : '📎 ' + pdfs.length + ' fișiere selectate (' + totalKB.toFixed(1) + ' KB total)';
+  const okList = [];
+  const erori = [];
+  for (const f of pdfs) {
+    const v = await _verificaContinutPdfReal(f);
+    if (v.ok) okList.push(f);
+    else erori.push({ nume: f.name, mesaj: v.mesaj });
+  }
+  fisierSelectat = okList;
+  if (!okList.length) {
+    document.getElementById('file-name').innerHTML = erori.length === 1
+      ? '📎 <span style="color:var(--rosu)">' + escHtml(erori[0].nume) + '</span>'
+      : '📎 <span style="color:var(--rosu)">Niciun PDF valid</span>';
+    document.getElementById('btn-upload').disabled = true;
+    document.getElementById('btn-verificare').disabled = true;
+    let html = '<div style="color:var(--rosu);font-size:0.88rem;line-height:1.45">';
+    erori.forEach(e => {
+      html += '<p style="margin:0 0 10px 0"><strong>' + escHtml(e.nume) + '</strong><br>' + escHtml(e.mesaj) + '</p>';
+    });
+    html += '</div>';
+    afiseazaMesaj('upload-out','eroare', html);
+    return;
+  }
+  const totalKB = okList.reduce((s, f) => s + f.size, 0) / 1024;
+  let info = okList.length === 1
+    ? '📎 ' + okList[0].name + ' (' + (okList[0].size/1024).toFixed(1) + ' KB)'
+    : '📎 ' + okList.length + ' fișiere selectate (' + totalKB.toFixed(1) + ' KB total)';
   if (nonPdf > 0) info += ' · <span style="color:var(--rosu)">' + nonPdf + ' ignorate (nu sunt PDF)</span>';
+  if (erori.length) {
+    info += ' · <span style="color:var(--rosu)">' + erori.length + ' respinse (nu sunt PDF reale)</span>';
+  }
   document.getElementById('file-name').innerHTML = info;
   document.getElementById('btn-upload').disabled = false;
   document.getElementById('btn-verificare').disabled = false;
-  document.getElementById('btn-text').textContent = pdfs.length === 1 ? 'Procesează PDF' : 'Procesează ' + pdfs.length + ' PDF-uri';
-  document.getElementById('upload-out').innerHTML = '';
+  document.getElementById('btn-text').textContent = okList.length === 1 ? 'Procesează PDF' : 'Procesează ' + okList.length + ' PDF-uri';
+  let outHtml = '';
+  if (erori.length) {
+    outHtml = '<div style="color:#a15a00;font-size:0.85rem;line-height:1.45;margin-bottom:8px"><strong>⚠ Unele fișiere au fost ignorate:</strong>';
+    erori.forEach(e => {
+      outHtml += '<p style="margin:8px 0 0 0"><strong>' + escHtml(e.nume) + '</strong><br>' + escHtml(e.mesaj) + '</p>';
+    });
+    outHtml += '</div>';
+  }
+  document.getElementById('upload-out').innerHTML = outHtml;
 }
 
 async function _uploadCuRetry(uploadUrl, fd) {
   let lastResp = null;
   let lastText = '';
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
-    if (handle401(r)) return { aborted: true };
-    const txt = await r.text();
-    if (r.ok) return { response: r, text: txt };
-    lastResp = r;
-    lastText = txt;
-    if ((r.status === 502 || r.status === 503 || r.status === 504) && attempt === 0) {
-      await new Promise(res => setTimeout(res, 8000));
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await fetch(uploadUrl, { method: 'POST', body: fd, headers: getAuthHeaders() });
+      if (handle401(r)) return { aborted: true };
+      const txt = await r.text();
+      if (r.ok) return { response: r, text: txt };
+      lastResp = r;
+      lastText = txt;
+      if ((r.status === 502 || r.status === 503 || r.status === 504) && attempt < 2) {
+        await new Promise(res => setTimeout(res, 8000));
+        continue;
+      }
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise(res => setTimeout(res, 3000 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  if (!lastResp && lastErr) throw lastErr;
+  return { response: lastResp, text: lastText };
+}
+
+async function _proceseazaUploadAsync(fd, onStatus) {
+  const start = await _uploadCuRetry('/upload-async', fd);
+  if (start.aborted) return { aborted: true };
+  const rs = start.response;
+  const txtStart = start.text || '';
+  let jStart = {};
+  try { jStart = JSON.parse(txtStart); } catch {}
+  if (!rs || !rs.ok || !jStart.job_id) {
+    return { response: rs, text: txtStart };
+  }
+
+  const jobId = String(jStart.job_id || '').trim();
+  const t0 = Date.now();
+  let lastStatus = 'queued';
+  while ((Date.now() - t0) < 8 * 60 * 1000) {
+    await new Promise(res => setTimeout(res, lastStatus === 'processing' ? 2500 : 1200));
+    let rPoll;
+    let txtPoll = '';
+    try {
+      rPoll = await fetch('/upload-async/' + encodeURIComponent(jobId), { headers: getAuthHeaders() });
+      if (handle401(rPoll)) return { aborted: true };
+      txtPoll = await rPoll.text();
+    } catch {
+      // Retry silent la probleme tranzitorii de retea/gateway.
       continue;
     }
-    break;
+
+    if (!rPoll.ok) {
+      return { response: rPoll, text: txtPoll };
+    }
+
+    let jPoll = {};
+    try { jPoll = JSON.parse(txtPoll); } catch {}
+    lastStatus = String(jPoll.status || lastStatus);
+    if (typeof onStatus === 'function') onStatus(lastStatus);
+
+    if (lastStatus === 'success' || lastStatus === 'error') {
+      const code = Number(jPoll.response_status || (lastStatus === 'success' ? 200 : 500));
+      const payload = (jPoll && typeof jPoll.result === 'object' && jPoll.result !== null)
+        ? jPoll.result
+        : { detail: 'Job finalizat fara payload valid.' };
+      return {
+        response: { ok: code >= 200 && code < 400, status: code },
+        text: JSON.stringify(payload),
+      };
+    }
   }
-  return { response: lastResp, text: lastText };
+
+  return {
+    response: { ok: false, status: 504 },
+    text: JSON.stringify({
+      detail: 'Procesarea dureaza prea mult pe server (timeout polling). Incearca din nou.',
+    }),
+  };
 }
 
 async function trimite(debugMode) {
@@ -3130,7 +3351,15 @@ async function trimite(debugMode) {
     const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      const rq = await _uploadCuRetry(uploadUrl, fd);
+      const rq = debugMode
+        ? await _uploadCuRetry(uploadUrl, fd)
+        : await _proceseazaUploadAsync(fd, (st) => {
+            if (st === 'processing') {
+              prog.textContent = f.name + ' – se proceseaza pe server…';
+            } else if (st === 'queued') {
+              prog.textContent = f.name + ' – in coada de procesare…';
+            }
+          });
       if (rq.aborted) return;
       const r = rq.response;
       const txt = rq.text || '';
@@ -3152,6 +3381,11 @@ async function trimite(debugMode) {
             + (j.parser_version ? ' · <code style="font-size:0.75rem">' + escHtml(j.parser_version) + '</code>' : '')
             + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text') + (j.extractor ? ' (' + escHtml(j.extractor) + ')' : '')
             + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>' + (j.lungime_text ? ' · ' + j.lungime_text + ' caractere' : '');
+          if (j.triere_ai) {
+            const t = j.triere_ai;
+            const reasons = Array.isArray(t.reasons) && t.reasons.length ? (' · motive: ' + t.reasons.join(', ')) : '';
+            mesaj += ' · Triage: <strong>' + escHtml(String((t.decision||'').toUpperCase())) + '</strong> (score=' + escHtml(String(t.score ?? 'n/a')) + ')' + escHtml(reasons);
+          }
           if (j.analize && j.analize.length) {
             mesaj += '<br><details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.85rem">Lista analize (' + j.analize.length + ')</summary><ul style="margin:8px 0 0 16px;font-size:0.82rem;max-height:200px;overflow-y:auto">'
               + j.analize.map(a => '<li>' + escHtml(a.denumire||'') + ' = ' + escHtml(String(a.valoare||'')) + ' ' + escHtml(a.unitate||'') + '</li>').join('')
@@ -3174,11 +3408,24 @@ async function trimite(debugMode) {
             + ' · ' + (j.tip_extragere==='ocr'?'🔍 OCR':'📝 text')
             + (j.extractor ? ' · ' + escHtml(j.extractor) : '')
             + ' · <strong>' + (j.numar_analize||0) + ' analize</strong>';
+          if (j.triere_ai) {
+            const t = j.triere_ai;
+            const reasons = Array.isArray(t.reasons) && t.reasons.length ? (' · motive: ' + t.reasons.join(', ')) : '';
+            mesaj += ' · Triage: <strong>' + escHtml(String((t.decision||'').toUpperCase())) + '</strong> (score=' + escHtml(String(t.score ?? 'n/a')) + ')' + escHtml(reasons);
+          }
+          if (Array.isArray(j.warnings) && j.warnings.length) {
+            mesaj += '<br><span style="font-size:0.8rem;color:#a15a00">' + escHtml(j.warnings.join(' | ')) + '</span>';
+          }
         }
       } else {
         esuat++;
         status = 'err';
         mesaj = (j && j.detail) ? (Array.isArray(j.detail) ? j.detail.join(' ') : j.detail) : 'Eroare ' + r.status;
+        if (j && j.triere_ai) {
+          const t = j.triere_ai;
+          const reasons = Array.isArray(t.reasons) && t.reasons.length ? (' · motive: ' + t.reasons.join(', ')) : '';
+          mesaj += '<br><span style="font-size:0.8rem;color:#a15a00">Triage AI: <strong>' + escHtml(String((t.decision||'').toUpperCase())) + '</strong> (score=' + escHtml(String(t.score ?? 'n/a')) + ')' + escHtml(reasons) + '</span>';
+        }
         if (j && j.traceback) {
           mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem;color:var(--gri)">Traceback (debug)</summary><pre style="margin:6px 0 0;font-size:0.7rem;max-height:200px;overflow:auto;white-space:pre-wrap;background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:6px">' + escHtml(j.traceback) + '</pre></details>';
         }
