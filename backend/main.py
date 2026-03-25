@@ -1094,32 +1094,20 @@ async def upload_pdf(
             )
         debug = bool(debug and _is_admin(current_user))
         traceback_debug = bool(traceback_debug and _is_admin(current_user) and settings.upload_enable_detailed_errors)
-        ocr_timeout_seconds = _ocr_timeout_seconds_for_upload(len(content), debug_mode=debug)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
             tmp_path = tmp.name
         from backend.parser import parse_full_text
         from backend.pdf_processor import extract_text_with_metrics
 
-        # OCR-ul pe PDF scanat poate dura mult; rulam in thread ca sa nu blocam serverul.
-        # Timeout per pas: jumatate din total, ca OCR initial + retry DPI sa incapa amandoua.
+        # OCR-ul pe PDF scanat poate dura mult; rulam in thread separat ca sa nu blocam serverul.
+        # Nu impunem timeout artificial - fluxul async (upload-async + polling) nu e limitat de gateway.
         dpi_first: Optional[int] = None
-        ocr_step_timeout = max(60, ocr_timeout_seconds // 2)
         if file_mb >= 3.0:
             dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
-        try:
-            text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
-                asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),
-                timeout=ocr_step_timeout,
-            )
-        except asyncio.TimeoutError:
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "detail": "Procesarea OCR a depasit timpul limita pentru acest fisier. Incearca din nou sau foloseste un PDF mai clar/mai mic.",
-                    "hint": "Daca problema persista, ruleaza Verificare (fara salvare) sau split pe pagini.",
-                },
-            )
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.to_thread(
+            extract_text_with_metrics, tmp_path, dpi_first
+        )
         if debug and text:
             # In mod debug, returnam diagnostic complet pentru verificare
             from backend.parser import _linie_este_exclusa
@@ -1187,14 +1175,13 @@ async def upload_pdf(
                 else:
                     dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380)
                 try:
-                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
-                        asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
-                        timeout=ocr_step_timeout,
+                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.to_thread(
+                        extract_text_with_metrics, tmp_path, dpi_retry
                     )
-                except asyncio.TimeoutError:
+                except Exception:
                     text2 = ""
                     tip2 = tip
-                    ocr_err2 = "OCR retry timeout"
+                    ocr_err2 = "OCR retry eroare"
                     colored_tokens2 = []
                     extractor2 = extractor
                     ocr_metrics2 = ocr_metrics
