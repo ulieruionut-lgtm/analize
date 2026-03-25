@@ -870,6 +870,37 @@ def get_analize_necunoscute(doar_neaprobate: bool = True) -> list:
         return [_row_to_dict(r) for r in cur.fetchall()]
 
 
+def get_necunoscute_by_ids(ids: list) -> list:
+    """
+    Rânduri din analiza_necunoscuta (doar neaprobate) după id-uri.
+    Folosit pentru aprobare în masă și pentru lookup denumire_raw fără a o pune în URL/JS.
+    """
+    clean: list[int] = []
+    for x in ids or []:
+        try:
+            clean.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not clean:
+        return []
+    with get_cursor(commit=False) as cur:
+        if _use_sqlite():
+            ph = ",".join("?" * len(clean))
+            cur.execute(
+                f"SELECT id, denumire_raw FROM analiza_necunoscuta "
+                f"WHERE aprobata = 0 AND id IN ({ph})",
+                clean,
+            )
+        else:
+            ph = ",".join(["%s"] * len(clean))
+            cur.execute(
+                f"SELECT id, denumire_raw FROM analiza_necunoscuta "
+                f"WHERE aprobata = 0 AND id IN ({ph})",
+                tuple(clean),
+            )
+        return [_row_to_dict(r) for r in cur.fetchall()]
+
+
 def backfill_categorie_necunoscuta_din_rezultate(
     dry_run: bool = True,
     limit: Optional[int] = None,

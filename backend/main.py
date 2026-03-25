@@ -38,6 +38,7 @@ from backend.database import (
     get_pacienti_paginat,
     get_all_users,
     get_analize_necunoscute,
+    get_necunoscute_by_ids,
     get_historicul_analiza,
     get_historicul_analiza_by_cod,
     get_pacient_cu_analize,
@@ -1805,16 +1806,93 @@ async def aproba_alias(body: dict, current_user: dict = Depends(get_current_user
     """
     Aprobare alias: asociaza o denumire_raw necunoscuta cu o analiza_standard.
     Body: { "denumire_raw": "...", "analiza_standard_id": 5 }
+    sau { "necunoscuta_id": 12, "analiza_standard_id": 5 } (recomandat din UI – evită probleme cu ghilimele).
     """
-    raw = (body.get("denumire_raw") or "").strip()
     aid = body.get("analiza_standard_id")
+    raw = (body.get("denumire_raw") or "").strip()
+    nid = body.get("necunoscuta_id")
+    if nid is not None:
+        try:
+            nid_int = int(nid)
+        except (TypeError, ValueError):
+            return JSONResponse(status_code=400, content={"detail": "necunoscuta_id invalid."})
+        rows = get_necunoscute_by_ids([nid_int])
+        if not rows:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Intrarea nu există sau este deja aprobată."},
+            )
+        raw = (rows[0].get("denumire_raw") or "").strip()
     if not raw or not aid:
-        return JSONResponse(status_code=400, content={"detail": "Campuri obligatorii: denumire_raw, analiza_standard_id"})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": "Campuri obligatorii: analiza_standard_id și (denumire_raw sau necunoscuta_id)."
+            },
+        )
     from backend.normalizer import adauga_alias_nou
+
     ok = adauga_alias_nou(raw, int(aid))
     if ok:
         return {"ok": True, "mesaj": f"Alias '{raw}' asociat cu succes."}
     return JSONResponse(status_code=500, content={"detail": "Eroare la salvarea alias-ului."})
+
+
+@app.post("/aproba-alias-bulk")
+async def aproba_alias_bulk(body: dict, current_user: dict = Depends(get_current_user)):
+    """
+    Aprobare în masă: aceeași analiză standard pentru mai multe rânduri din analiza_necunoscuta.
+    Body: { "necunoscuta_ids": [1, 2, 3], "analiza_standard_id": 5 }
+    """
+    ids = body.get("necunoscuta_ids") or body.get("ids") or []
+    aid = body.get("analiza_standard_id")
+    if not isinstance(ids, list) or not ids:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Lista necunoscuta_ids este goală sau invalidă."},
+        )
+    if aid is None:
+        return JSONResponse(status_code=400, content={"detail": "Lipsește analiza_standard_id."})
+    try:
+        aid_int = int(aid)
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"detail": "analiza_standard_id invalid."})
+
+    rows = get_necunoscute_by_ids(ids)
+    if not rows:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Nicio intrare neaprobată găsită pentru id-urile date."},
+        )
+    requested = set()
+    for x in ids:
+        try:
+            requested.add(int(x))
+        except (TypeError, ValueError):
+            pass
+    found_ids = {r.get("id") for r in rows}
+    skipped_ids = sorted(requested - found_ids)
+
+    denumiri = [(r.get("denumire_raw") or "").strip() for r in rows]
+    denumiri = [d for d in denumiri if d]
+    if not denumiri:
+        return JSONResponse(status_code=400, content={"detail": "Denumiri goale."})
+
+    from backend.normalizer import adauga_aliasuri_bulk
+
+    result = adauga_aliasuri_bulk(denumiri, aid_int)
+    if not result.get("ok"):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": result.get("error") or "Eroare la aprobare în masă."},
+        )
+    return {
+        "ok": True,
+        "mesaj": f"Asociate {result.get('processed', 0)} denumiri la analiza standard {aid_int}.",
+        "processed": result.get("processed", 0),
+        "rows_matched": len(rows),
+        "skipped_ids": skipped_ids,
+    }
 
 
 @app.post("/invalideaza-cache-alias")
@@ -2453,6 +2531,17 @@ async def index():
         <button class="btn btn-secondary" onclick="incarcaNecunoscute()">🔄 Reîncarcă lista</button>
         <button class="btn btn-secondary" onclick="golesteAnalizeAsociate()" style="color:var(--rosu)" title="Șterge toate analizele necunoscute și alias-urile (asocierile)">🗑️ Șterge toate asocierile</button>
       </div>
+      <div id="nec-bulk-bar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--albastru-deschis);border-radius:8px;border:1px solid var(--border)">
+        <strong style="font-size:0.85rem">Aprobare în masă</strong>
+        <span id="nec-bulk-count" style="font-size:0.82rem;color:var(--gri)">0 selectate</span>
+        <select id="sel-std-bulk" style="padding:6px 10px;min-width:240px;max-width:100%;font-size:0.85rem;border:1px solid var(--border);border-radius:6px">
+          <option value="">— Analiză standard (pentru rândurile bifate) —</option>
+        </select>
+        <button type="button" class="btn btn-primary" style="padding:6px 14px;font-size:0.82rem" onclick="aprobaAliasBulk()">✓ Asociază selectate</button>
+      </div>
+      <p style="font-size:0.78rem;color:var(--gri);margin:-6px 0 12px 0">
+        Bifează mai multe rânduri dacă aceleași variante OCR trebuie mapate dintr-o dată la aceeași analiză standard (alias + actualizare retroactivă a rezultatelor, ca la un singur click).
+      </p>
       <div id="lista-necunoscute"><p style="color:var(--gri)">Se încarcă…</p></div>
     </div>
   </div>
@@ -4458,8 +4547,14 @@ async function incarcaNecunoscute() {
 
     if (!nec.length) {
       el.innerHTML = '<div class="mesaj succes"><strong>✅ Toate analizele sunt recunoscute!</strong><br>Nicio analiză necunoscută în baza de date.</div>';
+      const bulkSel = document.getElementById('sel-std-bulk');
+      if (bulkSel) bulkSel.innerHTML = '<option value="">— Analiză standard —</option>';
+      updateNecBulkCount();
       return;
     }
+
+    const bulkSel = document.getElementById('sel-std-bulk');
+    if (bulkSel) bulkSel.innerHTML = buildStdSelectOptionsHtml(std, null);
 
     el.innerHTML = `
       <p style="font-size:0.85rem;color:var(--gri);margin-bottom:12px">
@@ -4468,6 +4563,9 @@ async function incarcaNecunoscute() {
       </p>
       <div class="tabel-container"><table>
       <thead><tr>
+        <th style="width:40px;text-align:center" title="Selectare pentru aprobare în masă">
+          <input type="checkbox" id="nec-select-all" aria-label="Bifează toate" onchange="toggleSelectAllNec(this)">
+        </th>
         <th>Secțiune PDF</th>
         <th>Denumire din PDF</th>
         <th>Apariții</th>
@@ -4482,6 +4580,9 @@ async function incarcaNecunoscute() {
           : '<span style="color:var(--gri);font-size:0.8rem" title="Reîncărcați după upload-uri noi sau lipsă secțiune în PDF">—</span>';
         const opts = buildStdSelectOptionsHtml(std, n.categorie);
         return `<tr id="nec-row-${n.id}">
+        <td style="vertical-align:middle;text-align:center">
+          <input type="checkbox" class="nec-cb" data-id="${n.id}" onchange="updateNecBulkCount()" aria-label="Selectează rând">
+        </td>
         <td style="vertical-align:top">${catBadge}</td>
         <td>
           <strong>${escHtml(n.denumire_raw)}</strong>
@@ -4495,7 +4596,7 @@ async function incarcaNecunoscute() {
         </td>
         <td style="white-space:nowrap">
           <button class="btn btn-primary" style="padding:6px 12px;font-size:0.82rem;margin-right:4px"
-            onclick="aprobaAlias(${n.id}, '${escHtml(n.denumire_raw).replace(/'/g,"\\'")}')">✓ Asociază</button>
+            onclick="aprobaAlias(${n.id})">✓ Asociază</button>
           <button class="btn btn-secondary" style="padding:6px 10px;font-size:0.82rem"
             title="Șterge (zgomot / artefact OCR)"
             onclick="stergeNecunoscuta(${n.id})">🗑</button>
@@ -4503,13 +4604,27 @@ async function incarcaNecunoscute() {
       </tr>`;
       }).join('') +
       '</tbody></table></div>';
+    updateNecBulkCount();
+    const sa = document.getElementById('nec-select-all');
+    if (sa) sa.checked = false;
 
   } catch(e) {
     el.innerHTML = '<p style="color:red">Eroare: ' + e.message + '</p>';
   }
 }
 
-async function aprobaAlias(id, denumireRaw) {
+function toggleSelectAllNec(cb) {
+  document.querySelectorAll('.nec-cb').forEach(x => { x.checked = cb.checked; });
+  updateNecBulkCount();
+}
+
+function updateNecBulkCount() {
+  const n = document.querySelectorAll('.nec-cb:checked').length;
+  const el = document.getElementById('nec-bulk-count');
+  if (el) el.textContent = n + ' selectat' + (n === 1 ? '' : 'e');
+}
+
+async function aprobaAlias(id) {
   const sel = document.getElementById('sel-std-' + id);
   const aid = sel ? sel.value : '';
   if (!aid) { alert('Selectați mai întâi analiza standard!'); return; }
@@ -4518,14 +4633,14 @@ async function aprobaAlias(id, denumireRaw) {
     const r = await fetch('/aproba-alias', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ denumire_raw: denumireRaw, analiza_standard_id: parseInt(aid) })
+      body: JSON.stringify({ necunoscuta_id: id, analiza_standard_id: parseInt(aid, 10) })
     });
     const j = await r.json();
     if (r.ok) {
       const row = document.getElementById('nec-row-' + id);
       if (row) {
-        row.innerHTML = `<td colspan="5">
-          <span style="color:var(--verde)">✅ <strong>${escHtml(denumireRaw)}</strong> a fost asociat cu succes. Toate rezultatele existente au fost actualizate și va fi recunoscut automat la orice upload viitor.</span>
+        row.innerHTML = `<td colspan="6">
+          <span style="color:var(--verde)">✅ Asociere reușită. Rezultatele existente au fost actualizate; la următorul upload recunoașterea va fi automată.</span>
         </td>`;
       }
       // Invalideaza cache alias pe toate workerii (Railway multi-worker)
@@ -4534,6 +4649,46 @@ async function aprobaAlias(id, denumireRaw) {
       const badge = document.getElementById('badge-nec');
       const cnt = parseInt(badge.textContent||'0') - 1;
       if (cnt > 0) { badge.textContent = cnt; } else { badge.style.display = 'none'; }
+    } else {
+      alert('Eroare: ' + (j.detail || 'Necunoscut'));
+    }
+  } catch(e) {
+    alert('Eroare rețea: ' + e.message);
+  }
+}
+
+async function aprobaAliasBulk() {
+  const ids = Array.from(document.querySelectorAll('.nec-cb:checked'))
+    .map(c => parseInt(c.getAttribute('data-id'), 10))
+    .filter(x => !isNaN(x) && x > 0);
+  const bulkSel = document.getElementById('sel-std-bulk');
+  const aid = bulkSel ? bulkSel.value : '';
+  if (!ids.length) {
+    alert('Bifați cel puțin un rând din tabel.');
+    return;
+  }
+  if (!aid) {
+    alert('Selectați analiza standard în zona „Aprobare în masă”.');
+    return;
+  }
+  if (!confirm('Asociați ' + ids.length + ' denumiri la analiza aleasă? Se creează aliasuri și se actualizează retroactiv rezultatele nemapate (ca la un singur click).')) {
+    return;
+  }
+  try {
+    const r = await fetch('/aproba-alias-bulk', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ necunoscuta_ids: ids, analiza_standard_id: parseInt(aid, 10) })
+    });
+    const j = await r.json();
+    if (r.ok) {
+      let msg = j.mesaj || 'Gata.';
+      if (j.skipped_ids && j.skipped_ids.length) {
+        msg += ' (Id-uri ignorate: ' + j.skipped_ids.join(', ') + ')';
+      }
+      fetch('/invalideaza-cache-alias', { method: 'POST', headers: getAuthHeaders() }).catch(() => {});
+      await incarcaNecunoscute();
+      alert(msg);
     } else {
       alert('Eroare: ' + (j.detail || 'Necunoscut'));
     }

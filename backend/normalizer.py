@@ -389,3 +389,65 @@ def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def adauga_aliasuri_bulk(denumiri_raw: list[str], analiza_standard_id: int) -> dict:
+    """
+    Aceeași logică ca ``adauga_alias_nou`` pentru mai multe denumiri într-o singură tranzacție:
+    alias în analiza_alias, marchează necunoscute, UPDATE retroactiv pe rezultate_analize.
+    """
+    seen: set[str] = set()
+    items: list[str] = []
+    for d in denumiri_raw or []:
+        s = (d or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            items.append(s)
+    if not items:
+        return {"ok": True, "processed": 0, "unique_strings": 0}
+
+    try:
+        from backend.database import get_cursor, _use_sqlite
+
+        with get_cursor() as cur:
+            if _use_sqlite():
+                for s in items:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO analiza_alias (analiza_standard_id, alias) VALUES (?, ?)",
+                        (analiza_standard_id, s),
+                    )
+                    cur.execute(
+                        """UPDATE analiza_necunoscuta SET
+                               aprobata = 1,
+                               analiza_standard_id = ?,
+                               updated_at = datetime('now')
+                           WHERE denumire_raw = ?""",
+                        (analiza_standard_id, s),
+                    )
+                    cur.execute(
+                        "UPDATE rezultate_analize SET analiza_standard_id=? "
+                        "WHERE denumire_raw=? AND analiza_standard_id IS NULL",
+                        (analiza_standard_id, s),
+                    )
+            else:
+                for s in items:
+                    cur.execute(
+                        "INSERT INTO analiza_alias (analiza_standard_id, alias) "
+                        "VALUES (%s, %s) ON CONFLICT (alias) DO NOTHING",
+                        (analiza_standard_id, s),
+                    )
+                    cur.execute(
+                        "UPDATE analiza_necunoscuta SET aprobata=1, analiza_standard_id=%s "
+                        "WHERE denumire_raw=%s",
+                        (analiza_standard_id, s),
+                    )
+                    cur.execute(
+                        "UPDATE rezultate_analize SET analiza_standard_id=%s "
+                        "WHERE denumire_raw=%s AND analiza_standard_id IS NULL",
+                        (analiza_standard_id, s),
+                    )
+        invalideaza_cache()
+        return {"ok": True, "processed": len(items), "unique_strings": len(items)}
+    except Exception as e:
+        logging.exception("adauga_aliasuri_bulk: %s", e)
+        return {"ok": False, "processed": 0, "unique_strings": 0, "error": str(e)[:500]}
