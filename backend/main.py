@@ -1102,15 +1102,15 @@ async def upload_pdf(
         from backend.pdf_processor import extract_text_with_metrics
 
         # OCR-ul pe PDF scanat poate dura mult; rulam in thread ca sa nu blocam serverul.
-        # Impunem timeout ca sa evitam 502 de la gateway cand OCR ramane blocat prea mult.
+        # Timeout per pas: jumatate din total, ca OCR initial + retry DPI sa incapa amandoua.
         dpi_first: Optional[int] = None
+        ocr_step_timeout = max(60, ocr_timeout_seconds // 2)
         if file_mb >= 3.0:
-            # Pentru scanuri mari reducem DPI-ul initial, altfel OCR poate depasi fereastra de request.
             dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
         try:
             text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
                 asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),
-                timeout=ocr_timeout_seconds,
+                timeout=ocr_step_timeout,
             )
         except asyncio.TimeoutError:
             return JSONResponse(
@@ -1183,13 +1183,13 @@ async def upload_pdf(
             unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
             if unknown_name or count_now < 12:
                 if file_mb >= 3.0:
-                    dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 60, 340), 380)
+                    dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
                 else:
-                    dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 120, 420)
+                    dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380)
                 try:
                     text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
                         asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
-                        timeout=ocr_timeout_seconds,
+                        timeout=ocr_step_timeout,
                     )
                 except asyncio.TimeoutError:
                     text2 = ""
