@@ -1220,6 +1220,7 @@ async def upload_pdf(
                         extractor = f"{extractor2}+dpi{dpi_retry}"
         if not parsed:
             return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
+        ocr_calitate_slaba_salvata = False
         if tip == "ocr":
             q = _calc_upload_quality(parsed)
             total_rez = int(q["total_rez"])
@@ -1234,25 +1235,9 @@ async def upload_pdf(
                 suspect_flags += 1
             if noise_ratio > 0.35:
                 suspect_flags += 1
-            # Nu salvam automat buletinele foarte corupte OCR: evitam "gunoi" persistent in DB.
+            # Doua+ semnale slabe: salvam oricum, dar UI afiseaza avertisment rosu + recomandare AI.
             if suspect_flags >= 2:
-                triage = _calc_triage_ai(parsed, tip, ocr_metrics)
-                return JSONResponse(
-                    status_code=422,
-                    content={
-                        "detail": "OCR de calitate slaba: extragerea pare corupta. Buletinul NU a fost salvat.",
-                        "tip_extragere": tip,
-                        "extractor": extractor,
-                        "ocr_metrics": ocr_metrics,
-                        "numar_analize_detectate": total_rez,
-                        "procente": {
-                            "necunoscute": round(unknown_ratio, 3),
-                            "zgomot": round(noise_ratio, 3),
-                        },
-                        "triere_ai": triage,
-                        "hint": "Refa upload-ul cu PDF mai clar (scan 300 DPI) sau foloseste Verificare inainte de salvare.",
-                    },
-                )
+                ocr_calitate_slaba_salvata = True
         if not parsed.rezultate:
             return JSONResponse(
                 status_code=422,
@@ -1269,6 +1254,11 @@ async def upload_pdf(
             )
         normalize_rezultate(parsed.rezultate)
         upload_warnings: list[str] = []
+        if ocr_calitate_slaba_salvata:
+            upload_warnings.append(
+                "Calitate OCR slabă sau date incomplete: buletinul a fost salvat. "
+                "Recomandăm verificarea cu AI sau corectarea manuală a analizelor."
+            )
         ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
         if tip == "ocr" and ocr_summary:
             avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
@@ -1373,6 +1363,7 @@ async def upload_pdf(
             "numar_de_verificat": sum(1 for r in parsed.rezultate if getattr(r, "needs_review", False)),
             "warnings": upload_warnings,
             "triere_ai": triage,
+            "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
         }
     except Exception as e:
         tb = traceback.format_exc()
@@ -3412,6 +3403,21 @@ async function trimite(debugMode) {
             const t = j.triere_ai;
             const reasons = Array.isArray(t.reasons) && t.reasons.length ? (' · motive: ' + t.reasons.join(', ')) : '';
             mesaj += ' · Triage: <strong>' + escHtml(String((t.decision||'').toUpperCase())) + '</strong> (score=' + escHtml(String(t.score ?? 'n/a')) + ')' + escHtml(reasons);
+          }
+          const tAi = j.triere_ai;
+          const dec = tAi ? String(tAi.decision || '').toLowerCase() : '';
+          const scorN = tAi && typeof tAi.score === 'number' ? tAi.score : null;
+          const afiseazaAvertScor = Boolean(j.ocr_calitate_slaba_salvata || (dec && dec !== 'auto') || (scorN !== null && scorN < 75));
+          if (afiseazaAvertScor && tAi) {
+            const recAi = (dec === 'ai' || (scorN !== null && scorN < 60) || j.ocr_calitate_slaba_salvata)
+              ? ' <strong>Recomandăm verificarea cu AI</strong> sau corectarea manuală a analizelor marcate pentru revizuire.'
+              : ' Recomandăm verificarea cu AI sau corectarea manuală înainte de a folosi valorile în clinică.';
+            mesaj += '<div style="margin-top:8px;padding:9px 11px;border-radius:6px;background:#fff0f0;border:1px solid #f0b4b4;color:var(--rosu);font-size:0.84rem;line-height:1.35">'
+              + '<strong>Scor document: ' + escHtml(String(tAi.score ?? '—')) + '/100</strong>'
+              + (dec ? ' · triaj: <strong>' + escHtml(dec.toUpperCase()) + '</strong>' : '')
+              + '. Calitate redusă sau multe analize de mapat.'
+              + recAi
+              + '</div>';
           }
           if (Array.isArray(j.warnings) && j.warnings.length) {
             mesaj += '<br><span style="font-size:0.8rem;color:#a15a00">' + escHtml(j.warnings.join(' | ')) + '</span>';
