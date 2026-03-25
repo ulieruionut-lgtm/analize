@@ -1,0 +1,60 @@
+# Rulează verificarea parser/OCR când se atinge codul relevant.
+# Golden complet: doar dacă există PDF-uri în samples/golden_pdfs sau tests/golden_set/input (commituite în repo).
+name: Parser și golden set
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "scripts/verifica_parser_pdf.py"
+      - "scripts/ocr_golden_set*.json"
+      - "tests/golden_set/**"
+      - "samples/golden_pdfs/**"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/verifica_parser_pdf.py"
+      - "scripts/ocr_golden_set*.json"
+      - "tests/golden_set/**"
+      - "samples/golden_pdfs/**"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependențe sistem (Tesseract)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-ron \
+            libgl1 libglib2.0-0
+
+      - name: Pip
+        run: pip install -r requirements.txt
+
+      - name: Sintaxă script golden
+        run: python -m py_compile scripts/verifica_parser_pdf.py
+
+      - name: Golden set (dacă există PDF-uri)
+        run: |
+          set -e
+          N1=$(find samples/golden_pdfs -maxdepth 1 -name '*.pdf' 2>/dev/null | wc -l | tr -d ' ')
+          N2=$(find tests/golden_set/input -maxdepth 1 -name '*.pdf' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "${N1}" -gt 0 ] && [ -f scripts/ocr_golden_set.real_v1.json ]; then
+            echo "::group::Golden (manifest real_v1)"
+            python scripts/verifica_parser_pdf.py --golden scripts/ocr_golden_set.real_v1.json --fail-below 0.75
+            echo "::endgroup::"
+          elif [ "${N2}" -gt 0 ]; then
+            echo "::group::Golden (--golden-dir)"
+            python scripts/verifica_parser_pdf.py --golden-dir tests/golden_set --fail-below 0.75
+            echo "::endgroup::"
+          else
+            echo "::notice:: Nu există PDF-uri golden în repo — sar peste benchmark (doar py_compile a rulat)."
+          fi

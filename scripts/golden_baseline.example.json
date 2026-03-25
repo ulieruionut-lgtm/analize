@@ -1,0 +1,8 @@
+{
+  "f1": 0.92,
+  "precision": 0.91,
+  "recall": 0.93,
+  "strict_values": false,
+  "cases": 3,
+  "_comment": "Copiază ca scripts/golden_baseline.json după un run reușit: python scripts/verifica_parser_pdf.py --golden ... --fail-below 0 --write-baseline scripts/golden_baseline.json"
+}
