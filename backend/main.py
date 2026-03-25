@@ -4709,7 +4709,7 @@ function afiseazaMesaj(containerId, tip, html) {
 </div><!-- /app-container -->
 </body>
 </html>"""
-    return html
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
 
 
 if __name__ == "__main__":
