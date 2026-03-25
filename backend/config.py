@@ -9,6 +9,7 @@ _DEFAULT_DB = _ROOT / "analize.db"
 
 
 class Settings(BaseSettings):
+    app_env: str = "development"
     database_url: str = "sqlite"
 
     # OCR Tesseract
@@ -34,7 +35,11 @@ class Settings(BaseSettings):
 
     tessdata_prefix: str | None = None
     pdf_text_min_chars: int = 200
-    jwt_secret_key: str = "dev-secret-change-in-production-2026"
+    upload_max_mb: int = 20
+    # Timeout de bază (secunde) pentru un singur pas OCR la upload; se adaugă supliment după dimensiunea fișierului.
+    upload_ocr_timeout_seconds: int = 180
+    upload_enable_detailed_errors: bool = False
+    jwt_secret_key: str = ""
 
     @property
     def db_path(self) -> Path:
@@ -52,3 +57,7 @@ settings = Settings()
 _url = (settings.database_url or "").strip().lower()
 if not _url or _url.startswith("sqlite") or _url.endswith(".db"):
     print("\n[CONFIG] DATABASE_URL neconfigurat - folosim SQLite. Seteaza DATABASE_URL (PostgreSQL) pentru productie.\n")
+
+_env = (settings.app_env or "development").strip().lower()
+if _env in {"prod", "production"} and not (settings.jwt_secret_key or "").strip():
+    raise RuntimeError("APP_ENV=production necesită JWT_SECRET_KEY setat în environment.")

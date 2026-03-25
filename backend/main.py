@@ -106,12 +106,12 @@ def _pdf_signature_detail(content: bytes) -> str:
 
 
 def _ocr_timeout_seconds_for_upload(content_len: int, debug_mode: bool = False) -> int:
-    # Timeout dinamic: fisierele scanate mari au nevoie de mai mult timp OCR.
-    base = max(30, int(_OCR_UPLOAD_TIMEOUT_SECONDS))
+    # Timeout dinamic: scanuri mari + eventual retry DPI pe acelasi request pot depasi 5–8 min.
+    base = max(60, int(_OCR_UPLOAD_TIMEOUT_SECONDS))
     mb = max(1.0, float(content_len or 0) / (1024.0 * 1024.0))
-    extra = int(min(180, mb * 20))
+    extra = int(min(420, mb * 35))
     if debug_mode:
-        extra += 60
+        extra += 120
     return base + extra
 
 
@@ -3276,7 +3276,7 @@ async function _proceseazaUploadAsync(fd, onStatus) {
   const jobId = String(jStart.job_id || '').trim();
   const t0 = Date.now();
   let lastStatus = 'queued';
-  while ((Date.now() - t0) < 8 * 60 * 1000) {
+  while ((Date.now() - t0) < 20 * 60 * 1000) {
     await new Promise(res => setTimeout(res, lastStatus === 'processing' ? 2500 : 1200));
     let rPoll;
     let txtPoll = '';
