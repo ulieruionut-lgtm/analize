@@ -211,10 +211,11 @@ def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Opti
     if q["total_rez"] < 12:
         score -= 20
         reasons.append("prea_putine_analize")
-    if q["unknown_ratio"] > 0.55:
+    # Prag ~20% „bun”: penalizare doar dacă necunoscute/zgomot depășesc 80%.
+    if q["unknown_ratio"] > 0.80:
         score -= 20
         reasons.append("procent_necunoscute_mare")
-    if q["noise_ratio"] > 0.35:
+    if q["noise_ratio"] > 0.80:
         score -= 20
         reasons.append("procent_zgomot_mare")
 
@@ -231,9 +232,9 @@ def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Opti
 
     score = max(0, min(100, int(round(score))))
     decision = "auto"
-    if score < 60:
+    if score < 20:
         decision = "ai"
-    elif score < 75:
+    elif score < 40:
         decision = "review"
 
     return {
@@ -1231,9 +1232,9 @@ async def upload_pdf(
                 suspect_flags += 1
             if total_rez < 12:
                 suspect_flags += 1
-            if unknown_ratio > 0.55:
+            if unknown_ratio > 0.80:
                 suspect_flags += 1
-            if noise_ratio > 0.35:
+            if noise_ratio > 0.80:
                 suspect_flags += 1
             # Doua+ semnale slabe: salvam oricum, dar UI afiseaza avertisment rosu + recomandare AI.
             if suspect_flags >= 2:
@@ -3407,9 +3408,9 @@ async function trimite(debugMode) {
           const tAi = j.triere_ai;
           const dec = tAi ? String(tAi.decision || '').toLowerCase() : '';
           const scorN = tAi && typeof tAi.score === 'number' ? tAi.score : null;
-          const afiseazaAvertScor = Boolean(j.ocr_calitate_slaba_salvata || (dec && dec !== 'auto') || (scorN !== null && scorN < 75));
+          const afiseazaAvertScor = Boolean(j.ocr_calitate_slaba_salvata || (dec && dec !== 'auto') || (scorN !== null && scorN < 40));
           if (afiseazaAvertScor && tAi) {
-            const recAi = (dec === 'ai' || (scorN !== null && scorN < 60) || j.ocr_calitate_slaba_salvata)
+            const recAi = (dec === 'ai' || (scorN !== null && scorN < 20) || j.ocr_calitate_slaba_salvata)
               ? ' <strong>Recomandăm verificarea cu AI</strong> sau corectarea manuală a analizelor marcate pentru revizuire.'
               : ' Recomandăm verificarea cu AI sau corectarea manuală înainte de a folosi valorile în clinică.';
             mesaj += '<div style="margin-top:8px;padding:9px 11px;border-radius:6px;background:#fff0f0;border:1px solid #f0b4b4;color:var(--rosu);font-size:0.84rem;line-height:1.35">'
