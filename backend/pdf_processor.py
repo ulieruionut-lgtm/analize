@@ -9,6 +9,7 @@ Principii de performanta:
 - Eliminare borduri cu morfologie OpenCV (nu loop Python)
 - OEM 3 (LSTM pur) implicit — mai rapid si mai precis pe text romanesc
 - Groupare randuri TSV cu sweep liniar O(n log n) in loc de O(n^2)
+- Optional: randuri din structura Tesseract (block/line) + goluri largi intre „coloane” (settings)
 """
 import re
 from pathlib import Path
@@ -374,6 +375,134 @@ def _best_ocr_for_page(img_rgb, pytesseract_mod, min_chars: int, dpi: int, oem: 
 # Reconstructie randuri din TSV bbox (o singura trecere cu sweep liniar)
 # ---------------------------------------------------------------------------
 
+def _line_with_column_gaps(
+    words: list[tuple[int, str, int]],
+    *,
+    gap_mult: float = 3.5,
+    min_gap_px: int = 18,
+) -> str:
+    """
+    Intra-o singura linie vizuala: daca distanta orizontala intre cuvinte e mare,
+    insereaza tab-uri (gol vizibil) — ajuta parserul sa vada analit | valoare | unitate.
+    """
+    if not words:
+        return ""
+    words = sorted(words, key=lambda w: w[0])
+    if len(words) == 1:
+        return words[0][1]
+    gaps: list[int] = []
+    for i in range(len(words) - 1):
+        l1, _t1, w1 = words[i]
+        l2, _t2, _w2 = words[i + 1]
+        gaps.append(max(0, l2 - (l1 + w1)))
+    med = sorted(gaps)[len(gaps) // 2] if gaps else 0
+    thr = max(min_gap_px, int(med * gap_mult + 0.5))
+    parts = [words[0][1]]
+    for i in range(len(gaps)):
+        sep = " \t " if gaps[i] >= thr else " "
+        parts.append(sep + words[i + 1][1])
+    return "".join(parts)
+
+
+def _layout_lines_tesseract_blocks(df: dict, *, use_column_gaps: bool) -> str:
+    """
+    Grupare dupa block_num / par_num / line_num (output Tesseract), cuvinte sortate pe X.
+    Mai stabila decat doar clusterizare Y pentru multe buletine cu tabele.
+    """
+    n = len(df.get("text", []))
+    if n == 0:
+        return ""
+    levels = df.get("level", [])
+    texts = df.get("text", [])
+    confs = df.get("conf", [])
+    blocks = df.get("block_num", [0] * n)
+    pars = df.get("par_num", [0] * n)
+    lines_n = df.get("line_num", [0] * n)
+    lefts = df.get("left", [0] * n)
+    widths = df.get("width", [0] * n)
+
+    groups: dict[tuple[int, int, int], list[tuple[int, str, int]]] = {}
+    for i in range(n):
+        try:
+            if int(levels[i]) != 5:
+                continue
+        except (ValueError, TypeError, IndexError):
+            continue
+        txt = (texts[i] or "").strip()
+        if not txt:
+            continue
+        try:
+            conf = int(confs[i] or 0)
+        except (ValueError, TypeError):
+            conf = 0
+        if conf < 20:
+            continue
+        try:
+            b = int(blocks[i])
+            p = int(pars[i])
+            ln = int(lines_n[i])
+            lx = int(lefts[i])
+            wd = int(widths[i]) if i < len(widths) else 0
+        except (ValueError, TypeError, IndexError):
+            continue
+        groups.setdefault((b, p, ln), []).append((lx, txt, max(wd, 1)))
+
+    out_lines: list[str] = []
+    for key in sorted(groups.keys()):
+        wlist = groups[key]
+        if use_column_gaps:
+            line = _line_with_column_gaps(wlist)
+        else:
+            wlist.sort(key=lambda w: w[0])
+            line = " ".join(w[1] for w in wlist)
+        if line.strip():
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def _count_tsv_words(df: dict) -> int:
+    n = len(df.get("text", []))
+    levels = df.get("level", [])
+    texts = df.get("text", [])
+    confs = df.get("conf", [])
+    c = 0
+    for i in range(n):
+        try:
+            if int(levels[i]) != 5:
+                continue
+        except (ValueError, TypeError, IndexError):
+            continue
+        if not (texts[i] or "").strip():
+            continue
+        try:
+            if int(confs[i] or 0) < 20:
+                continue
+        except (ValueError, TypeError):
+            continue
+        c += 1
+    return c
+
+
+def _choose_tsv_layout_text(df: dict, tolerance: int, *, use_column_gaps: bool) -> str:
+    """
+    Combina structura Tesseract (block/line) cu fallback la clusterizare Y existenta,
+    cand structurat pare sa fi „lipit” prea multe randuri pe verticala.
+    """
+    structured = _layout_lines_tesseract_blocks(df, use_column_gaps=use_column_gaps)
+    legacy = _recluster_tsv_rows(df, tolerance)
+    sl = len([x for x in structured.splitlines() if x.strip()])
+    ll = len([x for x in legacy.splitlines() if x.strip()])
+    nw = _count_tsv_words(df)
+    if not structured.strip():
+        return legacy
+    # Prea putine linii fata de numarul de cuvinte => probabil randuri de tabel lipite
+    if nw > 0 and sl < max(4, nw // 12) and ll > sl * 1.35:
+        return legacy
+    if ll > sl * 2 and ll > 8 and nw > 20:
+        return legacy
+    return structured
+
+
 def _recluster_tsv_rows(df: dict, tolerance: int) -> str:
     """
     Reconstruieste randuri fizice din output-ul image_to_data (TSV cu bbox).
@@ -474,7 +603,11 @@ def _ocr_page_full(page_pix_bytes: bytes, lang: str, oem: int, dpi: int,
             tolerance = max(6, int(med_h * 0.40))
         else:
             tolerance = 12
-        text_tsv = _recluster_tsv_rows(df, tolerance)
+        use_gaps = bool(getattr(settings, "ocr_column_segmentation", False))
+        if getattr(settings, "ocr_layout_auto", True):
+            text_tsv = _choose_tsv_layout_text(df, tolerance, use_column_gaps=use_gaps)
+        else:
+            text_tsv = _recluster_tsv_rows(df, tolerance)
     except Exception:
         text_tsv = ""
 
@@ -578,7 +711,9 @@ def _extrage_tabele_pdfplumber(pdf_path: str) -> str:
                         celule = [str(c).strip() if c else "" for c in rand]
                         if not any(celule):
                             continue
-                        linie = "  ".join(c for c in celule if c)
+                        # Tab intre celule: pastreaza coloanele fara token «|» in parser (split pe whitespace)
+                        parts = [c for c in celule if c]
+                        linie = "\t".join(parts) if len(parts) > 1 else (parts[0] if parts else "")
                         if linie:
                             linii.append(linie)
     except Exception:
