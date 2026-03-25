@@ -22,7 +22,8 @@ from typing import Optional
 
 from backend.models import RezultatParsat
 from backend.ocr_corrections import (
-    aplică_corectii_ocr_normalizat,
+    aplica_pipeline_ocr_normalizat,
+    categorie_la_domeniu,
     corecteaza_ocr_linie_buletin,
     corecteaza_umar_numar_artefact_capitalizat,
 )
@@ -88,6 +89,25 @@ def _baza_denumire_pentru_fuzzy(norm: str) -> str:
     )
     t = re.sub(r"\s+[\d.,]+\s*$", "", t)
     return t.strip()
+
+
+def _prag_fuzzy_difflib(text_norm: str) -> float:
+    """Prag dinamic: denumiri scurte cer match mai strict pentru a evita false pozitive."""
+    n = len(text_norm or "")
+    if n < 8:
+        return 0.96
+    if n < 12:
+        return 0.92
+    return 0.89
+
+
+def _prag_fuzzy_partial(text_norm: str) -> int:
+    n = len(text_norm or "")
+    if n < 10:
+        return 97
+    if n < 14:
+        return 94
+    return 91
 
 
 def _strip_prefix_regina_maria(raw: str) -> str:
@@ -159,7 +179,7 @@ def invalideaza_cache():
     _CACHE_TIMESTAMP = 0.0
 
 
-def _cauta_in_cache(raw: str) -> Optional[int]:
+def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
     """
     Incearca mai multe strategii de matching si returneaza analiza_standard_id sau None.
     Daca nu gaseste nimic sigur, returneaza None (va fi salvata ca necunoscuta).
@@ -174,8 +194,11 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     # Curata artefactele de laborator (*, <, >, etc.) inainte de matching
     raw_curat = _curata_artefacte(raw)
     raw_lower = raw_curat.lower()
-    raw_norm = _normalizeaza(raw_curat)
-    raw_fara_par = _normalizeaza(_fara_paranteze(raw_curat))
+    domeniu = categorie_la_domeniu(categorie)
+    raw_norm = aplica_pipeline_ocr_normalizat(_normalizeaza(raw_curat), domeniu)
+    raw_fara_par = aplica_pipeline_ocr_normalizat(
+        _normalizeaza(_fara_paranteze(raw_curat)), domeniu
+    )
 
     # 1. Exact match pe textul original (case-insensitive)
     if raw.lower() in cache_raw:
@@ -193,10 +216,7 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
 
-    # 4b. Corectii OCR frecvente (modul partajat ocr_corrections)
-    raw_ocr_fix = aplică_corectii_ocr_normalizat(raw_norm)
-    if raw_ocr_fix != raw_norm and raw_ocr_fix in cache_norm:
-        return cache_norm[raw_ocr_fix]
+    # 4b. (integrat) Pipeline OCR e deja aplicat pe raw_norm / raw_fara_par mai sus.
 
     # 5. Match dupa primele 2 cuvinte semnificative (mai conservator)
     cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', raw_norm) if len(w) >= 3 and not w.isdigit()]
@@ -219,10 +239,15 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
     # 7. Fuzzy pe baza denumirii (fără valori numerice la coadă) — difflib
     baza_fuzz = _baza_denumire_pentru_fuzzy(raw_norm)
     if len(baza_fuzz) >= 5:
-        cutoff = 0.90 if len(baza_fuzz) < 12 else 0.88
+        cutoff = _prag_fuzzy_difflib(baza_fuzz)
         matches = difflib.get_close_matches(baza_fuzz, cache_norm.keys(), n=1, cutoff=cutoff)
         if matches:
-            return cache_norm[matches[0]]
+            m = matches[0]
+            # Pentru denumiri foarte scurte, cerem și prefix similar.
+            if len(baza_fuzz) < 10 and not m.startswith(baza_fuzz[:4]):
+                pass
+            else:
+                return cache_norm[m]
 
     # 7b. rapidfuzz partial_ratio pe aceeași bază; aliniere la începutul șirului
     if len(baza_fuzz) >= 6:
@@ -231,7 +256,7 @@ def _cauta_in_cache(raw: str) -> Optional[int]:
         except ImportError:
             pass
         else:
-            sc_cut = 95 if len(baza_fuzz) < 14 else 90
+            sc_cut = _prag_fuzzy_partial(baza_fuzz)
             best = process.extractOne(
                 baza_fuzz,
                 list(cache_norm.keys()),
@@ -292,7 +317,7 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
     if not r.denumire_raw:
         return r
 
-    aid = _cauta_in_cache(r.denumire_raw)
+    aid = _cauta_in_cache(r.denumire_raw, r.categorie)
     if aid is not None:
         r.analiza_standard_id = aid
     else:
@@ -300,7 +325,14 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
         from backend.parser import este_denumire_gunoi
 
         if este_denumire_gunoi(r.denumire_raw):
+            logging.info("[NEC_ZGOMOT] ignorat: %s", (r.denumire_raw or "")[:120])
             return r
+        # Clasificare simplă pentru audit: probabil alias valid vs linie posibil coruptă
+        den = (r.denumire_raw or "").strip()
+        if len(den) >= 6 and re.search(r"[A-Za-zĂÂÎȘȚăâîșț]{4,}", den):
+            logging.info("[NEC_PROBABIL] %s", den[:140])
+        else:
+            logging.info("[NEC_AMBIGUU] %s", den[:140])
         # Logam pentru aprobare - medicul va putea asigna ulterior (cu categoria din buletin)
         _log_necunoscuta(r.denumire_raw, r.categorie)
 

@@ -1,15 +1,128 @@
 """
 Corecții OCR partajate între normalizer (mapare alias) și parser (chei deduplicare).
 
-Aplică pe text deja normalizat (lowercase, fără diacritice) sau pe fragmente de linie,
-conform contextului apelantului.
-"""
-import re
-from typing import Tuple
+Pipeline pe text deja normalizat (lowercase, fără diacritice), folosit de normalizer:
+  DIRECT_MAP → REGEX_MAP → DOMAIN_MAP (opțional, după categorie buletin)
 
-# (pattern, înlocuire) — `raw_norm` din normalizer (după _normalizeaza)
-OCR_FIX_PATTERNS_NORMALIZAT: Tuple[Tuple[str, str], ...] = (
-    (r"\bumar\b", "numar"),  # N citit greșit ca u
+Pe linie brută înainte de parsare: `corecteaza_ocr_linie_buletin` (structură, unități, microbiologie).
+"""
+from __future__ import annotations
+
+import logging
+import re
+import unicodedata
+from typing import Dict, List, Optional, Tuple
+
+_log = logging.getLogger(__name__)
+
+# ─── Mapare categorie PDF (RO) → domeniu pentru DOMAIN_MAP ─────────────────
+
+
+def _normalizeaza_cheie(s: str) -> str:
+    """Lowercase + fără diacritice + spații colapsate (fără dependență de normalizer)."""
+    if not s:
+        return ""
+    text = s.strip().lower()
+    text = text.replace("ș", "s").replace("ş", "s")
+    text = text.replace("ț", "t").replace("ţ", "t")
+    text = text.replace("ă", "a").replace("â", "a").replace("î", "i")
+    text = "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def categorie_la_domeniu(categorie: Optional[str]) -> Optional[str]:
+    """
+    Deduce domeniul pentru corecții suplimentare din secțiunea/categoria extrasă din PDF.
+    Returnează chei: microbiology | urine | hematology | biochemistry sau None.
+    """
+    if not categorie or not str(categorie).strip():
+        return None
+    cat = _normalizeaza_cheie(str(categorie))
+    if not cat:
+        return None
+    if any(
+        x in cat
+        for x in (
+            "microbio",
+            "microorgan",
+            "cultur",
+            "bacteri",
+            "antibiogram",
+            "myco",
+            "fung",
+        )
+    ):
+        return "microbiology"
+    if any(x in cat for x in ("urin", "sediment", "sumar urinar", "urocult", "urogram")):
+        return "urine"
+    if any(
+        x in cat
+        for x in (
+            "hemato",
+            "hemoleuco",
+            "hemogram",
+            "hematolog",
+            "sange oscilogra",
+            "sange oscilograf",
+            "coagul",
+        )
+    ):
+        return "hematology"
+    if any(
+        x in cat
+        for x in (
+            "biochim",
+            "metabol",
+            "electrolit",
+            "hepat",
+            "renal",
+            "lipid",
+            "glucid",
+        )
+    ):
+        return "biochemistry"
+    return None
+
+
+# ─── 1. Mapări deterministe (chei deja normalizate: lowercase, fără diacritice) ─
+# Înlocuire substring, ordine: cele mai lungi primele (evită înlocuiri parțiale greșite).
+
+_DIRECT_PAIRS: Tuple[Tuple[str, str], ...] = (
+    # Microbiologie (frecvent OCR)
+    ("staphvlococcus aureus", "staphylococcus aureus"),
+    ("staphilococcus aureus", "staphylococcus aureus"),
+    ("ha_emophi_lus influenzae", "haemophilus influenzae"),
+    ("haemophilus influenzac", "haemophilus influenzae"),
+    ("moraxella catarrhalis-", "moraxella catarrhalis"),
+    ("enterobacteriaceae -", "enterobacteriaceae"),
+    ("clostridiumdifficile", "clostridium difficile"),
+    ("toxina clostridium difficile", "clostridium difficile toxina"),
+    ("candida spp", "candida spp."),
+    # Hematologie / urină (OCR RO)
+    ("pla chetar", "plachetar"),
+    ("pla.chetar", "plachetar"),
+    ("eritrocitare", "eritrocite"),
+    ("leucocite foarte", "leucocite"),
+    ("tranzmonale", "tranzitionale"),
+    ("tranzutlonale", "tranzitionale"),
+    ("epitellal", "epiteliale"),
+    ("celule epitellale", "celule epiteliale"),
+    ("celule epiteliale tranzmonale", "celule epiteliale tranzitionale"),
+    ("aciduric", "acid uric"),
+    ("negativ.", "negativ"),
+    ("normal.", "normal"),
+)
+
+_DIRECT_MAP_SORTED: List[Tuple[str, str]] = sorted(
+    _DIRECT_PAIRS, key=lambda p: len(p[0]), reverse=True
+)
+
+# ─── 2. Regex pe text normalizat (păstrăm setul existent + completări sigure) ─
+
+REGEX_MAP_NORMALIZAT: Tuple[Tuple[str, str], ...] = (
+    (r"\bumar\b", "numar"),
     (r"\bcrealinin[ae]?\b", "creatinina"),
     (r"\bglu[o0]{2,}za\b", "glucoza"),
     (r"\bhemoglo[b6]ina\b", "hemoglobina"),
@@ -24,7 +137,6 @@ OCR_FIX_PATTERNS_NORMALIZAT: Tuple[Tuple[str, str], ...] = (
     (r"pla\.?\s*chetar", "plachetar"),
     (r"tranzmonale", "tranzitionale"),
     (r"tranzutlonale", "tranzitionale"),
-    # Microbiologie — după normalizare (lowercase, fără diacritice)
     (r"\bha[_\s]*emophi[_\s!l1i]*us\b", "haemophilus"),
     (r"\bhaemophilus\s+influenz\w*\b", "haemophilus influenzae"),
     (r"^\s*eriaceae\b", "enterobacteriaceae"),
@@ -35,7 +147,95 @@ OCR_FIX_PATTERNS_NORMALIZAT: Tuple[Tuple[str, str], ...] = (
     (r"\bclostridi\w*\s+difficile\b", "clostridium difficile"),
     (r"\bdiagnostipz\b", "diagnostic"),
     (r"\bdiagn[o0]stipz\b", "diagnostic"),
+    # Completări sigure (fără staph\w+ / eritro\w+ prea largi)
+    (r"(\d)\s*\.\s*(\d)", r"\1.\2"),
+    (r"mg\s*/\s*d[il1]\b", "mg/dl"),
+    (r"iplate", "plate"),
+    (r"\btgp\b", "alt"),
+    (r"\btgo\b", "ast"),
 )
+
+# Alias istoric pentru importuri existente
+OCR_FIX_PATTERNS_NORMALIZAT: Tuple[Tuple[str, str], ...] = REGEX_MAP_NORMALIZAT
+
+# ─── 3. Corecții pe domeniu (chei normalizate) ───────────────────────────────
+
+DOMAIN_MAP_NORMALIZAT: Dict[str, Dict[str, str]] = {
+    "microbiology": {
+        "influenzae-": "influenzae",
+        "aureus -": "aureus",
+        "aureus-": "aureus",
+        "spp -": "spp.",
+        "spp-": "spp.",
+    },
+    "urine": {
+        "celule epiteliale tranzmonale": "celule epiteliale tranzitionale",
+        "celule epiteliale tranzutlonale": "celule epiteliale tranzitionale",
+    },
+}
+
+# Regex suplimentare per domeniu (RBC/WBC; glucoza → glicemie doar în biochimie)
+_DOMAIN_REGEX: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "hematology": (
+        (r"\brbc\b", "eritrocite"),
+        (r"\bwbc\b", "leucocite"),
+    ),
+    "biochemistry": (
+        (r"\bglucoza\b", "glicemie"),
+    ),
+}
+
+
+def aplica_pipeline_ocr_normalizat(
+    raw_norm: str, domain: Optional[str] = None, *, log_changes: bool = False
+) -> str:
+    """
+    Ordine: DIRECT_MAP → REGEX → regex domeniu → DOMAIN substring.
+
+    `raw_norm` trebuie deja trecut prin aceeași normalizare ca `normalizer._normalizeaza`.
+    """
+    if not raw_norm or not raw_norm.strip():
+        return raw_norm
+    original = raw_norm
+    text = raw_norm
+
+    for wrong, right in _DIRECT_MAP_SORTED:
+        if wrong in text:
+            text = text.replace(wrong, right)
+
+    for pattern, repl in REGEX_MAP_NORMALIZAT:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+
+    if domain:
+        for pattern, repl in _DOMAIN_REGEX.get(domain, ()):
+            text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+        dm = DOMAIN_MAP_NORMALIZAT.get(domain)
+        if dm:
+            for wrong, right in sorted(dm.items(), key=lambda x: len(x[0]), reverse=True):
+                if wrong in text:
+                    text = text.replace(wrong, right)
+
+    text = re.sub(r"\s+", " ", text).strip()
+    if log_changes and text != original:
+        _log.debug("[OCR_PIPELINE] %r -> %r (domain=%s)", original, text, domain)
+    return text
+
+
+def aplică_corectii_ocr_normalizat(raw_norm: str) -> str:
+    """Compatibilitate: pipeline fără domeniu (doar DIRECT + REGEX)."""
+    return aplica_pipeline_ocr_normalizat(raw_norm, domain=None)
+
+
+def text_ocr_suspect(s: str) -> bool:
+    """Heuristic scurt: posibil fragment OCR incomplet (pentru triaj / debug)."""
+    if not s or not str(s).strip():
+        return True
+    t = str(s).strip()
+    if len(t) < 4:
+        return True
+    if re.match(r"^\d", t) and len(t) < 8:
+        return True
+    return False
 
 
 def corecteaza_ocr_linie_buletin(linie: str) -> str:
@@ -51,7 +251,8 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"^\|\s*", "", s)
 
     # --- Prefix numeric N. sau _N. inainte de denumire (Sante Vie: "3.Acid uric", "_5.Glicemie") ---
-    s = re.sub(r"^_?\d{1,2}\.\s*", "", s)
+    # NU stergem daca dupa "N." urmeaza cifra (ex: "2.236 uUI/mL" = valoare reala, nu prefix sectiune)
+    s = re.sub(r"^_?\d{1,2}\.\s*(?=[A-Za-zĂÂÎȘȚăâîșț#_])", "", s)
     # Prefix cifra + litere mici la incepul denumirii, inainte de separarea generala
     # (Sante Vie: "4dUreeserica" -> "Ureeserica"; trebuie sa fie inainte de regula de separare
     #  care ar da "4d" -> "4 d" si ar strica pattern-ul)
@@ -100,7 +301,11 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     # (\b nu prinde % deoarece % e non-word char, deci regula generala urmatoare il ratează)
     s = re.sub(r"(\d)%(?=[\s,;|]|$)", r"\1 %", s)
     # Valoare lipita de unitate: "30,8pg" → "30,8 pg", "18Bgdl" → "18,8 g/dL"
-    s = re.sub(r"(\d)([a-zA-ZµμfL%][a-zA-Z/\^0-9µμ]*)\b", lambda m: m.group(1) + " " + m.group(2) if not m.group(2).startswith(("e", "E")) else m.group(0), s)
+    s = re.sub(
+        r"(\d)([a-zA-ZµμfL%][a-zA-Z/\^0-9µμ]*)\b",
+        lambda m: m.group(1) + " " + m.group(2) if not m.group(2).startswith(("e", "E")) else m.group(0),
+        s,
+    )
     # gdl / gal / g/al → g/dL
     s = re.sub(r"\bg/al\b", "g/dL", s, flags=re.IGNORECASE)
     s = re.sub(r"\bgdl\b", "g/dL", s, flags=re.IGNORECASE)
@@ -174,14 +379,6 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
         flags=re.IGNORECASE,
     )
     return s
-
-
-def aplică_corectii_ocr_normalizat(raw_norm: str) -> str:
-    """Aplică înlocuiri tip OCR pe string normalizat (alias matching)."""
-    out = raw_norm
-    for pattern, repl in OCR_FIX_PATTERNS_NORMALIZAT:
-        out = re.sub(pattern, repl, out, flags=re.IGNORECASE)
-    return out
 
 
 def corecteaza_umar_numar_in_denumire(s: str) -> str:
