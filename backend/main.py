@@ -1109,68 +1109,56 @@ async def upload_pdf(
         text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.to_thread(
             extract_text_with_metrics, tmp_path, dpi_first
         )
-        if debug and text:
-            # In mod debug, returnam diagnostic complet pentru verificare
+        if debug:
+            # Verificare fara salvare: CNP optional ca sa vezi analize chiar fara CNP in PDF
             from backend.parser import _linie_este_exclusa
-            parsed_dbg = parse_full_text(text)
-            lines_raw = [l.strip() for l in text.replace("\r", "\n").split("\n") if l.strip()]
+            tdbg = text or ""
+            parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
+            lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
-            if parsed_dbg:
-                normalize_rezultate(parsed_dbg.rezultate)
-                triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
-                analize_list = [
-                    {
-                        "denumire": r.denumire_raw,
-                        "valoare": r.valoare,
-                        "unitate": r.unitate,
-                        "needs_review": getattr(r, "needs_review", False),
-                        "review_reasons": getattr(r, "review_reasons", []),
-                    }
-                    for r in parsed_dbg.rezultate
-                ]
-                return {
-                    "debug": True,
-                    "parser_version": _PARSER_VERSION,
-                    "tip_extragere": tip,
-                    "extractor": extractor,
-                    "ocr_metrics": ocr_metrics,
-                    "lungime_text": len(text),
-                    "numar_linii": len(lines_raw),
-                    "text_primele_3000": text[:6000] + ("..." if len(text) > 6000 else ""),
-                    "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
-                    "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
-                    "cnp": parsed_dbg.cnp,
-                    "nume": parsed_dbg.nume,
-                    "prenume": parsed_dbg.prenume,
-                    "numar_analize": len(parsed_dbg.rezultate),
-                    "analize": analize_list,
-                    "triere_ai": triage_dbg,
+            normalize_rezultate(parsed_dbg.rezultate)
+            triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
+            analize_list = [
+                {
+                    "denumire": r.denumire_raw,
+                    "valoare": r.valoare,
+                    "unitate": r.unitate,
+                    "needs_review": getattr(r, "needs_review", False),
+                    "review_reasons": getattr(r, "review_reasons", []),
                 }
+                for r in parsed_dbg.rezultate
+            ]
             return {
                 "debug": True,
                 "parser_version": _PARSER_VERSION,
-                "eroare": "CNP nespecificat",
-                "lungime_text": len(text),
                 "tip_extragere": tip,
                 "extractor": extractor,
                 "ocr_metrics": ocr_metrics,
+                "lungime_text": len(tdbg),
+                "numar_linii": len(lines_raw),
+                "text_primele_3000": tdbg[:6000] + ("..." if len(tdbg) > 6000 else ""),
                 "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
                 "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
+                "cnp": parsed_dbg.cnp,
+                "nume": parsed_dbg.nume,
+                "prenume": parsed_dbg.prenume,
+                "numar_analize": len(parsed_dbg.rezultate),
+                "analize": analize_list,
+                "triere_ai": triage_dbg,
             }
-        if not text or len(text.strip()) < 10:
-            detail = "Nu s-a putut extrage text din PDF (gol sau prea scurt)."
+        text = text or ""
+        upload_warnings: list[str] = []
+        if not text.strip():
+            w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum (fără linii de analize)."
             if ocr_err:
-                detail += " " + str(ocr_err)
-            return JSONResponse(status_code=422, content={"detail": detail})
-        parsed: Optional[PatientParsed] = parse_full_text(text)
-        if not parsed:
-            parsed = parse_full_text(text, cnp_optional=True)
+                w += " " + str(ocr_err)
+            upload_warnings.append(w)
+        parsed = parse_full_text(text, cnp_optional=True)
         if tip == "ocr":
-            # Fallback pentru scanuri dificile: rerulam OCR la DPI mai mare daca pacientul e Necunoscut
-            # sau s-au extras prea putine analize.
-            count_now = len(parsed.rezultate) if parsed else 0
-            unknown_name = (not parsed) or ((parsed.nume or "").strip().lower() == "necunoscut")
-            if unknown_name or count_now < 12:
+            # Fallback DPI mai mare doar cand numele pacientului nu e detectat (nu impunem prag de analize).
+            count_now = len(parsed.rezultate)
+            unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
+            if unknown_name:
                 if file_mb >= 3.0:
                     dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
                 else:
@@ -1186,16 +1174,11 @@ async def upload_pdf(
                     colored_tokens2 = []
                     extractor2 = extractor
                     ocr_metrics2 = ocr_metrics
-                parsed2: Optional[PatientParsed] = parse_full_text(text2)
-                if not parsed2:
-                    parsed2 = parse_full_text(text2, cnp_optional=True)
-                if parsed2 and parsed2.rezultate:
+                parsed2 = parse_full_text(text2, cnp_optional=True)
+                if parsed2:
                     count2 = len(parsed2.rezultate)
                     name2 = (parsed2.nume or "").strip().lower()
-                    is_better = (
-                        count2 >= max(count_now + 5, 14)
-                        or (name2 != "necunoscut" and unknown_name)
-                    )
+                    is_better = (name2 != "necunoscut" and unknown_name) or (count2 > count_now)
                     if is_better:
                         parsed = parsed2
                         text = text2
@@ -1207,8 +1190,6 @@ async def upload_pdf(
                         if ocr_metrics2:
                             ocr_metrics = ocr_metrics2
                         extractor = f"{extractor2}+dpi{dpi_retry}"
-        if not parsed:
-            return JSONResponse(status_code=422, content={"detail": "Nu s-a gasit un CNP valid in PDF."})
         ocr_calitate_slaba_salvata = False
         if tip == "ocr":
             q = _calc_upload_quality(parsed)
@@ -1228,21 +1209,11 @@ async def upload_pdf(
             if suspect_flags >= 2:
                 ocr_calitate_slaba_salvata = True
         if not parsed.rezultate:
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "detail": "Nu s-au extras analize din PDF. Textul a fost extras, dar formatul nu se potrivește "
-                    "parserului (sau toate liniile au fost filtrate). Încearcă „Verificare (fără salvare)” "
-                    "sau contactează suportul cu un eșantion din PDF.",
-                    "hint": "Folosește butonul Verificare pentru a vedea textul extras și numărul de linii.",
-                    "lungime_text": len(text.strip()),
-                    "tip_extragere": tip,
-                    "extractor": extractor,
-                    "ocr_metrics": ocr_metrics,
-                },
+            upload_warnings.append(
+                "Nu s-au extras analize din text; buletinul a fost salvat fără linii de rezultate. "
+                "Poți folosi Verificare sau trimitere spre analiză (AI) când consideri."
             )
         normalize_rezultate(parsed.rezultate)
-        upload_warnings: list[str] = []
         if ocr_calitate_slaba_salvata:
             upload_warnings.append(
                 "Calitate OCR slabă sau date incomplete: buletinul a fost salvat. "
