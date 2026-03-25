@@ -209,7 +209,8 @@ def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Opti
     if q["unknown_name"]:
         score -= 25
         reasons.append("nume_necunoscut")
-    if q["total_rez"] < 12:
+    # Penalizare numar analize: doar daca sub 3 (aproape gol)
+    if q["total_rez"] < 3:
         score -= 20
         reasons.append("prea_putine_analize")
     # Prag ~20% „bun”: penalizare doar dacă necunoscute/zgomot depășesc 80%.
@@ -223,19 +224,11 @@ def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Opti
     ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
     avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
     avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
-    if tip == "ocr":
-        if avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)):
-            score -= 15
-            reasons.append("ocr_conf_scazut")
-        if avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
-            score -= 10
-            reasons.append("ocr_weak_ratio_mare")
+    # Nu penalizam OCR metrics in triage - un scan slab se salveaza oricum
 
     score = max(0, min(100, int(round(score))))
     decision = "auto"
     if score < 20:
-        decision = "ai"
-    elif score < 40:
         decision = "review"
 
     return {
@@ -1199,7 +1192,7 @@ async def upload_pdf(
             suspect_flags = 0
             if (parsed.nume or "").strip().lower() == "necunoscut":
                 suspect_flags += 1
-            if total_rez < 12:
+            if total_rez < 3:
                 suspect_flags += 1
             if unknown_ratio > 0.80:
                 suspect_flags += 1
@@ -2345,7 +2338,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub">Panou medic – v11.03.2026 | <span id="user-display"></span></div>
+    <div class="sub">Panou medic – v25.03.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none" title="Exportă backup înainte de redeploy (Railway)">📥 Export backup</button>
