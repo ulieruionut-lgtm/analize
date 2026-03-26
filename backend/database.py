@@ -1,5 +1,7 @@
 """Conexiune SQLite (implicit), PostgreSQL sau MySQL. CRUD pentru MVP."""
+import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, date
 from decimal import Decimal
@@ -1610,3 +1612,157 @@ def restore_from_backup(data: Dict[str, Any]) -> Dict[str, Any]:
             result["erori"].append(f"rezultat buletin_id={r.get('buletin_id')}: {e}")
 
     return result
+
+
+# --- Upload async jobs (PostgreSQL: partajat intre replici Railway) ---
+_UPLOAD_ASYNC_JOBS_TABLE_OK = False
+
+
+def upload_async_jobs_use_database() -> bool:
+    return _detect_db_type() == "postgresql"
+
+
+def ensure_upload_async_jobs_table() -> None:
+    global _UPLOAD_ASYNC_JOBS_TABLE_OK
+    if _UPLOAD_ASYNC_JOBS_TABLE_OK or not upload_async_jobs_use_database():
+        _UPLOAD_ASYNC_JOBS_TABLE_OK = True
+        return
+    sql_path = Path(__file__).resolve().parent.parent / "sql" / "017_pg_upload_async_jobs.sql"
+    sql_text = sql_path.read_text(encoding="utf-8") if sql_path.exists() else ""
+    if not sql_text.strip():
+        sql_text = """
+        CREATE TABLE IF NOT EXISTS upload_async_jobs (
+          job_id VARCHAR(80) PRIMARY KEY,
+          owner_username TEXT NOT NULL DEFAULT '',
+          file_name TEXT,
+          status VARCHAR(32) NOT NULL DEFAULT 'queued',
+          created_at TEXT,
+          started_at TEXT,
+          finished_at TEXT,
+          created_ts DOUBLE PRECISION DEFAULT 0,
+          started_ts DOUBLE PRECISION DEFAULT 0,
+          finished_ts DOUBLE PRECISION DEFAULT 0,
+          response_status INTEGER,
+          result_json TEXT
+        );
+        """
+    with get_cursor() as cur:
+        cur.execute(sql_text)
+    _UPLOAD_ASYNC_JOBS_TABLE_OK = True
+
+
+def _upload_job_row_to_dict(row: dict) -> dict:
+    if not row:
+        return {}
+    d = dict(row)
+    rj = d.pop("result_json", None)
+    own = d.pop("owner_username", "") or ""
+    out: Dict[str, Any] = {**d, "owner": own}
+    if rj:
+        try:
+            out["result"] = json.loads(rj)
+        except Exception:
+            out["result"] = None
+    return out
+
+
+def upload_async_job_merge_db(job_id: str, **fields: Any) -> dict:
+    ensure_upload_async_jobs_table()
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT job_id, owner_username, file_name, status, created_at, started_at, finished_at,
+                   created_ts, started_ts, finished_ts, response_status, result_json
+            FROM upload_async_jobs WHERE job_id = %s
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+        base = _upload_job_row_to_dict(row) if row else {"job_id": job_id}
+        base.update(fields)
+        rj = None
+        if base.get("result") is not None:
+            rj = json.dumps(base["result"], ensure_ascii=False)
+        owner = base.get("owner") or ""
+        cur.execute(
+            """
+            INSERT INTO upload_async_jobs (
+              job_id, owner_username, file_name, status, created_at, started_at, finished_at,
+              created_ts, started_ts, finished_ts, response_status, result_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (job_id) DO UPDATE SET
+              owner_username = EXCLUDED.owner_username,
+              file_name = EXCLUDED.file_name,
+              status = EXCLUDED.status,
+              created_at = EXCLUDED.created_at,
+              started_at = EXCLUDED.started_at,
+              finished_at = EXCLUDED.finished_at,
+              created_ts = EXCLUDED.created_ts,
+              started_ts = EXCLUDED.started_ts,
+              finished_ts = EXCLUDED.finished_ts,
+              response_status = EXCLUDED.response_status,
+              result_json = EXCLUDED.result_json
+            """,
+            (
+                job_id,
+                owner,
+                base.get("file_name"),
+                base.get("status") or "queued",
+                base.get("created_at"),
+                base.get("started_at"),
+                base.get("finished_at"),
+                float(base.get("created_ts") or 0),
+                float(base.get("started_ts") or 0),
+                float(base.get("finished_ts") or 0),
+                base.get("response_status"),
+                rj,
+            ),
+        )
+    return base
+
+
+def upload_async_job_get_db(job_id: str) -> Optional[dict]:
+    ensure_upload_async_jobs_table()
+    with get_cursor(commit=False) as cur:
+        cur.execute(
+            """
+            SELECT job_id, owner_username, file_name, status, created_at, started_at, finished_at,
+                   created_ts, started_ts, finished_ts, response_status, result_json
+            FROM upload_async_jobs WHERE job_id = %s
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return _upload_job_row_to_dict(row)
+
+
+def upload_async_jobs_prune_db(ttl_seconds: int, max_jobs: int) -> None:
+    ensure_upload_async_jobs_table()
+    now = time.time()
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM upload_async_jobs
+            WHERE finished_ts IS NOT NULL AND finished_ts > 0 AND %s - finished_ts > %s
+            """,
+            (now, float(ttl_seconds)),
+        )
+        cur.execute("SELECT COUNT(*) AS n FROM upload_async_jobs")
+        row = cur.fetchone()
+        n = int(_row_get(row, "n") if row else 0)
+        if n > max_jobs:
+            excess = n - max_jobs
+            cur.execute(
+                """
+                DELETE FROM upload_async_jobs
+                WHERE job_id IN (
+                  SELECT job_id FROM upload_async_jobs
+                  ORDER BY created_ts ASC NULLS LAST
+                  LIMIT %s
+                )
+                """,
+                (excess,),
+            )

@@ -56,6 +56,10 @@ from backend.database import (
     update_user_password,
     update_pacient_nume,
     upsert_pacient,
+    upload_async_job_get_db,
+    upload_async_job_merge_db,
+    upload_async_jobs_prune_db,
+    upload_async_jobs_use_database,
 )
 from backend.models import PatientParsed
 from backend.normalizer import normalize_rezultate
@@ -121,6 +125,9 @@ def _now_iso_utc() -> str:
 
 
 def _prune_upload_async_jobs() -> None:
+    if upload_async_jobs_use_database():
+        upload_async_jobs_prune_db(_UPLOAD_ASYNC_TTL_SECONDS, _UPLOAD_ASYNC_MAX_JOBS)
+        return
     now_ts = datetime.utcnow().timestamp()
     with _UPLOAD_ASYNC_LOCK:
         to_delete: list[str] = []
@@ -143,6 +150,8 @@ def _prune_upload_async_jobs() -> None:
 
 
 def _set_upload_async_job(job_id: str, **fields) -> dict:
+    if upload_async_jobs_use_database():
+        return upload_async_job_merge_db(job_id, **fields)
     with _UPLOAD_ASYNC_LOCK:
         current = _UPLOAD_ASYNC_JOBS.get(job_id, {})
         current.update(fields)
@@ -151,6 +160,8 @@ def _set_upload_async_job(job_id: str, **fields) -> dict:
 
 
 def _get_upload_async_job(job_id: str) -> Optional[dict]:
+    if upload_async_jobs_use_database():
+        return upload_async_job_get_db(job_id)
     with _UPLOAD_ASYNC_LOCK:
         job = _UPLOAD_ASYNC_JOBS.get(job_id)
         return dict(job) if job else None
@@ -653,7 +664,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
@@ -4709,7 +4720,7 @@ function afiseazaMesaj(containerId, tip, html) {
 </div><!-- /app-container -->
 </body>
 </html>"""
-    return HTMLResponse(content=html, headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
+    return html
 
 
 if __name__ == "__main__":
