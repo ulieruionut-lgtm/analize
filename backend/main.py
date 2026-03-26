@@ -2349,7 +2349,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub">Panou medic – v25.03.2026 | <span id="user-display"></span></div>
+    <div class="sub">Panou medic – v26.03.2026 | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none" title="Exportă backup înainte de redeploy (Railway)">📥 Export backup</button>
@@ -3313,62 +3313,6 @@ async function _uploadCuRetry(uploadUrl, fd) {
   return { response: lastResp, text: lastText };
 }
 
-async function _proceseazaUploadAsync(fd, onStatus) {
-  const start = await _uploadCuRetry('/upload-async', fd);
-  if (start.aborted) return { aborted: true };
-  const rs = start.response;
-  const txtStart = start.text || '';
-  let jStart = {};
-  try { jStart = JSON.parse(txtStart); } catch {}
-  if (!rs || !rs.ok || !jStart.job_id) {
-    return { response: rs, text: txtStart };
-  }
-
-  const jobId = String(jStart.job_id || '').trim();
-  const t0 = Date.now();
-  let lastStatus = 'queued';
-  while ((Date.now() - t0) < 20 * 60 * 1000) {
-    await new Promise(res => setTimeout(res, lastStatus === 'processing' ? 2500 : 1200));
-    let rPoll;
-    let txtPoll = '';
-    try {
-      rPoll = await fetch('/upload-async/' + encodeURIComponent(jobId), { headers: getAuthHeaders() });
-      if (handle401(rPoll)) return { aborted: true };
-      txtPoll = await rPoll.text();
-    } catch {
-      // Retry silent la probleme tranzitorii de retea/gateway.
-      continue;
-    }
-
-    if (!rPoll.ok) {
-      return { response: rPoll, text: txtPoll };
-    }
-
-    let jPoll = {};
-    try { jPoll = JSON.parse(txtPoll); } catch {}
-    lastStatus = String(jPoll.status || lastStatus);
-    if (typeof onStatus === 'function') onStatus(lastStatus);
-
-    if (lastStatus === 'success' || lastStatus === 'error') {
-      const code = Number(jPoll.response_status || (lastStatus === 'success' ? 200 : 500));
-      const payload = (jPoll && typeof jPoll.result === 'object' && jPoll.result !== null)
-        ? jPoll.result
-        : { detail: 'Job finalizat fara payload valid.' };
-      return {
-        response: { ok: code >= 200 && code < 400, status: code },
-        text: JSON.stringify(payload),
-      };
-    }
-  }
-
-  return {
-    response: { ok: false, status: 504 },
-    text: JSON.stringify({
-      detail: 'Procesarea dureaza prea mult pe server (timeout polling). Incearca din nou.',
-    }),
-  };
-}
-
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -3387,22 +3331,17 @@ async function trimite(debugMode) {
   for (let i = 0; i < total; i++) {
     const f = fisierSelectat[i];
     btnText.innerHTML = '<span class="spinner"></span> ' + (i+1) + ' / ' + total + '…';
-    prog.textContent = f.size > 500000 ? f.name + ' – fișier mare, OCR poate dura 30-60 sec…' : f.name;
+    prog.textContent = f.size > 500000
+      ? f.name + ' – fișier mare, OCR poate dura câteva minute; nu închide pagina…'
+      : f.name;
 
     const fd = new FormData();
     fd.append('file', f);
     const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      const rq = debugMode
-        ? await _uploadCuRetry(uploadUrl, fd)
-        : await _proceseazaUploadAsync(fd, (st) => {
-            if (st === 'processing') {
-              prog.textContent = f.name + ' – se proceseaza pe server…';
-            } else if (st === 'queued') {
-              prog.textContent = f.name + ' – in coada de procesare…';
-            }
-          });
+      // Procesare sincronă pe /upload (ca Verificarea): evită job async + polling (404 între replici Railway).
+      const rq = await _uploadCuRetry(uploadUrl, fd);
       if (rq.aborted) return;
       const r = rq.response;
       const txt = rq.text || '';
