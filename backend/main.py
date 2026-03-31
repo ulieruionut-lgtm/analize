@@ -612,7 +612,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-tsv-bbox-20260331"
+_PARSER_VERSION = "medlife-tsv-bbox-20260331b"
 
 @app.get("/health")
 async def health():
@@ -3313,6 +3313,62 @@ async function _uploadCuRetry(uploadUrl, fd) {
   return { response: lastResp, text: lastText };
 }
 
+async function _proceseazaUploadAsync(fd, onStatus) {
+  const start = await _uploadCuRetry('/upload-async', fd);
+  if (start.aborted) return { aborted: true };
+  const rs = start.response;
+  const txtStart = start.text || '';
+  let jStart = {};
+  try { jStart = JSON.parse(txtStart); } catch {}
+  if (!rs || !rs.ok || !jStart.job_id) {
+    return { response: rs, text: txtStart };
+  }
+
+  const jobId = String(jStart.job_id || '').trim();
+  const t0 = Date.now();
+  let lastStatus = 'queued';
+  while ((Date.now() - t0) < 20 * 60 * 1000) {
+    await new Promise(res => setTimeout(res, lastStatus === 'processing' ? 2500 : 1200));
+    let rPoll;
+    let txtPoll = '';
+    try {
+      rPoll = await fetch('/upload-async/' + encodeURIComponent(jobId), { headers: getAuthHeaders() });
+      if (handle401(rPoll)) return { aborted: true };
+      txtPoll = await rPoll.text();
+    } catch {
+      // Retry silent la probleme tranzitorii de retea/gateway.
+      continue;
+    }
+
+    if (!rPoll.ok) {
+      return { response: rPoll, text: txtPoll };
+    }
+
+    let jPoll = {};
+    try { jPoll = JSON.parse(txtPoll); } catch {}
+    lastStatus = String(jPoll.status || lastStatus);
+    if (typeof onStatus === 'function') onStatus(lastStatus);
+
+    if (lastStatus === 'success' || lastStatus === 'error') {
+      const code = Number(jPoll.response_status || (lastStatus === 'success' ? 200 : 500));
+      const payload = (jPoll && typeof jPoll.result === 'object' && jPoll.result !== null)
+        ? jPoll.result
+        : { detail: 'Job finalizat fara payload valid.' };
+      return {
+        response: { ok: code >= 200 && code < 400, status: code },
+        text: JSON.stringify(payload),
+      };
+    }
+  }
+
+  return {
+    response: { ok: false, status: 504 },
+    text: JSON.stringify({
+      detail: 'Procesarea dureaza prea mult pe server (timeout polling). Incearca din nou.',
+    }),
+  };
+}
+
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -3340,8 +3396,17 @@ async function trimite(debugMode) {
     const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      // Procesare sincronă pe /upload (ca Verificarea): evită job async + polling (404 între replici Railway).
-      const rq = await _uploadCuRetry(uploadUrl, fd);
+      // Procesare asincronă pe /upload-async (job stocat în PostgreSQL, partajat între replici Railway).
+      // Debug/Verificare folosesc /upload sincron (răspuns imediat cu diagnostic).
+      const rq = debugMode
+        ? await _uploadCuRetry(uploadUrl, fd)
+        : await _proceseazaUploadAsync(fd, (st) => {
+            if (st === 'processing') {
+              prog.textContent = f.name + ' – se procesează pe server (OCR)…';
+            } else if (st === 'queued') {
+              prog.textContent = f.name + ' – în coadă de procesare…';
+            }
+          });
       if (rq.aborted) return;
       const r = rq.response;
       const txt = rq.text || '';
