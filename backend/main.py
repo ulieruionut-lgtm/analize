@@ -7,10 +7,16 @@ import re
 import tempfile
 import threading
 import traceback
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
+
+# Suppress non-critical FontBBox warnings emitted by PDF/font rendering libraries
+# (pdfminer, reportlab, etc.) that do not affect correctness of text extraction.
+warnings.filterwarnings("ignore", message=".*FontBBox.*")
+warnings.filterwarnings("ignore", message=".*font bbox.*", category=UserWarning)
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
