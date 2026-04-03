@@ -30,7 +30,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 RUN printf '#!/bin/sh\n\
 TDATA=$(find /usr/share/tesseract-ocr -name "ron.traineddata" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)\n\
 if [ -n "$TDATA" ]; then export TESSDATA_PREFIX="$TDATA"; fi\n\
-exec python -m uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 4 --timeout-keep-alive 300 --max-requests 1000 --max-requests-jitter 100\n' > /start.sh \
+exec python -m uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 4 --timeout-keep-alive 300 --limit-max-requests 1000 --limit-max-requests-jitter 100\n' > /start.sh \
     && chmod +x /start.sh
 
 CMD ["/bin/sh", "/start.sh"]
