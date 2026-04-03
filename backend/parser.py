@@ -904,6 +904,20 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
                 return (parts[0], parts[1]) if len(parts) >= 2 else (raw_n, None)
             # Nume pacient: eronat / OCR → încearcă mai jos (CNP etc.)
 
+    # --- Varianta 0: Regina Maria OCR — «Nume:\n<valoare>» (eticheta pe linie separata) ---
+    # Tesseract cu PSM 6 pe formular cu 2 coloane poate separa eticheta de valoare pe linii distincte.
+    m_rm = re.search(
+        r"(?:^|\n)\s*Nume\s*:\s*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:[\s\-][A-ZĂÂÎȘȚ][a-zăâîșț]+)+)",
+        text,
+        re.IGNORECASE,
+    )
+    if m_rm:
+        raw_rm = _curata_nume(m_rm.group(1))
+        n_rm, _ = _valid(raw_rm, None)
+        if n_rm != "Necunoscut":
+            parts_rm = raw_rm.split(None, 1)
+            return raw_rm, parts_rm[1] if len(parts_rm) >= 2 else None
+
     # --- Varianta 1a-MedLife: «Nume/Prenume:» (Policlinica PDR, MedLife) ---
     m_slash = re.search(
         r"(?:^|\n)\s*Nume\s*/\s*Prenume\s*:\s*([^\n]+)", text, re.IGNORECASE
@@ -919,12 +933,24 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
                     return nume_fam, pren
 
     # --- Varianta 1b: "Nume:" (format scurt) ---
+    # Regina Maria OCR: layout cu 2 coloane poate pune eticheta "Nume:" pe o linie
+    # si valoarea "Cretulescu Cornel" pe linia urmatoare (coloana dreapta pe alta linie).
+    # Daca valoarea de pe aceeasi linie nu e un nume valid, incercam linia urmatoare.
     m_n = re.search(r"(?:^|\n)\s*Nume\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    m_n_next = re.search(r"(?:^|\n)\s*Nume\s*:\s*\S[^\n]*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:\s+[A-ZĂÂÎȘȚ][a-zăâîșț]+)+)", text, re.IGNORECASE)
     m_p = re.search(r"(?:^|\n)\s*Prenume\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if m_n:
         raw_n = _curata_nume(m_n.group(1))
         if not raw_n:
             raw_n = m_n.group(1).strip()
+        # Fallback: daca valoarea de pe aceeasi linie nu e un nume valid, verifica linia urmatoare
+        n_test, _ = _valid(raw_n, None)
+        if n_test == "Necunoscut" and m_n_next:
+            raw_n_next = _curata_nume(m_n_next.group(1))
+            n_next, _ = _valid(raw_n_next, None)
+            if n_next != "Necunoscut":
+                parts_next = raw_n_next.split(None, 1)
+                return raw_n_next, parts_next[1] if len(parts_next) >= 2 else None
         prenume = None
         if m_p:
             raw_p = _curata_camp_prenume(m_p.group(1))
