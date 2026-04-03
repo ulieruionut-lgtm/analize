@@ -1089,16 +1089,36 @@ async def upload_pdf_async_status(job_id: str, current_user: dict = Depends(get_
     if not is_owner and not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="Nu ai acces la acest job.")
 
+    status = job.get("status", "queued")
+    # Stale job detector: daca procesarea dureaza >12 minute, workerul probabil a murit.
+    # Marcam jobul ca "error" ca sa nu ramana blocat la infinit in polling.
+    _STALE_MINUTES = 12
+    if status in {"processing", "queued"}:
+        ref_ts = job.get("started_ts") or job.get("created_ts") or 0
+        if ref_ts and (datetime.utcnow().timestamp() - float(ref_ts)) > _STALE_MINUTES * 60:
+            _set_upload_async_job(
+                job_id,
+                status="error",
+                response_status=504,
+                result={"detail": f"Procesarea a depasit {_STALE_MINUTES} minute. Workerul s-a oprit sau PDF-ul e prea complex. Incearca din nou."},
+                finished_at=_now_iso_utc(),
+                finished_ts=datetime.utcnow().timestamp(),
+            )
+            status = "error"
+            job["result"] = {"detail": f"Procesarea a depasit {_STALE_MINUTES} minute. Workerul s-a oprit sau PDF-ul e prea complex. Incearca din nou."}
+            job["response_status"] = 504
+            print(f"[UPLOAD-ASYNC] STALE job={job_id} marcat error dupa {_STALE_MINUTES}min")
+
     result = {
         "job_id": job.get("job_id"),
-        "status": job.get("status", "queued"),
+        "status": status,
         "file_name": job.get("file_name"),
         "created_at": job.get("created_at"),
         "started_at": job.get("started_at"),
         "finished_at": job.get("finished_at"),
         "response_status": job.get("response_status"),
     }
-    if job.get("status") in {"success", "error"}:
+    if status in {"success", "error"}:
         result["result"] = job.get("result")
     return result
 
