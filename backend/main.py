@@ -61,7 +61,14 @@ from backend.database import (
     upload_async_jobs_prune_db,
     upload_async_jobs_use_database,
 )
-from backend.models import PatientParsed
+from backend.models import (
+    PatientParsed,
+    AdaugaAnalizaStdBody,
+    AdaugaRezultatBody,
+    AprobaAliasBody,
+    AprobaAliasBulkBody,
+    ActualizeazaPacientBody,
+)
 from backend.normalizer import normalize_rezultate
 
 app = FastAPI(title="Analize medicale PDF", version="1.0.0")
@@ -417,6 +424,25 @@ def _startup_blocking_work() -> None:
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 012 (ignorat): {ex}")
+            sql_018 = Path(__file__).resolve().parent.parent / "sql" / "018_pg_indexes.sql"
+            if url and sql_018.exists():
+                try:
+                    conn = _postgresql_connect(url)
+                    conn.autocommit = False
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(sql_018.read_text(encoding="utf-8"))
+                        conn.commit()
+                        print("[STARTUP] OK Migrare 018 (indexuri performanta)")
+                    except Exception as ex:
+                        conn.rollback()
+                        em = str(ex).lower()
+                        if "already" not in em and "duplicate" not in em and "exists" not in em:
+                            print(f"[STARTUP] Migrare 018: {ex}")
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    print(f"[STARTUP] Migrare 018 (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     try:
@@ -612,7 +638,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-tsv-bbox-20260331b"
+_PARSER_VERSION = "medlife-tsv-bbox-20260331c-optimizat"
 
 @app.get("/health")
 async def health():
@@ -664,7 +690,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql", "018_pg_indexes.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:
@@ -767,8 +793,8 @@ async def change_password(
     user = get_user_by_username(current_user["username"])
     if not user or not verify_password(body.current_password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Parola curenta incorecta.")
-    if len(body.new_password.strip()) < 4:
-        raise HTTPException(status_code=400, detail="Parola noua trebuie sa aiba minim 4 caractere.")
+    if len(body.new_password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="Parola noua trebuie sa aiba minim 8 caractere.")
     ok = update_user_password(current_user["username"], hash_password(body.new_password))
     if not ok:
         raise HTTPException(status_code=500, detail="Nu s-a putut actualiza parola.")
@@ -798,8 +824,8 @@ async def create_user(
     username = (body.username or "").strip()
     if not username:
         raise HTTPException(status_code=400, detail="Username gol.")
-    if len((body.password or "").strip()) < 4:
-        raise HTTPException(status_code=400, detail="Parola trebuie sa aiba minim 4 caractere.")
+    if len((body.password or "").strip()) < 8:
+        raise HTTPException(status_code=400, detail="Parola trebuie sa aiba minim 8 caractere.")
     user = db_create_user(username, hash_password(body.password))
     if user is None:
         raise HTTPException(status_code=409, detail=f"Utilizatorul '{username}' exista deja.")
@@ -1678,10 +1704,10 @@ async def lista_analize_standard(current_user: dict = Depends(get_current_user))
 
 
 @app.post("/analize-standard")
-async def adauga_analiza_std(body: dict, current_user: dict = Depends(get_current_user)):
+async def adauga_analiza_std(body: AdaugaAnalizaStdBody, current_user: dict = Depends(get_current_user)):
     """Adauga o noua analiza standard (denumire + cod unic)."""
-    denumire = (body.get("denumire") or "").strip()
-    cod = (body.get("cod") or "").strip()
+    denumire = body.denumire.strip()
+    cod = body.cod.strip()
     if not denumire or not cod:
         raise HTTPException(status_code=400, detail="Denumirea si codul sunt obligatorii.")
     try:
@@ -1737,25 +1763,20 @@ async def sterge_rezultat(rezultat_id: int, current_user: dict = Depends(get_cur
 
 
 @app.post("/buletin/{buletin_id}/rezultat")
-async def adauga_rezultat(buletin_id: int, body: dict, current_user: dict = Depends(get_current_user)):
+async def adauga_rezultat(buletin_id: int, body: AdaugaRezultatBody, current_user: dict = Depends(get_current_user)):
     """Adauga manual un rezultat intr-un buletin existent.
     Daca se specifica si analiza_standard_id, denumire_raw este salvata ca alias
     pentru a fi recunoscuta automat la upload-uri viitoare.
     """
-    valoare = body.get("valoare")
-    if valoare is None:
-        raise HTTPException(status_code=422, detail="Campul 'valoare' este obligatoriu.")
-    denumire = (body.get("denumire_raw") or "").strip()
-    if not denumire:
-        raise HTTPException(status_code=422, detail="Campul 'denumire_raw' este obligatoriu.")
-    analiza_standard_id = body.get("analiza_standard_id")
+    denumire = body.denumire_raw.strip()
+    analiza_standard_id = body.analiza_standard_id
     row = add_rezultat_manual(
         buletin_id=buletin_id,
         analiza_standard_id=analiza_standard_id,
         denumire_raw=denumire,
-        valoare=float(valoare),
-        unitate=body.get("unitate"),
-        flag=body.get("flag"),
+        valoare=float(body.valoare),
+        unitate=body.unitate,
+        flag=body.flag,
     )
     if not row:
         raise HTTPException(status_code=500, detail="Eroare la adaugarea rezultatului.")
@@ -1777,20 +1798,17 @@ async def lista_necunoscute(toate: bool = False, current_user: dict = Depends(ge
 
 
 @app.post("/aproba-alias")
-async def aproba_alias(body: dict, current_user: dict = Depends(get_current_user)):
+async def aproba_alias(body: AprobaAliasBody, current_user: dict = Depends(get_current_user)):
     """
     Aprobare alias: asociaza o denumire_raw necunoscuta cu o analiza_standard.
     Body: { "denumire_raw": "...", "analiza_standard_id": 5 }
     sau { "necunoscuta_id": 12, "analiza_standard_id": 5 } (recomandat din UI – evită probleme cu ghilimele).
     """
-    aid = body.get("analiza_standard_id")
-    raw = (body.get("denumire_raw") or "").strip()
-    nid = body.get("necunoscuta_id")
+    aid = body.analiza_standard_id
+    raw = (body.denumire_raw or "").strip()
+    nid = body.necunoscuta_id
     if nid is not None:
-        try:
-            nid_int = int(nid)
-        except (TypeError, ValueError):
-            return JSONResponse(status_code=400, content={"detail": "necunoscuta_id invalid."})
+        nid_int = nid
         rows = get_necunoscute_by_ids([nid_int])
         if not rows:
             return JSONResponse(
@@ -1814,24 +1832,18 @@ async def aproba_alias(body: dict, current_user: dict = Depends(get_current_user
 
 
 @app.post("/aproba-alias-bulk")
-async def aproba_alias_bulk(body: dict, current_user: dict = Depends(get_current_user)):
+async def aproba_alias_bulk(body: AprobaAliasBulkBody, current_user: dict = Depends(get_current_user)):
     """
     Aprobare în masă: aceeași analiză standard pentru mai multe rânduri din analiza_necunoscuta.
     Body: { "necunoscuta_ids": [1, 2, 3], "analiza_standard_id": 5 }
     """
-    ids = body.get("necunoscuta_ids") or body.get("ids") or []
-    aid = body.get("analiza_standard_id")
+    ids = body.necunoscuta_ids or body.ids or []
+    aid_int = body.analiza_standard_id
     if not isinstance(ids, list) or not ids:
         return JSONResponse(
             status_code=400,
             content={"detail": "Lista necunoscuta_ids este goală sau invalidă."},
         )
-    if aid is None:
-        return JSONResponse(status_code=400, content={"detail": "Lipsește analiza_standard_id."})
-    try:
-        aid_int = int(aid)
-    except (TypeError, ValueError):
-        return JSONResponse(status_code=400, content={"detail": "analiza_standard_id invalid."})
 
     rows = get_necunoscute_by_ids(ids)
     if not rows:
@@ -2528,7 +2540,7 @@ async def index():
       <p style="font-size:0.88rem;color:var(--gri);margin-bottom:12px">Schimbă parola contului tău curent.</p>
       <div class="search-row" style="max-width:400px;flex-direction:column;align-items:stretch;gap:10px">
         <input type="password" class="input-search" id="setari-parola-curenta" placeholder="Parola curentă">
-        <input type="password" class="input-search" id="setari-parola-noua" placeholder="Parola nouă (min. 4 caractere)">
+        <input type="password" class="input-search" id="setari-parola-noua" placeholder="Parola nouă (min. 8 caractere)">
         <input type="password" class="input-search" id="setari-parola-confirma" placeholder="Confirmă parola nouă">
         <button class="btn btn-primary" onclick="schimbaParola()">Salvează parola</button>
       </div>
@@ -3071,7 +3083,7 @@ async function schimbaParola() {
     return;
   }
   if (noua.length < 4) {
-    msg.textContent = 'Parola nouă trebuie să aibă minim 4 caractere.';
+    msg.textContent = 'Parola nouă trebuie să aibă minim 8 caractere.';
     return;
   }
   if (noua !== conf) {
@@ -3110,7 +3122,7 @@ async function adaugaUtilizator() {
     return;
   }
   if ((parola || '').length < 4) {
-    msg.textContent = 'Parola trebuie să aibă minim 4 caractere.';
+    msg.textContent = 'Parola trebuie să aibă minim 8 caractere.';
     return;
   }
   try {

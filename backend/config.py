@@ -61,3 +61,7 @@ if not _url or _url.startswith("sqlite") or _url.endswith(".db"):
 _env = (settings.app_env or "development").strip().lower()
 if _env in {"prod", "production"} and not (settings.jwt_secret_key or "").strip():
     raise RuntimeError("APP_ENV=production necesită JWT_SECRET_KEY setat în environment.")
+if _env in {"prod", "production"} and (not _url or _url.startswith("sqlite") or _url.endswith(".db")):
+    print("\n[CONFIG] ⚠️  ATENTIE: APP_ENV=production dar DATABASE_URL foloseste SQLite!")
+    print("[CONFIG] ⚠️  Datele NU se pastreaza intre redeploy-uri pe Railway cu SQLite!")
+    print("[CONFIG] ⚠️  Seteaza DATABASE_URL=postgresql://... in variabilele Railway!\n")

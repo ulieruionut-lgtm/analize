@@ -456,7 +456,7 @@ def _curata_denumire_rezultat(raw: Optional[str], valoare_text: Optional[str] = 
     if not raw:
         return ""
     s = raw.strip()
-    s = re.sub(r"^[\s\u221A\u2713\u2714\u2610\u2611\u25AA\u2022\*\-\.]+", "", s).strip()
+    s = _RE_STRIP_PREFIX_SIMBOLURI.sub("", s).strip()
     if valoare_text:
         vt = valoare_text.strip()
         if vt and len(vt) < 50:
@@ -1018,13 +1018,13 @@ def _este_gunoi_ocr(linie: str) -> bool:
     if len(cuvinte) < 4:
         return False
     # Numara cuvintele scurte (1-2 litere)
-    scurte = sum(1 for c in cuvinte if len(re.sub(r'[^a-zA-ZăâîșțĂÂÎȘȚ]', '', c)) <= 2)
+    scurte = sum(1 for c in cuvinte if len(_RE_STRIP_NON_LITERE.sub("", c)) <= 2)
     # Daca >55% sunt silabe scurte => gunoi OCR
     if scurte / len(cuvinte) > 0.55:
         return True
     # Daca linia contine secvente de litere unice separate prin spatiu (tabel degradat)
     # ex: "i CR CE SERE De E Oa nea" - mai mult de 5 litere unice consecutive
-    litere_unice = re.findall(r'\b[a-zA-ZăâîșțĂÂÎȘȚ]\b', linie)
+    litere_unice = _RE_LITERA_UNICA.findall(linie)
     if len(litere_unice) >= 5 and len(litere_unice) / len(cuvinte) > 0.4:
         return True
     return False
@@ -1076,7 +1076,7 @@ def _este_linie_parametru(linie: str) -> bool:
     if re.search(r':\s*[<>=≤≥]\s*\d', linie):
         return False
     # Linii cu text foarte scurt si ambiguu (< 3 litere) — exceptie pH (sumar urina)
-    _lit = re.sub(r"[^a-zA-Z]", "", linie)
+    _lit = _RE_STRIP_NON_ALPHA.sub("", linie)
     if len(_lit) < 3 and not re.match(r"^pH\b", linie.strip(), re.IGNORECASE):
         return False
     # Valoare izolată pe rând (ex: „9”) — nu e analiză
@@ -1934,7 +1934,7 @@ def _combina_linii_bioclinica(lines: list) -> list:
                     for prev in reversed(result[:-1]):
                         if prev and not _linie_este_exclusa(prev) and not _RE_NUME_PACIENT_ALL_CAPS.match(prev.strip()):
                             if not RE_VALOARE_LINIE.match(prev) and not _RE_VAL_UM_SIMPLU.match(prev):
-                                if len(re.sub(r'[^a-zA-Z]', '', prev)) >= 3:
+                                if len(_RE_STRIP_NON_ALPHA.sub("", prev)) >= 3:
                                     param_precedent = prev
                                     break
                     if param_precedent:
@@ -1970,6 +1970,15 @@ _RE_GENUS_MICRO_LINIE = re.compile(
     r"Haemophilus|Bacteroides|Clostridium|Listeria|Mycobacterium|Legionella|Bacillus|"
     r"Aspergillus|Cryptococcus|Trichomonas|Giardia|Moraxella|Serratia|Eriaceae)\b",
 )
+
+# Regex precompilate pentru funcții apelate frecvent în loop (evită recompilare la fiecare linie)
+_RE_STRIP_NON_LITERE = re.compile(r"[^a-zA-ZăâîșțĂÂÎȘȚ]")
+_RE_LITERA_UNICA = re.compile(r"\b[a-zA-ZăâîșțĂÂÎȘȚ]\b")
+_RE_STRIP_NON_ALPHA = re.compile(r"[^a-zA-Z]")
+_RE_ZGOMOT_HEADER = re.compile(
+    r"(?i)^(Denumire\s+Rezultat|Interval\s+de\s+referin[tț]a|Ser\s*/\s*Metoda|Ser\s*/\s*metoda|Ser\s*/\s*Test\s+calculat)"
+)
+_RE_STRIP_PREFIX_SIMBOLURI = re.compile(r"^[\s\u221A\u2713\u2714\u2610\u2611\u25AA\u2022\*\-\.]+")
 
 
 def _organism_din_denumire_micro(denumire: str) -> Optional[str]:
@@ -2065,12 +2074,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         d = (den or "").strip()
         if not d:
             return True
-        return bool(
-            re.match(
-                r"(?i)^(Denumire\s+Rezultat|Interval\s+de\s+referin[tț]a|Ser\s*/\s*Metoda|Ser\s*/\s*metoda|Ser\s*/\s*Test\s+calculat)",
-                d,
-            )
-        )
+        return bool(_RE_ZGOMOT_HEADER.match(d))
 
     def _este_zgomot_microbiologie(r: RezultatParsat, categorie: Optional[str]) -> bool:
         if (categorie or "") != "Microbiologie":

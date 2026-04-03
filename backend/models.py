@@ -89,3 +89,37 @@ class PatientParsed(BaseModel):
     nume: str
     prenume: Optional[str] = None
     rezultate: list[RezultatParsat] = []
+
+
+# --- Modele pentru validare endpoint-uri POST ---
+
+class AdaugaAnalizaStdBody(BaseModel):
+    denumire: str = Field(..., min_length=2, max_length=255)
+    cod: str = Field(..., min_length=1, max_length=64)
+    categorie: Optional[str] = Field(None, max_length=128)
+    unitate: Optional[str] = Field(None, max_length=64)
+
+
+class AdaugaRezultatBody(BaseModel):
+    denumire_raw: str = Field(..., min_length=1, max_length=255)
+    valoare: float
+    unitate: Optional[str] = Field(None, max_length=64)
+    flag: Optional[str] = Field(None, max_length=16)
+    analiza_standard_id: Optional[int] = None
+
+
+class AprobaAliasBody(BaseModel):
+    analiza_standard_id: int
+    denumire_raw: Optional[str] = Field(None, max_length=255)
+    necunoscuta_id: Optional[int] = None
+
+
+class AprobaAliasBulkBody(BaseModel):
+    analiza_standard_id: int
+    necunoscuta_ids: Optional[list[int]] = None
+    ids: Optional[list[int]] = None
+
+
+class ActualizeazaPacientBody(BaseModel):
+    nume: str = Field(..., min_length=2, max_length=128)
+    prenume: Optional[str] = Field(None, max_length=128)

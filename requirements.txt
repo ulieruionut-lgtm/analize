@@ -1,34 +1,34 @@
-# Backend (versiuni flexibile pentru Python 3.11+)
-fastapi>=0.109
-uvicorn[standard]>=0.27
+# Backend (versiuni pinuite cu upper bounds pentru stabilitate)
+fastapi>=0.109,<1.0
+uvicorn[standard]>=0.27,<1.0
 click>=8.1,<9.0          # pinned: evita coruptia 'click.core' la reinstalare partiala
-python-multipart>=0.0.9
+python-multipart>=0.0.9,<1.0
 
 # PDF & OCR
-pdfplumber>=0.10
-pymupdf>=1.23          # convertire PDF la imagine, fara poppler
-pytesseract>=0.3       # OCR Tesseract (pentru PDF-uri scanate)
-Pillow>=10.2
-opencv-python-headless>=4.8  # deskew + threshold adaptiv pentru OCR imbunatatit
-numpy>=1.24            # folosit de pdf_processor + opencv
+pdfplumber>=0.10,<1.0
+pymupdf>=1.23,<2.0       # convertire PDF la imagine, fara poppler
+pytesseract>=0.3,<1.0    # OCR Tesseract (pentru PDF-uri scanate)
+Pillow>=10.2,<12.0
+opencv-python-headless>=4.8,<4.11  # deskew + threshold adaptiv pentru OCR imbunatatit
+numpy>=1.24,<3.0         # folosit de pdf_processor + opencv
 
 # Database
-psycopg2-binary>=2.9   # PostgreSQL
-pymysql>=1.1.0         # MySQL
-sqlalchemy>=2.0
+psycopg2-binary>=2.9,<3.0   # PostgreSQL
+pymysql>=1.1.0,<2.0          # MySQL
+sqlalchemy>=2.0,<3.0
 
 # Auth (JWT + password hashing)
-passlib>=1.7
-python-jose[cryptography]>=3.3
+passlib>=1.7,<2.0
+python-jose[cryptography]>=3.3,<4.0
 
 # Excel (import dictionar analize)
-openpyxl>=3.1
+openpyxl>=3.1,<4.0
 
 # Matching alias (OCR lung / alias scurt)
-rapidfuzz>=3.6
+rapidfuzz>=3.6,<4.0
 
 # Utils
-pydantic>=2.6
-pydantic-settings>=2.1
-python-dotenv>=1.0
-requests>=2.31
+pydantic>=2.6,<3.0
+pydantic-settings>=2.1,<3.0
+python-dotenv>=1.0,<2.0
+requests>=2.31,<3.0

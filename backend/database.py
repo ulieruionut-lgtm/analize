@@ -1,6 +1,7 @@
 """Conexiune SQLite (implicit), PostgreSQL sau MySQL. CRUD pentru MVP."""
 import json
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, date
@@ -12,6 +13,10 @@ from backend.config import settings
 
 _USE_SQLITE = None
 _DB_TYPE = None  # 'sqlite', 'postgresql', 'mysql'
+
+# --- Connection Pool PostgreSQL ---
+_PG_POOL = None
+_PG_POOL_LOCK = threading.Lock()
 
 def _detect_db_type() -> str:
     """Detectează tipul de bază de date din DATABASE_URL."""
@@ -74,52 +79,114 @@ def _init_sqlite_if_needed():
     _SQLITE_INIT_DONE = True
 
 
+def _get_pg_pool():
+    """Returnează sau creează pool-ul de conexiuni PostgreSQL (lazy init, thread-safe)."""
+    global _PG_POOL
+    if _PG_POOL is not None:
+        return _PG_POOL
+    with _PG_POOL_LOCK:
+        if _PG_POOL is None:
+            import psycopg2.pool
+            _PG_POOL = psycopg2.pool.ThreadedConnectionPool(
+                minconn=2,
+                maxconn=10,
+                dsn=settings.database_url,
+                connect_timeout=25,
+            )
+    return _PG_POOL
+
+
+def _parse_mysql_url(url: str) -> dict:
+    """Parsează un URL MySQL folosind urllib.parse (robust față de parole cu ':')."""
+    from urllib.parse import urlparse, unquote
+    parsed = urlparse(url)
+    return {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 3306,
+        "user": unquote(parsed.username or "root"),
+        "password": unquote(parsed.password or ""),
+        "database": (parsed.path or "/analize").lstrip("/"),
+    }
+
+
 def get_connection():
     db_type = _detect_db_type()
-    
+
     if db_type == "sqlite":
         _init_sqlite_if_needed()
         conn = sqlite3.connect(str(_sqlite_path()))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
-    
+
     elif db_type == "mysql":
         import pymysql
         import pymysql.cursors
-        # Convertim URL-ul MySQL pentru pymysql
-        # mysql://user:pass@host:port/database -> params
-        url = settings.database_url
-        # Simplu: folosim direct pymysql cu URL
+        params = _parse_mysql_url(settings.database_url)
         return pymysql.connect(
-            host=url.split("@")[1].split(":")[0] if "@" in url else "localhost",
-            user=url.split("//")[1].split(":")[0] if "//" in url and ":" in url else "root",
-            password=url.split(":")[2].split("@")[0] if url.count(":") >= 2 else "",
-            database=url.split("/")[-1] if "/" in url else "analize",
+            host=params["host"],
+            port=params["port"],
+            user=params["user"],
+            password=params["password"],
+            database=params["database"],
             cursorclass=pymysql.cursors.DictCursor,
-            charset='utf8mb4'
+            charset="utf8mb4",
         )
-    
-    else:  # postgresql
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        return psycopg2.connect(
-            settings.database_url,
-            cursor_factory=RealDictCursor,
-        )
+
+    else:  # postgresql — folosim pool
+        import psycopg2.extras
+        pool = _get_pg_pool()
+        conn = pool.getconn()
+        # Setăm cursor factory RealDictCursor pe conexiunea din pool
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+
+
+def _return_pg_connection(conn) -> None:
+    """Returnează conexiunea PostgreSQL la pool în loc s-o închidă."""
+    global _PG_POOL
+    if _PG_POOL is not None:
+        try:
+            _PG_POOL.putconn(conn)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    else:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @contextmanager
 def get_cursor(commit: bool = True):
+    db_type = _detect_db_type()
     conn = get_connection()
     try:
         cur = conn.cursor()
         yield cur
         if commit:
             conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
     finally:
-        cur.close()
-        conn.close()
+        try:
+            cur.close()
+        except Exception:
+            pass
+        if db_type == "postgresql":
+            _return_pg_connection(conn)
+        else:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _fetchone_dict(cur) -> Optional[dict]:
@@ -357,33 +424,40 @@ def fix_pacienti_nume_gunoi() -> int:
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT id, cnp, nume FROM pacienti WHERE nume != 'Necunoscut' AND nume != ''")
         rows = cur.fetchall()
-    n = 0
-    for row in rows:
-        rid = _row_get(row, "id") or _row_get(row, 0)
-        cnp = _row_get(row, "cnp") or _row_get(row, 1)
-        nume = _row_get(row, "nume") or _row_get(row, 2)
-        if cnp in cnps_cunoscuti:
-            continue
-        if not _nume_invalid(nume):
-            continue
-        with get_cursor() as cur:
-            ph = "?" if _use_sqlite() else "%s"
-            cur.execute(f"UPDATE pacienti SET nume = 'Necunoscut', prenume = NULL WHERE id = {ph}", (rid,))
-            n += cur.rowcount
-    return n
+    invalid_ids = [
+        _row_get(row, "id") or _row_get(row, 0)
+        for row in rows
+        if (_row_get(row, "cnp") or _row_get(row, 1)) not in cnps_cunoscuti
+        and _nume_invalid(_row_get(row, "nume") or _row_get(row, 2))
+    ]
+    if not invalid_ids:
+        return 0
+    with get_cursor() as cur:
+        if _use_sqlite():
+            placeholders = ",".join(["?"] * len(invalid_ids))
+        else:
+            placeholders = ",".join(["%s"] * len(invalid_ids))
+        cur.execute(
+            f"UPDATE pacienti SET nume = 'Necunoscut', prenume = NULL WHERE id IN ({placeholders})",
+            invalid_ids,
+        )
+        return cur.rowcount
 
 
 def fix_pacienti_nume_curatare_completa() -> int:
     """
     Aplica _curata_nume pe TOȚI pacienții - elimină apostrofuri, Varsta:, duplicări etc.
     Rulează la startup pentru a corecta orice nume corupt din OCR/upload-uri anterioare.
+    Batch UPDATE pentru performanță (un singur query per grup de modificări).
     """
     from backend.parser import _curata_nume, _nume_este_gunoi
     cnps_cunoscuti = {c[0] for c in _PACIENTI_FIX_NUME}
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT id, cnp, nume, prenume FROM pacienti")
         rows = cur.fetchall()
-    n = 0
+
+    # Colectăm toate modificările necesare
+    updates: list = []  # (rid, nume_nou, prenume_nou)
     for row in rows:
         rid = _row_get(row, "id") or _row_get(row, 0)
         cnp = (_row_get(row, "cnp") or _row_get(row, 1)) or ""
@@ -402,13 +476,21 @@ def fix_pacienti_nume_curatare_completa() -> int:
         else:
             continue
         if (nume_nou, prenume_nou or "") != (nume_raw, prenume_raw or ""):
-            with get_cursor() as cur:
-                ph = "?" if _use_sqlite() else "%s"
-                cur.execute(
-                    f"UPDATE pacienti SET nume = {ph}, prenume = {ph} WHERE id = {ph}",
-                    (nume_nou, prenume_nou, rid),
-                )
-                n += cur.rowcount
+            updates.append((rid, nume_nou, prenume_nou))
+
+    if not updates:
+        return 0
+
+    # Executăm un singur UPDATE per rând, dar într-o singură tranzacție (nu N conexiuni)
+    n = 0
+    ph = "?" if _use_sqlite() else "%s"
+    with get_cursor() as cur:
+        for rid, nume_nou, prenume_nou in updates:
+            cur.execute(
+                f"UPDATE pacienti SET nume = {ph}, prenume = {ph} WHERE id = {ph}",
+                (nume_nou, prenume_nou, rid),
+            )
+            n += cur.rowcount
     return n
 
 
