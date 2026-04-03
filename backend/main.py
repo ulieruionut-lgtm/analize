@@ -984,12 +984,16 @@ async def _run_upload_async_job(
         filename=filename,
         headers=Headers({"content-type": content_type or "application/pdf"}),
     )
+    _ocr_timeout = max(300, _ocr_timeout_seconds_for_upload(len(content)))
     try:
-        result = await upload_pdf(
-            file=internal,
-            debug=False,
-            traceback_debug=False,
-            current_user={"username": owner_username},
+        result = await asyncio.wait_for(
+            upload_pdf(
+                file=internal,
+                debug=False,
+                traceback_debug=False,
+                current_user={"username": owner_username},
+            ),
+            timeout=float(_ocr_timeout),
         )
         if isinstance(result, JSONResponse):
             status_code = int(result.status_code or 500)
@@ -1000,9 +1004,14 @@ async def _run_upload_async_job(
         else:
             status_code = 200
             payload = result
+    except asyncio.TimeoutError:
+        status_code = 504
+        payload = {"detail": f"OCR timeout dupa {_ocr_timeout}s. Fisierul e prea mare sau complex. Incearca cu un PDF mai mic sau contact admin."}
+        print(f"[UPLOAD-ASYNC] TIMEOUT job={job_id} file={filename!r} timeout={_ocr_timeout}s")
     except Exception as ex:
         status_code = 500
         payload = {"detail": str(ex)[:800]}
+        print(f"[UPLOAD-ASYNC] EROARE job={job_id} file={filename!r}: {ex}")
     finally:
         try:
             await internal.close()
@@ -1132,12 +1141,14 @@ async def upload_pdf(
         from backend.pdf_processor import extract_text_with_metrics
 
         # OCR-ul pe PDF scanat poate dura mult; rulam in thread separat ca sa nu blocam serverul.
-        # Nu impunem timeout artificial - fluxul async (upload-async + polling) nu e limitat de gateway.
+        # Timeout per-pass: previne blocare permanenta la Tesseract/PyMuPDF pe fisiere corupte.
+        _ocr_pass_timeout = max(180, _ocr_timeout_seconds_for_upload(len(content or b"")))
         dpi_first: Optional[int] = None
         if file_mb >= 3.0:
             dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
-        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.to_thread(
-            extract_text_with_metrics, tmp_path, dpi_first
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
+            asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),
+            timeout=float(_ocr_pass_timeout),
         )
         if debug:
             # Verificare fara salvare: CNP optional ca sa vezi analize chiar fara CNP in PDF
@@ -1194,8 +1205,9 @@ async def upload_pdf(
                 else:
                     dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380)
                 try:
-                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.to_thread(
-                        extract_text_with_metrics, tmp_path, dpi_retry
+                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
+                        asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
+                        timeout=float(_ocr_pass_timeout),
                     )
                 except Exception:
                     text2 = ""
