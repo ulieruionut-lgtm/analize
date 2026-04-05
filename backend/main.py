@@ -424,25 +424,29 @@ def _startup_blocking_work() -> None:
                         conn.close()
                 except Exception as ex:
                     print(f"[STARTUP] Migrare 012 (ignorat): {ex}")
-            sql_018 = Path(__file__).resolve().parent.parent / "sql" / "018_pg_indexes.sql"
-            if url and sql_018.exists():
-                try:
-                    conn = _postgresql_connect(url)
-                    conn.autocommit = False
+            for sql_name, sql_label in [
+                ("018_pg_indexes.sql", "indexuri performanta"),
+                ("019_pg_medlife_pdr_aliases.sql", "aliasuri MedLife PDR"),
+            ]:
+                sql_file = Path(__file__).resolve().parent.parent / "sql" / sql_name
+                if url and sql_file.exists():
                     try:
-                        cur = conn.cursor()
-                        cur.execute(sql_018.read_text(encoding="utf-8"))
-                        conn.commit()
-                        print("[STARTUP] OK Migrare 018 (indexuri performanta)")
+                        conn = _postgresql_connect(url)
+                        conn.autocommit = False
+                        try:
+                            cur = conn.cursor()
+                            cur.execute(sql_file.read_text(encoding="utf-8"))
+                            conn.commit()
+                            print(f"[STARTUP] OK Migrare {sql_name} ({sql_label})")
+                        except Exception as ex:
+                            conn.rollback()
+                            em = str(ex).lower()
+                            if "already" not in em and "duplicate" not in em and "exists" not in em:
+                                print(f"[STARTUP] Migrare {sql_name}: {ex}")
+                        finally:
+                            conn.close()
                     except Exception as ex:
-                        conn.rollback()
-                        em = str(ex).lower()
-                        if "already" not in em and "duplicate" not in em and "exists" not in em:
-                            print(f"[STARTUP] Migrare 018: {ex}")
-                    finally:
-                        conn.close()
-                except Exception as ex:
-                    print(f"[STARTUP] Migrare 018 (ignorat): {ex}")
+                        print(f"[STARTUP] Migrare {sql_name} (ignorat): {ex}")
     except Exception as e:
         print(f"[STARTUP] Migrare 007 (ignorat): {e}")
     try:
@@ -690,7 +694,7 @@ async def run_migrations():
                             conn.rollback()
                             return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
             else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql", "018_pg_indexes.sql"]:
+                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql", "018_pg_indexes.sql", "019_pg_medlife_pdr_aliases.sql"]:
                     path = sql_dir / fname
                     if path.exists():
                         try:

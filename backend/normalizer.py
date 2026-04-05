@@ -339,9 +339,49 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
     return r
 
 
+_RE_VALOARE_TEXT_LT_GT = re.compile(
+    r"^([<>≤≥]=?)\s*([\d.,]+)\s*$"
+)
+
+
+def _aplica_flag_din_valoare_text(r: RezultatParsat) -> None:
+    """
+    Dacă valoarea e stocată ca text cu prefix '<' sau '>' (ex: '< 50', '> 0.12'),
+    extrage valoarea numerică în r.valoare și setează flag-ul L/H corespunzător
+    față de intervalul de referință. Folosit pentru MedLife PDR / Synevo / Regina Maria.
+    """
+    vt = (r.valoare_text or "").strip()
+    if not vt or r.valoare is not None:
+        return
+    m = _RE_VALOARE_TEXT_LT_GT.match(vt)
+    if not m:
+        return
+    op, num_s = m.group(1), m.group(2).replace(",", ".")
+    try:
+        num = float(num_s)
+    except ValueError:
+        return
+    r.valoare = num
+    # Determina flag fata de interval
+    if op in ("<", "≤", "<="):
+        # Valoarea e sub limita raportata: daca e sub minimul de referinta → L
+        if r.interval_min is not None and num < r.interval_min:
+            r.flag = r.flag or "L"
+        else:
+            r.flag = r.flag or "L"  # "<X" implicit L (sub limita de detectie)
+    elif op in (">", "≥", ">="):
+        if r.interval_max is not None and num > r.interval_max:
+            r.flag = r.flag or "H"
+        else:
+            r.flag = r.flag or "H"
+
+
 def normalize_rezultate(lista: list[RezultatParsat]) -> list[RezultatParsat]:
     """Aplica normalizarea pe fiecare rezultat din lista."""
-    return [normalize_rezultat(r) for r in lista]
+    rezultate = [normalize_rezultat(r) for r in lista]
+    for r in rezultate:
+        _aplica_flag_din_valoare_text(r)
+    return rezultate
 
 
 def adauga_alias_nou(denumire_raw: str, analiza_standard_id: int) -> bool:
