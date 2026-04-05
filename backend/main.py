@@ -965,7 +965,14 @@ async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_curre
     return {"message": "Pacient șters complet."}
 
 
-async def _run_upload_async_job(
+import concurrent.futures as _cf
+
+# Executor dedicat pentru joburi de upload (max 2 joburi OCR simultan).
+# Rulam totul SINCRON in thread - evitam blocarea event loop-ului cu apeluri DB sincrone.
+_UPLOAD_JOB_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="upload-job")
+
+
+def _process_upload_sync_job(
     job_id: str,
     *,
     owner_username: str,
@@ -973,50 +980,154 @@ async def _run_upload_async_job(
     content: bytes,
     content_type: str,
 ) -> None:
+    """Procesare completa PDF in thread sincron: OCR + parse + DB. Nu blocheaza event loop-ul."""
     _set_upload_async_job(
         job_id,
         status="processing",
         started_at=_now_iso_utc(),
         started_ts=datetime.utcnow().timestamp(),
     )
-    internal = UploadFile(
-        file=io.BytesIO(content),
-        filename=filename,
-        headers=Headers({"content-type": content_type or "application/pdf"}),
-    )
-    _ocr_timeout = max(300, _ocr_timeout_seconds_for_upload(len(content)))
+    tmp_path = None
+    status_code = 500
+    payload: dict = {"detail": "Eroare necunoscuta."}
     try:
-        result = await asyncio.wait_for(
-            upload_pdf(
-                file=internal,
-                debug=False,
-                traceback_debug=False,
-                current_user={"username": owner_username},
-            ),
-            timeout=float(_ocr_timeout),
-        )
-        if isinstance(result, JSONResponse):
-            status_code = int(result.status_code or 500)
+        from backend.parser import parse_full_text
+        from backend.pdf_processor import extract_text_with_metrics
+
+        file_mb = float(len(content or b"")) / (1024.0 * 1024.0)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        dpi_first: Optional[int] = None
+        if file_mb >= 3.0:
+            dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
+
+        # OCR complet sincron in thread
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path, dpi_first)
+
+        upload_warnings: list[str] = []
+        if not (text or "").strip():
+            w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum."
+            if ocr_err:
+                w += " " + str(ocr_err)
+            upload_warnings.append(w)
+
+        parsed = parse_full_text(text or "", cnp_optional=True)
+
+        # Retry DPI daca numele e necunoscut
+        if tip == "ocr" and (parsed.nume or "").strip().lower() == "necunoscut":
+            dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380), 400) if file_mb < 3.0 else min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
             try:
-                payload = json.loads((result.body or b"{}").decode("utf-8", errors="ignore"))
+                text2, tip2, ocr_err2, ct2, ext2, om2 = extract_text_with_metrics(tmp_path, dpi_retry)
+                parsed2 = parse_full_text(text2 or "", cnp_optional=True)
+                if parsed2 and ((parsed2.nume or "").strip().lower() != "necunoscut" or len(parsed2.rezultate) > len(parsed.rezultate)):
+                    parsed, text, tip, colored_tokens, extractor, ocr_metrics = parsed2, text2, tip2, ct2 or colored_tokens, f"{ext2}+dpi{dpi_retry}", om2 or ocr_metrics
             except Exception:
-                payload = {"detail": "Raspuns JSON invalid de la worker-ul de upload."}
-        else:
-            status_code = 200
-            payload = result
-    except asyncio.TimeoutError:
-        status_code = 504
-        payload = {"detail": f"OCR timeout dupa {_ocr_timeout}s. Fisierul e prea mare sau complex. Incearca cu un PDF mai mic sau contact admin."}
-        print(f"[UPLOAD-ASYNC] TIMEOUT job={job_id} file={filename!r} timeout={_ocr_timeout}s")
+                pass
+
+        normalize_rezultate(parsed.rezultate)
+
+        # Calitate OCR
+        ocr_calitate_slaba_salvata = False
+        if tip == "ocr":
+            q = _calc_upload_quality(parsed)
+            suspect_flags = sum([
+                (parsed.nume or "").strip().lower() == "necunoscut",
+                int(q["total_rez"]) < 3,
+                float(q["unknown_ratio"]) > 0.80,
+                float(q["noise_ratio"]) > 0.80,
+            ])
+            if suspect_flags >= 2:
+                ocr_calitate_slaba_salvata = True
+                upload_warnings.append("Calitate OCR slabă sau date incomplete: buletinul a fost salvat. Recomandăm verificarea cu AI sau corectarea manuală.")
+
+        ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
+        if tip == "ocr" and ocr_summary:
+            avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
+            avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
+            if avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)) or avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
+                upload_warnings.append(f"OCR cu încredere scăzută (mean_conf={avg_conf:.1f}). Rezultatele au fost marcate pentru verificare.")
+                for r in parsed.rezultate:
+                    if "ocr_conf_scazut" not in r.review_reasons:
+                        r.review_reasons.append("ocr_conf_scazut")
+                    r.needs_review = True
+            for r in parsed.rezultate:
+                r.ocr_confidence = avg_conf
+                if r.analiza_standard_id is None and "alias_necunoscut" not in r.review_reasons:
+                    r.review_reasons.append("alias_necunoscut")
+                    r.needs_review = True
+
+        triage = _calc_triage_ai(parsed, tip, ocr_metrics)
+
+        # Colored tokens
+        if colored_tokens:
+            for r in parsed.rezultate:
+                if r.flag is None and r.valoare is not None:
+                    val_str = str(r.valoare).rstrip("0").rstrip(".")
+                    if val_str in colored_tokens or val_str.replace(".", ",") in colored_tokens:
+                        r.flag = "L" if r.interval_min is not None and r.valoare < r.interval_min else "H"
+
+        # DB sincron (in thread - OK)
+        pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
+        if not pacient or pacient.get("id") is None:
+            raise RuntimeError("Eroare la salvarea pacientului.")
+
+        data_buletin = _extrage_data_buletin(text or "")
+        buletin = insert_buletin(
+            pacient_id=pacient["id"],
+            data_buletin=data_buletin,
+            laborator=None,
+            fisier_original=filename,
+        )
+        if not buletin or buletin.get("id") is None:
+            raise RuntimeError("Eroare la salvarea buletinului.")
+
+        for idx, r in enumerate(parsed.rezultate):
+            insert_rezultat(
+                buletin_id=buletin["id"],
+                analiza_standard_id=r.analiza_standard_id,
+                denumire_raw=r.denumire_raw,
+                valoare=r.valoare,
+                valoare_text=r.valoare_text,
+                unitate=r.unitate,
+                interval_min=r.interval_min,
+                interval_max=r.interval_max,
+                flag=r.flag,
+                ordine=r.ordine,
+                categorie=r.categorie,
+                rezultat_meta=rezultat_meta_pentru_insert(
+                    getattr(r, "organism_raw", None),
+                    getattr(r, "rezultat_tip", None),
+                    getattr(r, "needs_review", False),
+                    getattr(r, "review_reasons", []),
+                    getattr(r, "ocr_confidence", None),
+                ),
+            )
+
+        status_code = 200
+        payload = {
+            "message": "PDF procesat cu succes.",
+            "tip_extragere": tip,
+            "extractor": extractor,
+            "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
+            "buletin_id": buletin["id"],
+            "numar_analize": len(parsed.rezultate),
+            "warnings": upload_warnings,
+            "triere_ai": triage,
+            "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
+        }
+        print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={len(parsed.rezultate)} tip={tip}")
     except Exception as ex:
         status_code = 500
         payload = {"detail": str(ex)[:800]}
         print(f"[UPLOAD-ASYNC] EROARE job={job_id} file={filename!r}: {ex}")
     finally:
-        try:
-            await internal.close()
-        except Exception:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
     done_state = "success" if status_code < 400 else "error"
     _set_upload_async_job(
@@ -1064,14 +1175,13 @@ async def upload_pdf_async(
         created_at=_now_iso_utc(),
         created_ts=created_ts,
     )
-    asyncio.create_task(
-        _run_upload_async_job(
-            job_id,
-            owner_username=(current_user or {}).get("username", ""),
-            filename=file.filename,
-            content=content,
-            content_type=file.content_type or "application/pdf",
-        )
+    _UPLOAD_JOB_EXECUTOR.submit(
+        _process_upload_sync_job,
+        job_id,
+        owner_username=(current_user or {}).get("username", ""),
+        filename=file.filename,
+        content=content,
+        content_type=file.content_type or "application/pdf",
     )
     return {
         "job_id": job_id,
