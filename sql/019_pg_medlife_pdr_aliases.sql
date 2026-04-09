@@ -79,6 +79,10 @@ SELECT id, 'CHEM' FROM analiza_standard WHERE cod_standard='MCHC' ON CONFLICT (a
 INSERT INTO analiza_alias (analiza_standard_id, alias)
 SELECT id, 'VTM' FROM analiza_standard WHERE cod_standard='MPV' ON CONFLICT (alias) DO NOTHING;
 
+-- VIM: OCR MedLife PDR confunda VTM cu VIM (litera T → I)
+INSERT INTO analiza_alias (analiza_standard_id, alias)
+SELECT id, 'VIM' FROM analiza_standard WHERE cod_standard='MPV' ON CONFLICT (alias) DO NOTHING;
+
 -- HDL Colesterol (MedLife PDR: C mare, cu si fara liniuta)
 -- Existent: 'HDL colesterol' (c mic) — lipseste varianta cu C mare
 INSERT INTO analiza_alias (analiza_standard_id, alias)

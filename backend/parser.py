@@ -1011,45 +1011,55 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
 
 
 def _este_gunoi_ocr(linie: str) -> bool:
-    """
+    “””
     Detecteaza linii de gunoi OCR: siruri de litere/silabe fara sens, separate prin spatii.
     Semne: mai mult de 40% din 'cuvinte' au sub 2 litere, sau linia are aspectul unui tabel
     OCR-izat prost (multe litere unice, silabe scurte, fara niciun cuvant medical real).
-    """
+    “””
     linie = linie.strip()
     if not linie:
         return False
-    # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi
+    # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi (in general)
     _CUVINTE_MEDICALE = re.compile(
-        r"\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|"
-        r"monocite?|eozinofile?|bazofile?|creatinin|glucoz|glicemi|colesterol|triglicerid|"
-        r"bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|"
-        r"proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|"
-        r"insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|"
-        r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|"
-        r"chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
-        r"tsh|lh|fsh|ft4|free\s*t4|"
-        r"chlamydia|mycoplasma|ureaplasma|trachomatis)\b",
+        r”\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|”
+        r”monocite?|eozinofile?|bazofile?|creatinin|glucoz|glicemi|colesterol|triglicerid|”
+        r”bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|”
+        r”proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|”
+        r”insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|”
+        r”homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|”
+        r”chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|”
+        r”tsh|lh|fsh|ft4|free\s*t4|”
+        r”chlamydia|mycoplasma|ureaplasma|trachomatis)\b”,
         re.IGNORECASE,
     )
-    if _CUVINTE_MEDICALE.search(linie):
-        return False
+    are_cuvant_medical = bool(_CUVINTE_MEDICALE.search(linie))
     # Rând «… valoare UM min - max» (MedLife): multe token-uri numerice trec pragul „silabe scurte”.
     # NU apelăm _parse_oneline aici (în unele medii poate interacționa cu _este_linie_parametru la încărcare).
     m_tab = _RE_TABULAR_ROW_VAL_UM_INTERVAL.search(linie)
-    if m_tab and re.search(r"[A-Za-zĂÂÎȘȚăâîșț]", linie[: m_tab.start()]):
+    if are_cuvant_medical and m_tab and re.search(r”[A-Za-zĂÂÎȘȚăâîșț]”, linie[: m_tab.start()]):
         return False
     # Imparte in cuvinte (secvente ne-spatiu)
     cuvinte = linie.split()
     if len(cuvinte) < 4:
-        return False
+        if not are_cuvant_medical:
+            return False
     # Numara cuvintele scurte (1-2 litere)
-    scurte = sum(1 for c in cuvinte if len(_RE_STRIP_NON_LITERE.sub("", c)) <= 2)
+    scurte = sum(1 for c in cuvinte if len(_RE_STRIP_NON_LITERE.sub(“”, c)) <= 2)
+    ratio_scurte = scurte / len(cuvinte) if cuvinte else 0
+    # Artefact OCR: cuvant cu 3+ litere identice consecutive (ex: “RRR”, “SSS”) => gunoi sigur
+    if re.search(r”\b([A-Za-z])\1{2,}\b”, linie):
+        return True
+    # Daca >75% silabe scurte => gunoi chiar daca contine cuvant medical (ex: “Free T4 i i : : .”)
+    if ratio_scurte > 0.75:
+        return True
+    # Daca cuvant medical prezent si ratio rezonabil => NU e gunoi
+    if are_cuvant_medical:
+        return False
     # Daca >55% sunt silabe scurte => gunoi OCR
-    if scurte / len(cuvinte) > 0.55:
+    if ratio_scurte > 0.55:
         return True
     # Daca linia contine secvente de litere unice separate prin spatiu (tabel degradat)
-    # ex: "i CR CE SERE De E Oa nea" - mai mult de 5 litere unice consecutive
+    # ex: “i CR CE SERE De E Oa nea” - mai mult de 5 litere unice consecutive
     litere_unice = _RE_LITERA_UNICA.findall(linie)
     if len(litere_unice) >= 5 and len(litere_unice) / len(cuvinte) > 0.4:
         return True
@@ -1896,6 +1906,18 @@ def _combina_linii_ocr_fragmente_valoare(lines: list[str]) -> list[str]:
     return out
 
 
+def _strip_dash_value_prefix(s: str) -> str:
+    """
+    MedLife PDR OCR: linii de valoare care incep cu '- NUMBER' (ex: '- 76.2 fL.:. 72-88f.').
+    Linia reprezinta continuarea unui rand de tabel unde OCR a taiat separatorul de coloana.
+    Sterge liniuta/cratima initiala ca sa nu fie exclusa de _LINII_EXCLUSE (care exclude '^\s*[-]\s').
+    """
+    m = re.match(r"^[-–]\s+(\d)", s)
+    if m:
+        return s[m.start(1):]
+    return s
+
+
 def _strip_trailing_date_recoltare(linie: str) -> str:
     """
     Elimină de la sfârșitul liniei data recoltării / generării (DD.MM.YYYY [HH:MM]),
@@ -2054,7 +2076,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
     lines_raw = [
-        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(l.strip()))
+        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(l.strip())))
         for l in text.replace("\r", "\n").split("\n")
     ]
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica

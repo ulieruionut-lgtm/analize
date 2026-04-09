@@ -356,6 +356,12 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     # Evitam sa stricam "g/dL" sau alte unitati cu litere
     s = re.sub(r"(\d)f\b(?![a-zA-Z/])", r"\1 fl", s)
 
+    # --- Artefact OCR MedLife PDR: coloana-separator '|' citit ca litera 'i' la sfarsit de linie ---
+    # ex: 'Nr. neutrofile „8.02 *1043/pl i' → 'Nr. neutrofile „8.02 *1043/pl'
+    # Sterge NUMAI cand linia se termina cu spatiu + o singura litera mica ('i' sau 'l')
+    # dupa o cifra sau o unitate (nu stergem daca ultimul token e o unitate valida multi-char)
+    s = re.sub(r"(?<=[\d/lL])\s+[il]\s*$", "", s)
+
     # --- Microbiologie: organisme corupte ---
     s = re.sub(
         r"Ha[_\s]+emophi[_\s!l1Ii\*]*us",
