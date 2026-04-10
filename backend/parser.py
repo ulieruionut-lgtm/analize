@@ -136,7 +136,7 @@ _LINII_EXCLUSE = re.compile(
     r"Bioclinica\s+[A-Za-z]+\s+GENERAT|GENERAT\s+\d{2}\.\d{2}\.\d{4}|"
     # Analiza + dată (ex: "Glucază 15.04.2024", "Creatinină serică 10.02.2025")
     r"^[A-Za-zăâîșț]+\s+\d{1,2}\.\d{1,2}\.\d{4}\s*$|"
-    # NOTĂ: NU excludem generic „orice linie care se termină cu DD.MM.YYYY” — multe PDF-uri Bioclinica/Synevo
+    # NOTĂ: NU excludem generic „orice linie care se termină cu DD.MM.YYYY" — multe PDF-uri Bioclinica/Synevo
     # pun data recoltării la sfârșitul liniei cu rezultatul; excludeam tot rândul și pierdeam zeci de analize.
     # Data e tăiată în _strip_trailing_date_recoltare() înainte de parsare.
     # Linii care se termină cu dată+oră (ex: "19.02.2026 17:39") - footer generare
@@ -175,7 +175,7 @@ _LINII_EXCLUSE = re.compile(
     r"Rezultatul\s+se\s+interpret|interpretare\s+in\s+context\s+clinic|"
     # Cod paraf / Data tipăririi / antete tabel — sursă unică: administrative_fragments
     r"^\s*=\s*$|^\s*ani\s*,\s*3\s*luni\s*$|^\s*\d+\s*ani\s*,\s*\d+\s*luni\s*$|"
-    # Zgomot OCR / fragmente ghid (KDIGO), antete false, ore + „Alte cristale”
+    # Zgomot OCR / fragmente ghid (KDIGO), antete false, ore + „Alte cristale"
     r"DNI\s+KDIGO|\bKDIGO\s+guid|\bKDIGO\s*$|"
     r"Diagn[O0]Stipz|Diagnostipz|"
     r"^Diagnostic\s*:\s*$|"
@@ -394,7 +394,7 @@ _SECTIUNI = [
         re.IGNORECASE,
     ),
      "Examen urina"),
-    # Affidea / Hiperdia: bloc creatinină separat de „BIOCHIMIE”
+    # Affidea / Hiperdia: bloc creatinină separat de „BIOCHIMIE"
     (re.compile(r"^CREATININ\s*$|^CREATININA\s*$", re.IGNORECASE), "Biochimie"),
     (re.compile(r"BIOCHIMIE|BIOCHIMIA|BIOCHIM", re.IGNORECASE),
      "Biochimie"),
@@ -414,11 +414,11 @@ _SECTIUNI = [
      "Markeri tumorali"),
     (re.compile(r"MINERALE|ELECTROLITI|OLIGOELEMENTE", re.IGNORECASE),
      "Minerale si electroliti"),
-    # NU include VSH|CRP aici — liniile „VSH” / „CRP” sunt nume de analize; altfel devin „antet” fals
+    # NU include VSH|CRP aici — liniile „VSH" / „CRP" sunt nume de analize; altfel devin „antet" fals
     # și categoria următoarelor rânduri din hemogramă se strică (Capatan și altele).
     (re.compile(r"INFLAMATIE|REACTANTI\s+DE\s+FAZ(?:A)?", re.IGNORECASE),
      "Inflamatie"),
-    # Doar antet scurt, nu „Proteina C reactivă cantitativ …” (fără cantitativ = linie analiză)
+    # Doar antet scurt, nu „Proteina C reactivă cantitativ …" (fără cantitativ = linie analiză)
     (re.compile(
         r"^PROTEINA\s+C\s+REACTIV[aĂă]?(?:\s+CRP)?\s*$",
         re.IGNORECASE,
@@ -839,7 +839,7 @@ def _nume_este_gunoi(nume: str) -> bool:
     # Paranteze goale + text (ex: RAG()MIR) — aproape niciodată nume real
     if re.search(r"\(\)\s*\w", raw):
         return True
-    # Mult zgomot tip OCR: puncte duble, underscore în „cuvinte”, pipe
+    # Mult zgomot tip OCR: puncte duble, underscore în „cuvinte", pipe
     if ".." in raw and len(raw) > 25:
         return True
     if re.search(r"\b[A-Za-zăâîșț]{2,}_+[A-Za-zăâîșț]", raw):
@@ -1011,32 +1011,32 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
 
 
 def _este_gunoi_ocr(linie: str) -> bool:
-    “””
+    """
     Detecteaza linii de gunoi OCR: siruri de litere/silabe fara sens, separate prin spatii.
     Semne: mai mult de 40% din 'cuvinte' au sub 2 litere, sau linia are aspectul unui tabel
     OCR-izat prost (multe litere unice, silabe scurte, fara niciun cuvant medical real).
-    “””
+    """
     linie = linie.strip()
     if not linie:
         return False
     # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi (in general)
     _CUVINTE_MEDICALE = re.compile(
-        r”\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|”
-        r”monocite?|eozinofile?|bazofile?|creatinin|glucoz|glicemi|colesterol|triglicerid|”
-        r”bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|”
-        r”proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|”
-        r”insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|”
-        r”homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|”
-        r”chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|”
-        r”tsh|lh|fsh|ft4|free\s*t4|”
-        r”chlamydia|mycoplasma|ureaplasma|trachomatis)\b”,
+        r"\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|"
+        r"monocite?|eozinofile?|bazofile?|creatinin|glucoz|glicemi|colesterol|triglicerid|"
+        r"bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|"
+        r"proteina|albumin|globulin|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|"
+        r"insulina|hemoglo|plachetar|eritrocitar|seric|urinar|sediment|sumar|"
+        r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|"
+        r"chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
+        r"tsh|lh|fsh|ft4|free\s*t4|"
+        r"chlamydia|mycoplasma|ureaplasma|trachomatis)\b",
         re.IGNORECASE,
     )
     are_cuvant_medical = bool(_CUVINTE_MEDICALE.search(linie))
-    # Rând «… valoare UM min - max» (MedLife): multe token-uri numerice trec pragul „silabe scurte”.
+    # Rând «… valoare UM min - max» (MedLife): multe token-uri numerice trec pragul „silabe scurte".
     # NU apelăm _parse_oneline aici (în unele medii poate interacționa cu _este_linie_parametru la încărcare).
     m_tab = _RE_TABULAR_ROW_VAL_UM_INTERVAL.search(linie)
-    if are_cuvant_medical and m_tab and re.search(r”[A-Za-zĂÂÎȘȚăâîșț]”, linie[: m_tab.start()]):
+    if are_cuvant_medical and m_tab and re.search(r"[A-Za-zĂÂÎȘȚăâîșț]", linie[: m_tab.start()]):
         return False
     # Imparte in cuvinte (secvente ne-spatiu)
     cuvinte = linie.split()
@@ -1044,12 +1044,12 @@ def _este_gunoi_ocr(linie: str) -> bool:
         if not are_cuvant_medical:
             return False
     # Numara cuvintele scurte (1-2 litere)
-    scurte = sum(1 for c in cuvinte if len(_RE_STRIP_NON_LITERE.sub(“”, c)) <= 2)
+    scurte = sum(1 for c in cuvinte if len(_RE_STRIP_NON_LITERE.sub("", c)) <= 2)
     ratio_scurte = scurte / len(cuvinte) if cuvinte else 0
-    # Artefact OCR: cuvant cu 3+ litere identice consecutive (ex: “RRR”, “SSS”) => gunoi sigur
-    if re.search(r”\b([A-Za-z])\1{2,}\b”, linie):
+    # Artefact OCR: cuvant cu 3+ litere identice consecutive (ex: "RRR", "SSS") => gunoi sigur
+    if re.search(r"\b([A-Za-z])\1{2,}\b", linie):
         return True
-    # Daca >75% silabe scurte => gunoi chiar daca contine cuvant medical (ex: “Free T4 i i : : .”)
+    # Daca >75% silabe scurte => gunoi chiar daca contine cuvant medical (ex: "Free T4 i i : : .")
     if ratio_scurte > 0.75:
         return True
     # Daca cuvant medical prezent si ratio rezonabil => NU e gunoi
@@ -1059,7 +1059,7 @@ def _este_gunoi_ocr(linie: str) -> bool:
     if ratio_scurte > 0.55:
         return True
     # Daca linia contine secvente de litere unice separate prin spatiu (tabel degradat)
-    # ex: “i CR CE SERE De E Oa nea” - mai mult de 5 litere unice consecutive
+    # ex: "i CR CE SERE De E Oa nea" - mai mult de 5 litere unice consecutive
     litere_unice = _RE_LITERA_UNICA.findall(linie)
     if len(litere_unice) >= 5 and len(litere_unice) / len(cuvinte) > 0.4:
         return True
@@ -1080,7 +1080,7 @@ _GUNOI_SUBSTR = (
 def _este_linie_parametru(linie: str) -> bool:
     if not linie:
         return False
-    # Multe lab-uri pun metoda pe același rând (ex. „... -Ser - Spectrofotometrie / Chemiluminiscență”)
+    # Multe lab-uri pun metoda pe același rând (ex. „... -Ser - Spectrofotometrie / Chemiluminiscență")
     # — depășeau 150 caractere și erau ignorate complet → 0 analize extrase din PDF.
     _lim_lungime = 220
     if RE_BIOCLINICA_ONELINE.search(linie) or RE_BIOCLINICA_REF_SINGULAR.search(linie):
@@ -1115,7 +1115,7 @@ def _este_linie_parametru(linie: str) -> bool:
     _lit = _RE_STRIP_NON_ALPHA.sub("", linie)
     if len(_lit) < 3 and not re.match(r"^pH\b", linie.strip(), re.IGNORECASE):
         return False
-    # Valoare izolată pe rând (ex: „9”) — nu e analiză
+    # Valoare izolată pe rând (ex: „9") — nu e analiză
     if re.match(r"^\d{1,5}\s*$", linie.strip()):
         return False
     # Detecteaza gunoi OCR (tabele degradate, siruri de silabe fara sens)
@@ -1653,7 +1653,7 @@ _RE_FORMULA_PDFPLUMBER = re.compile(
 )
 
 
-# Sufixe „Data recoltării … DD.MM.YYYY” sau doar dată la sfârșit (Bioclinica, Synevo, Capatan etc.)
+# Sufixe „Data recoltării … DD.MM.YYYY" sau doar dată la sfârșit (Bioclinica, Synevo, Capatan etc.)
 _RE_TRAILING_DATE_LABELED = re.compile(
     r"\s+(?:Data\s+(?:recolt(?:are)?|lucr(?:at)?|tipar|generat)[a-zăâîșț]*|Recoltat|Lucrat)\s*:?\s*"
     r"\d{1,2}\.\d{1,2}\.\d{4}(?:\s+\d{1,2}:\d{2})?\s*$",
@@ -1666,7 +1666,7 @@ def _strip_suffix_interpretare_clasificare(linie: str) -> str:
     """
     Elimină sufixe de tip lipidogramă / glicemie: «> 60 Normal», «<150 mg/dL risc scăzut»,
     «(40-60) Optim» etc., astfel încât rămâne analiză + valoare (+ eventual interval în paranteze).
-    Fără asta, _parse_oneline respingea întreaga linie ca „clasificare” și pierdeau zeci de analize.
+    Fără asta, _parse_oneline respingea întreaga linie ca „clasificare" și pierdeau zeci de analize.
     """
     if not linie or len(linie) < 6:
         return linie
@@ -1922,7 +1922,7 @@ def _strip_trailing_date_recoltare(linie: str) -> str:
     """
     Elimină de la sfârșitul liniei data recoltării / generării (DD.MM.YYYY [HH:MM]),
     astfel încât parserele (Bioclinica oneline, RE_VALOARE_LINIE) să vadă intervalul corect.
-    Ex: „Glucoză 92 mg/dL (74-106) 22.02.2024” → „Glucoză 92 mg/dL (74-106)”.
+    Ex: „Glucoză 92 mg/dL (74-106) 22.02.2024" → „Glucoză 92 mg/dL (74-106)".
     """
     if not linie or not linie.strip():
         return linie
@@ -2246,7 +2246,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             val_key = re.sub(r"\s+", " ", str(val_key)).strip()
             val_key = re.sub(r"[^a-z0-9ăâîșț\s\-\.,:/]", "", val_key)[:180]
         # Include categoria în cheie: aceeași denumire (Leucocite, Hematii, Glucoză) poate apărea
-        # în hemogramă și la sumar urină cu aceeași valoare text (ex. „negativ”) — altfel pierdem rânduri.
+        # în hemogramă și la sumar urină cu aceeași valoare text (ex. „negativ") — altfel pierdem rânduri.
         cat_key = (categorie if categorie is not None else "") or ""
         key = (_key_denumire(r.denumire_raw or ""), val_key, cat_key)
         if key not in seen:
@@ -2447,7 +2447,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             # valoare 267.000 pe 3 -> asociem gresit Leucocite cu 267.000
             if RE_BIOCLINICA_ONELINE.search(cand) or RE_BIOCLINICA_REF_SINGULAR.search(cand):
                 break  # e un alt parametru complet - ne oprim
-            # Nu folosi un rând deja complet (ex. Hematocrit 35.5 % …) ca „parametru” pentru valoarea de dedesubt
+            # Nu folosi un rând deja complet (ex. Hematocrit 35.5 % …) ca „parametru" pentru valoarea de dedesubt
             if _parse_oneline(cand) is not None:
                 continue
             if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
