@@ -64,6 +64,9 @@ _LINII_EXCLUSE = re.compile(
     # Intervale referinta si clasificari
     r"Usor\s+crescut|Moderat\s+crescut|Foarte\s+crescut|"
     r"Optim\s*:|Normal\s*:|Diabet\s+|Glicemie\s+bazala|"
+    # MedLife PDR: note clasificare risc cardiovascular (linii separate sub intervalul de referinta)
+    # ex: "Nivel de risc crescut: >=240 mg/dl", "Nivel optim: < 100", "Nivel convenabil: 100-129"
+    r"Nivel\s+de\s+risc|Nivel\s+optim\s*:|Nivel\s+convenabil\s*:|Nivel\s+de\s+atentie|"
     r"trimestrul|trimester\s+[I]|20-40\s+ani|peste\s+40\s+ani|"
     r"eGFR:\s*[<>]|G1\s+=|G2\s+=|G3|G4|G5|"
     r"eGFR:\s*\d|eGFR:\s*\d{2,}|eGFR:\s*[≥≤]|"
@@ -155,6 +158,9 @@ _LINII_EXCLUSE = re.compile(
     r"[Vv][âa]rst[aă]?\s*:\s*\d+['\s]*ani|Vanta:|"
     r".*Varsta:\s*\d+.*ani|"
     r"^arere\s*:\s*$|"
+    # MedLife PDR: antet sectiune cu checkmark √ citit de OCR ca litera "V" sau "v"
+    # ex: "V Vitamina B12", "V Folat seric", "VVitamingB12" (OCR artefact √+V)
+    r"^[vV]\s+[A-Za-zĂÂÎȘȚăâîșț]{4,}|^[vV]{2}[a-zA-ZĂÂÎȘȚăâîșț]{3,}|"
     # Linii foarte scurte (OCR: prilie, lil) — max 2 litere; 3 litere (VEM, MCH, MCV) pot fi analize MedLife
     r"^[a-zA-Z]{1,2}\s*$|^[a-z]{2}\s*$|"
     # Cod Cerere (inclusiv OCR: C'ed Cerere)
@@ -569,6 +575,13 @@ def _parse_european_number(s: str) -> Optional[float]:
     s = (s or "").strip()
     if not s:
         return None
+    # Corecție OCR conservatoare: litere confundate cu cifre.
+    # Aplicăm DOAR dacă stringul conține cel puțin o cifră reală,
+    # ca să nu modificăm texte/denumiri care nu sunt numere.
+    if re.search(r'\d', s):
+        s = s.replace('O', '0').replace('o', '0')                  # O → zero
+        s = re.sub(r'(?<![a-zA-Z])l(?![a-zA-Z])', '1', s)          # l izolat → 1 (nu în mL, pmol...)
+        s = re.sub(r'(?<![a-zA-Z])I(?![a-zA-Z])', '1', s)          # I izolat → 1
     try:
         if "," in s:
             # Virgula = zecimal: "13,3", "0,27" -> 13.3, 0.27
@@ -602,7 +615,21 @@ def validare_cnp(cnp: str) -> bool:
 
 
 def extract_cnp(text: str) -> Optional[str]:
+    # Pass 1: text normal
     for m in re.finditer(r"\b[1-8]\d{12}\b", text):
+        if validare_cnp(m.group()):
+            return m.group()
+    # Pass 2: corecție OCR conservatoare — se aplică DOAR pe secvențe de 13 caractere
+    # alfanumerice care seamănă cu un CNP (nu pe textul întreg, ca să nu corupe cuvinte)
+    text_fix = re.sub(
+        r"\b[1-8O][0-9OolI1B]{11}[0-9OolI1B]\b",
+        lambda m: m.group()
+            .replace('O', '0').replace('o', '0')
+            .replace('l', '1').replace('I', '1')
+            .replace('B', '8'),
+        text,
+    )
+    for m in re.finditer(r"\b[1-8]\d{12}\b", text_fix):
         if validare_cnp(m.group()):
             return m.group()
     return None
@@ -1703,6 +1730,15 @@ def _strip_suffix_interpretare_clasificare(linie: str) -> str:
     )
     if m2:
         s = s[: m2.start()].rstrip()
+    # MedLife PDR: "Nivel de risc ...", "Nivel de atentie ...", "Nivel convenabil ..." ca sufix inline
+    # ex: "HDL Colesterol 60.3 mg/dl Nivel de risc scazut : >= 60 mg/dl" → "HDL Colesterol 60.3 mg/dl"
+    m_nivel = re.search(
+        r"\s+Nivel\s+(?:de\s+risc|de\s+atenti[ei]|convenabil|optim)\b.*$",
+        s,
+        re.IGNORECASE,
+    )
+    if m_nivel:
+        s = s[: m_nivel.start()].rstrip()
     # OCR: resturi scurte după valoare («enma V», «ME)»)
     s = re.sub(r"\s+[A-Za-z]{2,5}\s+[Vv]\s*$", "", s).strip()
     s = re.sub(r"\s+ME\)\s*$", "", s, flags=re.IGNORECASE).strip()

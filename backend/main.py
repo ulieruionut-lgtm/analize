@@ -2373,6 +2373,16 @@ async def index():
     background: var(--albastru-deschis);
   }
 
+  /* Celule cu valori text lungi (microbiologie, note descriptive): înfășurare pe mai multe rânduri */
+  .tabel-evolutie td.td-text-lung {
+    white-space: normal;
+    word-break: break-word;
+    max-width: 220px;
+    text-align: left;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
   /* Separatoare categorii in tabelul de evolutie */
   .tabel-evolutie tr.sectiune-separator {
     background: var(--albastru-deschis) !important;
@@ -3867,11 +3877,14 @@ async function veziPacient(cnp) {
           html += '<td style="color:var(--gri)">—</td>';
         } else {
           const flag = a.flags[i] || '';
+          // Valorile text lungi (microbiologie, note) se înfășoară pe mai multe rânduri
+          const textLung = typeof v === 'string' && v.length > 15;
+          const tdExtra = textLung ? ' td-text-lung' : '';
           if (flag === 'H' || flag === 'L') {
             const cls = flag === 'H' ? 'val-H' : 'val-L';
-            html += `<td style="text-align:center"><span class="${cls}">${escHtml(String(v))}</span></td>`;
+            html += `<td class="${tdExtra.trim()}" style="text-align:center"><span class="${cls}">${escHtml(String(v))}</span></td>`;
           } else {
-            html += `<td class="val-ok">${escHtml(String(v))}</td>`;
+            html += `<td class="val-ok${tdExtra}">${escHtml(String(v))}</td>`;
           }
         }
       });

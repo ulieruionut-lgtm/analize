@@ -11,11 +11,14 @@ Principii de performanta:
 - Groupare randuri TSV cu sweep liniar O(n log n) in loc de O(n^2)
 - Optional: randuri din structura Tesseract (block/line) + goluri largi intre „coloane” (settings)
 """
+import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from backend.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +656,7 @@ def _run_ocr_all_pages(pdf_path: str, dpi_override: int | None = None) -> Tuple[
             try:
                 ts, tv, pm = _ocr_page_full(pix_bytes, lang, oem, dpi, pytesseract, min_chars)
             except Exception as pe:
+                _log.warning("[OCR_PAGE_FAIL] Pagina %d/%d: %s", page_num + 1, len(doc), str(pe)[:200])
                 ts, tv, pm = "", "", {}
 
             if ts.strip():
