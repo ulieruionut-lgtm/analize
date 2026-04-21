@@ -116,7 +116,7 @@ _LINII_EXCLUSE = re.compile(
     r"E\s+Moderat\s+crescut|Interpretare\s+valori\s+glicemie|"
     r"Bilirubina\s+Negativ\s*:|"
     r"Eritrocite\s+Absente|Leucocite\s+Foarte\s+rare|"
-    r"Culoare\*|Claritate\*|Aspect\*|Mucus\s+Absent|"
+    r"^Culoare\*?|^Claritate\*?|^Aspect\*?|Mucus\s+Absent|"
     r"^\s*rare\s*$|^\s*rara\s*$|^\s*deschis\s*$|^\s*Alte\s*$|"
     r"k\s*=\s*$|k\s*=\s*\d|eGFR:\s*\d+\s*-|"
     # Gunoi OCR Iancu: linii de interpretare si artefacte
@@ -1454,6 +1454,31 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                     denumire_raw=denumire,
                     valoare=valoare_reala,
                     unitate=unitate_reala,
+                )
+
+    # Format fara unitate cu interval in paranteze drepte: "pH urinar 6 [5 - 7]", "Densitate urinara 1020 [1010 - 1030]"
+    m_fara_um = re.search(
+        r"(?<!\S)(\d+[.,]?\d*)\s+\[\s*(\d+[.,]?\d*)\s*[-–]\s*(\d+[.,]?\d*)\s*\]",
+        linie,
+    )
+    if m_fara_um:
+        _name_fum = linie[:m_fara_um.start()].strip()
+        _name_fum = _strip_prefix_numar_linie(_name_fum)
+        _name_fum = re.sub(r'^["\'\*%\s]+', '', _name_fum).strip()
+        if _name_fum and len(_name_fum) >= 2 and not re.match(r'^\d+[.,]?\d*\s*$', _name_fum):
+            _v_fum = _parse_european_number(m_fara_um.group(1))
+            if _v_fum is None:
+                try:
+                    _v_fum = float(m_fara_um.group(1).replace(",", "."))
+                except ValueError:
+                    _v_fum = None
+            if _v_fum is not None:
+                return RezultatParsat(
+                    denumire_raw=_name_fum,
+                    valoare=_v_fum,
+                    unitate=None,
+                    interval_min=_parse_european_number(m_fara_um.group(2)),
+                    interval_max=_parse_european_number(m_fara_um.group(3)),
                 )
 
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
