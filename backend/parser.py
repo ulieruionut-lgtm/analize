@@ -57,7 +57,7 @@ _LINII_EXCLUSE = re.compile(
     r"^medic\s+[A-ZĂÂÎȘȚa-zăâîșț]|^MEDIC\s+[A-ZĂÂÎȘȚ]|"
     r"^\d{5}\s+Laborator|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
-    r"Bacteriurie\s*[:(]|Leucociturie\s*[:(]|"
+    r"Bacteriurie\s*[:(]|Bacteriurie\s*<\s*\d|Leucociturie\s*[:(]|"
     r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
     r"Punct\s+de\s+lucru|Cod\s+de\s+bare|Cod:|Coad:|PD\s+\d|"
     r"Data\s+-\s+ora\s+recolt|ora\s+recoltare|Data\s+recoltare|"
@@ -2136,6 +2136,12 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
+    # Pagina de evolutie Regina Maria ("Draga X, iata evolutia in timp...") nu contine
+    # rezultate noi — trunchiaza tot ce urmeaza dupa acest marker.
+    _m_evo = re.search(r"iata\s+evolutia\s+in\s+timp", text, re.IGNORECASE)
+    if _m_evo:
+        text = text[:_m_evo.start()]
+
     lines_raw = [
         corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(_normalizeaza_rand_pipe(l.strip()))))
         for l in text.replace("\r", "\n").split("\n")

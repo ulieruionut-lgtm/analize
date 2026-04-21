@@ -247,6 +247,11 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
         return linie
     s = linie
 
+    # --- Regina Maria: artefacte OCR sediment urinar ---
+    # "Hore bacteriana" / "Fiora bacteriana" — OCR citeste "Flora" gresit
+    s = re.sub(r"\bHore\s+bacteriana\b", "Flora bacteriana", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bFiora\s+bacteriana\b", "Flora bacteriana", s, flags=re.IGNORECASE)
+
     # --- TEO HEALTH / Sf. Constantin Brasov: artefacte de format ---
     # "*PR Maniu" / "*PR " = marcaj punct de recolta — eliminat de la inceput de linie
     s = re.sub(r"^\*?PR\s+\w+\s*", "", s)

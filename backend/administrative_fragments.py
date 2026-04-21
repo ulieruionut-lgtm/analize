@@ -93,6 +93,11 @@ FRAGMENTE_ADMINISTRATIVE_NORMALIZATE: FrozenSet[str] = frozenset(
         "testele cu marcajul",
         "aceste rezultate pot fi",
         "cod document pgl",
+        # Regina Maria: pagina evolutie in timp (pagina 4)
+        "iata evolutia in timp",
+        "draga ana",
+        "draga ion",
+        "evolutia in timp a analizelor",
     }
 )
 
