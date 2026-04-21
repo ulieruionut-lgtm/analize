@@ -192,6 +192,7 @@ _LINII_EXCLUSE = re.compile(
     # Antete de tabel (PDF text) care nu sunt analize
     r"^Denumire\s+Rezultat(?:\s+UM)?(?:\s+Interval)?|"
     r"^Interval\s+de\s+referin[tț]a|"
+    r"^Investigatie\s+Valoare\s+obtinuta|^Investigatie\s+UM\s+Interval|"
     r"^Suma\s+analizelor\s+de\s+pe\s+buletin|"
     r"^Copii\s+[șs]i\s+adolescen[tț]i|"
     r"^Ser\s*/\s*Metoda|^Ser\s*/\s*metoda|^Ser\s*/\s*Test\s+calculat",
@@ -2102,17 +2103,36 @@ def _e_nou_rand_test_micro(s: str) -> bool:
     return any(re.search(p, s) for p in patterns)
 
 
+def _normalizeaza_rand_pipe(linie: str) -> str:
+    """
+    Normalizeaza linii cu separatoare pipe (format Spitalul Clinic Judetean Brasov si altele):
+    'Creatinina serica | 0.97 | mg/dL | 0.50-0.90' -> 'Creatinina serica 0.97 mg/dL 0.50-0.90'
+    Conditii: prima coloana = denumire (min 3 litere), a doua = numar.
+    """
+    if "|" not in linie:
+        return linie
+    parts = [p.strip() for p in linie.split("|")]
+    if len(parts) < 2 or len(parts) > 7:
+        return linie
+    if not parts[0] or not re.search(r"[^\W\d_]{3,}", parts[0]):
+        return linie
+    if not parts[1] or not re.search(r"^[<>≤≥]?\s*\d+[.,]?\d*\s*$", parts[1]):
+        return linie
+    return " ".join(p for p in parts if p)
+
+
 def extract_rezultate(text: str) -> list[RezultatParsat]:
     """
     Extrage analizele din text. Suporta:
     - Format Bioclinica (2 linii): parametru pe linia i, valoare+UM+interval pe linia i+1
     - Format Bioclinica (3 linii): parametru / valoare UM / (min - max) pe linii separate
     - Format MedLife/generic (1 linie): parametru + valoare + UM + interval pe aceeasi linie
+    - Format tabel cu pipe (Spitalul Clinic Judetean Brasov etc.)
     Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
     lines_raw = [
-        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(l.strip())))
+        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(_normalizeaza_rand_pipe(l.strip()))))
         for l in text.replace("\r", "\n").split("\n")
     ]
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica

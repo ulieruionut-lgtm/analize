@@ -1,43 +1,47 @@
 """
-Migrează baza de date PostgreSQL (obligatoriu DATABASE_URL).
+Rulare migrari baza de date (SQLite sau PostgreSQL).
 
-Rulează: railway run python run_migrations.py
-Sau cu .env: asigură-te că DATABASE_URL e setat în .env
+Utilizeaza sistemul de versioning cu tabela schema_migrations:
+- Fiecare fisier SQL din /sql/ este aplicat o singura data
+- Versiunile aplicate sunt inregistrate in schema_migrations
+- Fisierele deja aplicate sunt sarite automat
+
+Utilizare:
+    python run_migrations.py                    # detecteaza DB din DATABASE_URL / .env
+    railway run python run_migrations.py        # pe Railway cu PostgreSQL
 """
-import os
 import sys
 from pathlib import Path
 
+# Incarca .env daca exista (pentru DATABASE_URL)
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / ".env")  # .env în rădăcina proiectului
+    load_dotenv(Path(__file__).resolve().parent / ".env")
 except ImportError:
     pass
 
-root = Path(__file__).resolve().parent
-sql_dir = root / "sql"
-url = os.environ.get("DATABASE_URL", "").strip()
+# Adauga directorul radacina la PYTHONPATH pentru importuri
+import os
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-if not url or not url.lower().startswith("postgres"):
-    print("\nEROARE: Setează DATABASE_URL (PostgreSQL). Rulează cu: railway run python run_migrations.py\n")
-    sys.exit(1)
+from backend.migration_runner import aplica_migrari
 
-print("Baza de date (PostgreSQL): migrare...")
-import psycopg2
-conn = psycopg2.connect(url)
-conn.autocommit = False
-try:
-    cur = conn.cursor()
-    for fname in ["001_schema.sql", "003_users_auth_postgres.sql", "004_pg_analize_extinse.sql", "005_pg_alias_fix.sql", "006_pg_alias_ocr.sql", "007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql"]:
-        path = sql_dir / fname
-        if not path.exists():
-            print("Lipsă:", path)
-            continue
-        sql = path.read_text(encoding="utf-8")
-        cur.execute(sql)
-        conn.commit()
-        print("OK:", fname)
-    cur.close()
-finally:
-    conn.close()
-print("Gata. Migrații PostgreSQL finalizate.")
+if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    print("Rulare migrari baza de date...\n")
+    result = aplica_migrari(verbose=True)
+
+    print(f"\n{'='*50}")
+    print(f"Aplicate:  {len(result['aplicate'])} fisiere")
+    print(f"Sarite:    {len(result['sarite'])} (deja aplicate)")
+    print(f"Erori:     {len(result['erori'])}")
+    if result["erori"]:
+        print("Detalii erori:")
+        for err in result["erori"]:
+            print(f"  - {err}")
+    print(f"{'='*50}")
+    print(f"Status: {'OK' if result['ok'] else 'EROARE'}")
+
+    sys.exit(0 if result["ok"] else 1)

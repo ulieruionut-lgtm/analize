@@ -1,6 +1,4 @@
-"""FastAPI – Analize medicale PDF. Interfata medic + API REST."""
-import asyncio
-import io
+﻿"""FastAPI – Analize medicale PDF. Interfata medic + API REST."""
 import json
 import os
 import re
@@ -13,75 +11,42 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
-from starlette.datastructures import Headers
-
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from backend.auth import create_access_token, decode_token, hash_password, verify_password
 from backend.config import settings
 from backend.database import (
-    _row_get,
-    get_laboratoare,
-    get_laborator_analize,
-    create_user as db_create_user,
-    delete_buletin,
-    delete_pacient,
-    delete_rezultat_single,
-    delete_user_by_id,
     ensure_default_admin,
-    export_backup_data,
-    restore_from_backup,
-    get_all_analize_standard,
-    get_pacienti_paginat,
-    get_all_users,
-    get_analize_necunoscute,
-    get_necunoscute_by_ids,
-    get_historicul_analiza,
     get_historicul_analiza_by_cod,
-    get_pacient_cu_analize,
-    get_rezultate_buletin,
-    get_user_by_username,
     insert_buletin,
     insert_rezultat,
     rezultat_meta_pentru_insert,
-    add_rezultat_manual,
-    adauga_analiza_standard,
-    backfill_categorie_necunoscuta_din_rezultate,
-    sterge_analiza_necunoscuta,
-    goleste_analize_asociate,
-    update_rezultat,
-    update_user_password,
-    update_pacient_nume,
     upsert_pacient,
     upload_async_job_get_db,
     upload_async_job_merge_db,
     upload_async_jobs_prune_db,
     upload_async_jobs_use_database,
 )
-from backend.models import (
-    PatientParsed,
-    AdaugaAnalizaStdBody,
-    AdaugaRezultatBody,
-    AprobaAliasBody,
-    AprobaAliasBulkBody,
-    ActualizeazaPacientBody,
-)
+from backend.deps import _is_admin, get_current_user, postgresql_connect as _postgresql_connect
+from backend.models import PatientParsed
 from backend.normalizer import normalize_rezultate
+from backend.utils import extrage_data_buletin as _extrage_data_buletin, raspuns_eroare as _raspuns_eroare
+
+# Importa routerele
+from backend.routers import admin as _admin_router
+from backend.routers import analize as _analize_router
+from backend.routers import auth as _auth_router
+from backend.routers import pacienti as _pacienti_router
 
 app = FastAPI(title="Analize medicale PDF", version="1.0.0")
 
-
-def _postgresql_connect(url: str):
-    """PostgreSQL cu timeout fix — fără connect implicit care poate bloca minute în thread-ul de startup."""
-    import psycopg2
-
-    return psycopg2.connect(url, connect_timeout=25)
+# Inregistreaza routerele
+app.include_router(_auth_router.router)
+app.include_router(_admin_router.router)
+app.include_router(_pacienti_router.router)
+app.include_router(_analize_router.router)
 
 _ERORI_LOG = Path(__file__).resolve().parent.parent / "upload_eroare.txt"
-_HTTP_BEARER = HTTPBearer(auto_error=False)
 _ALLOWED_PDF_MIME = {"application/pdf", "application/x-pdf", "application/octet-stream"}
 _UPLOAD_ASYNC_JOBS: dict[str, dict] = {}
 _UPLOAD_ASYNC_LOCK = threading.Lock()
@@ -261,18 +226,6 @@ def _calc_triage_ai(parsed: Optional[PatientParsed], tip: str, ocr_metrics: Opti
             "avg_weak_ratio": round(avg_weak, 3),
         },
     }
-
-
-async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_HTTP_BEARER),
-):
-    """Dependency: verifica JWT si returneaza user dict. Ridica 401 daca nu e autentificat."""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Nu esti autentificat. Logheaza-te.")
-    payload = decode_token(credentials.credentials)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Token invalid sau expirat.")
-    return {"username": payload["sub"]}
 
 
 def _startup_blocking_work() -> None:
@@ -567,50 +520,6 @@ async def startup_event():
     print("[STARTUP] Thread migratii DB pornit; /health disponibil.", flush=True)
 
 
-def _raspuns_eroare(status: int, mesaj: str):
-    return JSONResponse(
-        status_code=status,
-        content={"detail": mesaj[:500]},
-        media_type="application/json",
-    )
-
-
-def _normalizare_data_text(raw: str) -> str:
-    """Normalizeaza data in format ISO YYYY-MM-DD (compatibil PostgreSQL)."""
-    raw = (raw or "").strip()
-    raw = raw.replace("/", ".").replace("-", ".")
-    # DD.MM.YYYY -> YYYY-MM-DD
-    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4})$", raw)
-    if m:
-        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
-    # YYYY.MM.DD -> YYYY-MM-DD
-    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})$", raw)
-    if m:
-        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-    return raw[:10]
-
-
-def _extrage_data_buletin(text: str) -> Optional[str]:
-    """
-    Extrage data reala din buletin (fara ora).
-    Prioritate: Data emitere -> Data buletin -> Data recoltare -> prima data valida.
-    """
-    if not text:
-        return None
-    patterns = [
-        r"Data\s+emitere\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
-        r"Data\s+buletin(?:ului)?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
-        r"Data\s+recoltare\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
-        r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b",
-        r"\b(\d{4}[./-]\d{2}[./-]\d{2})\b",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            return _normalizare_data_text(m.group(1))
-    return None
-
-
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request, exc):
     return _raspuns_eroare(422, "Date invalide: " + str(exc.errors())[:300])
@@ -662,312 +571,11 @@ async def health():
     return {"status": "ok", "database_type": db_type, "parser_version": _PARSER_VERSION, "db_host": db_host}
 
 
-@app.get("/api/migrate")
-@app.post("/api/migrate")
-async def run_migrations():
-    """Rulează migrările PostgreSQL dacă tabelele lipsesc. Accesează în browser pentru setup inițial."""
-    from backend.config import settings
-    url = (settings.database_url or "").strip()
-    if not url or not url.lower().startswith("postgresql"):
-        return {"ok": False, "detail": "Nu folosești PostgreSQL."}
-    try:
-        from pathlib import Path
-        sql_dir = Path(__file__).resolve().parent.parent / "sql"
-        conn = _postgresql_connect(url)
-        conn.autocommit = False
-        done = []
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'pacienti'")
-            if cur.fetchone() is None:
-                for fname in ["001_schema.sql", "003_users_auth_postgres.sql", "004_pg_analize_extinse.sql", "005_pg_alias_fix.sql", "006_pg_alias_ocr.sql", "007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql"]:
-                    path = sql_dir / fname
-                    if path.exists():
-                        try:
-                            sql_text = path.read_text(encoding="utf-8")
-                            if "INSERT OR IGNORE" in sql_text.upper():
-                                continue
-                            cur.execute(sql_text)
-                            conn.commit()
-                            done.append(fname)
-                        except Exception as ex:
-                            conn.rollback()
-                            return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
-            else:
-                for fname in ["007_ordine_categorie.sql", "008_pg_alias_bioclinica.sql", "009_pg_laboratoare_catalog.sql", "010_pg_alias_laboratoare.sql", "011_pg_valoare_text.sql", "012_pg_necunoscuta_categorie.sql", "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql", "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql", "018_pg_indexes.sql", "019_pg_medlife_pdr_aliases.sql"]:
-                    path = sql_dir / fname
-                    if path.exists():
-                        try:
-                            sql_text = path.read_text(encoding="utf-8")
-                            if "INSERT OR IGNORE" in sql_text.upper():
-                                continue
-                            cur.execute(sql_text)
-                            conn.commit()
-                            done.append(fname)
-                        except Exception as ex:
-                            conn.rollback()
-                            if "already exists" not in str(ex).lower() and "duplicate" not in str(ex).lower():
-                                return {"ok": False, "detail": f"Eroare {fname}: {str(ex)}", "done": done}
-            cur.close()
-            return {"ok": True, "detail": "Migrări aplicate.", "done": done}
-        finally:
-            conn.close()
-    except Exception as e:
-        return {"ok": False, "detail": str(e)}
-
-
-@app.get("/api/fix-schema")
-@app.post("/api/fix-schema")
-async def fix_schema():
-    """Adaugă coloanele lipsă direct (ALTER TABLE IF NOT EXISTS). Fara fisiere SQL."""
-    from backend.config import settings
-    url = (settings.database_url or "").strip()
-    if not url or not url.lower().startswith("postgresql"):
-        return {"ok": False, "detail": "Nu folosești PostgreSQL."}
-    fixes = [
-        ("rezultat_meta", "ALTER TABLE rezultate_analize ADD COLUMN IF NOT EXISTS rezultat_meta TEXT"),
-        ("necunoscuta_categorie", "ALTER TABLE analize_necunoscute ADD COLUMN IF NOT EXISTS categorie TEXT"),
-    ]
-    done, errors = [], []
-    try:
-        conn = _postgresql_connect(url)
-        conn.autocommit = True
-        cur = conn.cursor()
-        for name, sql in fixes:
-            try:
-                cur.execute(sql)
-                done.append(name)
-            except Exception as ex:
-                errors.append(f"{name}: {ex}")
-        cur.close()
-        conn.close()
-        return {"ok": True, "done": done, "errors": errors}
-    except Exception as e:
-        return {"ok": False, "detail": str(e)}
-
-
-@app.get("/login")
-async def login_redirect():
-    """Redirect GET /login -> / (formularul de login e pe pagina principala)."""
-    return RedirectResponse(url="/", status_code=302)
-
-
-@app.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """
-    Login cu username si parola. Returneaza JWT token.
-    Form: username, password (application/x-www-form-urlencoded)
-    """
-    user = get_user_by_username(form_data.username)
-    if not user or not verify_password(form_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Username sau parola incorecte.")
-    token = create_access_token(data={"sub": user["username"]})
-    return {"access_token": token, "token_type": "bearer", "username": user["username"]}
-
-
-@app.get("/me")
-async def me(current_user: dict = Depends(get_current_user)):
-    """Returneaza utilizatorul curent (pentru verificare token)."""
-    return current_user
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-
-class CreateUserRequest(BaseModel):
-    username: str
-    password: str
-
-
-class BackfillNecunoscutaCategorieBody(BaseModel):
-    """Backfill categorie (secțiune PDF) pentru analiza_necunoscuta din rezultate_analize."""
-
-    dry_run: bool = True
-    limit: Optional[int] = None
-
-
-@app.post("/change-password")
-async def change_password(
-    body: ChangePasswordRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    """Schimba parola utilizatorului curent."""
-    user = get_user_by_username(current_user["username"])
-    if not user or not verify_password(body.current_password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Parola curenta incorecta.")
-    if len(body.new_password.strip()) < 8:
-        raise HTTPException(status_code=400, detail="Parola noua trebuie sa aiba minim 8 caractere.")
-    ok = update_user_password(current_user["username"], hash_password(body.new_password))
-    if not ok:
-        raise HTTPException(status_code=500, detail="Nu s-a putut actualiza parola.")
-    return {"message": "Parola a fost actualizata."}
-
-
-def _is_admin(current_user: dict) -> bool:
-    return (current_user or {}).get("username", "").lower() == "admin"
-
-
-@app.get("/users")
-async def list_users(current_user: dict = Depends(get_current_user)):
-    """Lista utilizatori (doar admin)."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate vedea utilizatorii.")
-    return get_all_users()
-
-
-@app.post("/users")
-async def create_user(
-    body: CreateUserRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    """Adauga utilizator nou (doar admin)."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate adauga utilizatori.")
-    username = (body.username or "").strip()
-    if not username:
-        raise HTTPException(status_code=400, detail="Username gol.")
-    if len((body.password or "").strip()) < 8:
-        raise HTTPException(status_code=400, detail="Parola trebuie sa aiba minim 8 caractere.")
-    user = db_create_user(username, hash_password(body.password))
-    if user is None:
-        raise HTTPException(status_code=409, detail=f"Utilizatorul '{username}' exista deja.")
-    return {"message": "Utilizator creat.", "user": {"id": user["id"], "username": user["username"]}}
-
-
-@app.delete("/users/{user_id}")
-async def delete_user(
-    user_id: int,
-    current_user: dict = Depends(get_current_user),
-):
-    """Sterge utilizator (doar admin). Nu se poate sterge contul propriu."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate sterge utilizatori.")
-    me_user = get_user_by_username(current_user["username"])
-    if me_user and me_user.get("id") == user_id:
-        raise HTTPException(status_code=400, detail="Nu poti sterge contul tau.")
-    if not delete_user_by_id(user_id):
-        raise HTTPException(status_code=404, detail="Utilizatorul nu a fost gasit sau nu s-a putut sterge.")
-    return {"message": "Utilizator sters."}
-
-
-@app.get("/api/backup")
-async def backup_export(current_user: dict = Depends(get_current_user)):
-    """Export backup baza de analize (JSON). Doar admin."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate descarca backup-ul.")
-    try:
-        data = export_backup_data()
-        ts = data.get("exported_at", "")[:19].replace("-", "").replace("T", "_").replace(":", "")
-        filename = f"analize_backup_{ts}.json" if ts else "analize_backup_" + datetime.utcnow().strftime("%Y%m%d_%H%M") + ".json"
-        body = json.dumps(data, ensure_ascii=False, indent=2)
-        return StreamingResponse(
-            iter([body.encode("utf-8")]),
-            media_type="application/json",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Eroare la export: {str(e)}"},
-        )
-
-
-@app.post("/api/restore")
-async def backup_restore(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-):
-    """Importa backup JSON. Doar admin. Adauga date peste existente."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate importa backup-ul.")
-    if not file.filename or not file.filename.lower().endswith(".json"):
-        raise HTTPException(status_code=400, detail="Fișierul trebuie să fie JSON.")
-    try:
-        content = await file.read()
-        data = json.loads(content.decode("utf-8"))
-        rez = restore_from_backup(data)
-        return rez
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"JSON invalid: {e}")
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Eroare la import: {str(e)}"},
-        )
-
-
-@app.post("/api/import-dictionar-excel")
-async def import_dictionar_excel(
-    file: UploadFile = File(None),
-    current_user: dict = Depends(get_current_user),
-):
-    """Importă dictionar analize + aliasuri din Excel. Doar admin."""
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin.")
-    try:
-        from backend.import_dictionar import import_dictionar_excel as _do_import_dictionar
-        root = Path(__file__).resolve().parent.parent
-        xlsx_path = root / "dictionar_analize_300_1200_alias.xlsx"
-        if file and file.filename and file.filename.lower().endswith(".xlsx"):
-            source = await file.read()
-        elif xlsx_path.exists():
-            source = xlsx_path
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Încarcă fișierul Excel (dictionar_analize_300_1200_alias.xlsx) sau pune-l în rădăcina proiectului.",
-            )
-        rez = _do_import_dictionar(source)
-        if not rez.get("ok"):
-            raise HTTPException(status_code=500, detail=rez.get("mesaj", "Eroare import"))
-        return rez
-    except HTTPException:
-        raise
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"detail": str(e)})
-
-
-@app.post("/api/admin/backfill-necunoscuta-categorie")
-async def admin_backfill_necunoscuta_categorie(
-    body: BackfillNecunoscutaCategorieBody,
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Completează analiza_necunoscuta.categorie din rezultate (cel mai recent rând cu aceeași denumire_raw).
-    Implicit dry_run=true (simulare). Doar utilizatorul admin.
-    """
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Doar admin poate rula această operație.")
-    try:
-        return backfill_categorie_necunoscuta_din_rezultate(
-            dry_run=body.dry_run,
-            limit=body.limit,
-        )
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"detail": str(e)})
-
-
-@app.delete("/buletin/{buletin_id}")
-async def sterge_buletin(buletin_id: int, current_user: dict = Depends(get_current_user)):
-    """Sterge un buletin (cu toate analizele din el)."""
-    ok = delete_buletin(buletin_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Buletinul nu a fost găsit.")
-    return {"message": "Buletin șters."}
-
-
-@app.delete("/pacient/{pacient_id}")
-async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_current_user)):
-    """Sterge un pacient cu toate buletinele si analizele lui."""
-    ok = delete_pacient(pacient_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Pacientul nu a fost găsit.")
-    return {"message": "Pacient șters complet."}
-
+# --- Endpoint-urile /api/migrate, /api/fix-schema, /login, /users, /api/backup,
+#     /api/restore, /api/import-dictionar-excel, /api/admin/*, /buletin/{id}, /pacient/{id}
+#     sunt inregistrate prin routerele din backend/routers/.
+# --- Endpoint-urile /pacienti, /pacient/{cnp}, /laboratoare, /analize-standard,
+#     /analize-necunoscute, /aproba-alias*, /rezultat, etc. sunt in routere.
 
 import concurrent.futures as _cf
 
@@ -983,6 +591,7 @@ def _process_upload_sync_job(
     filename: str,
     content: bytes,
     content_type: str,
+    debug: bool = False,
 ) -> None:
     """Procesare completa PDF in thread sincron: OCR + parse + DB. Nu blocheaza event loop-ul."""
     _set_upload_async_job(
@@ -1010,118 +619,157 @@ def _process_upload_sync_job(
         # OCR complet sincron in thread
         text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path, dpi_first)
 
-        upload_warnings: list[str] = []
-        if not (text or "").strip():
-            w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum."
-            if ocr_err:
-                w += " " + str(ocr_err)
-            upload_warnings.append(w)
+        if debug:
+            from backend.parser import _linie_este_exclusa
+            tdbg = text or ""
+            parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
+            lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
+            excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
+            normalize_rezultate(parsed_dbg.rezultate)
+            triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
+            analize_list = [
+                {
+                    "denumire": r.denumire_raw,
+                    "valoare": r.valoare,
+                    "unitate": r.unitate,
+                    "needs_review": getattr(r, "needs_review", False),
+                    "review_reasons": getattr(r, "review_reasons", []),
+                }
+                for r in parsed_dbg.rezultate
+            ]
+            status_code = 200
+            payload = {
+                "debug": True,
+                "parser_version": _PARSER_VERSION,
+                "tip_extragere": tip,
+                "extractor": extractor,
+                "ocr_metrics": ocr_metrics,
+                "lungime_text": len(tdbg),
+                "numar_linii": len(lines_raw),
+                "text_primele_3000": tdbg[:6000] + ("..." if len(tdbg) > 6000 else ""),
+                "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
+                "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
+                "cnp": parsed_dbg.cnp,
+                "nume": parsed_dbg.nume,
+                "prenume": parsed_dbg.prenume,
+                "numar_analize": len(parsed_dbg.rezultate),
+                "analize": analize_list,
+                "triere_ai": triage_dbg,
+            }
+            print(f"[UPLOAD-ASYNC-DEBUG] OK job={job_id} file={filename!r} analize={len(parsed_dbg.rezultate)} tip={tip}")
+        else:
+            upload_warnings: list[str] = []
+            if not (text or "").strip():
+                w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum."
+                if ocr_err:
+                    w += " " + str(ocr_err)
+                upload_warnings.append(w)
 
-        parsed = parse_full_text(text or "", cnp_optional=True)
+            parsed = parse_full_text(text or "", cnp_optional=True)
 
-        # Retry DPI daca numele e necunoscut
-        if tip == "ocr" and (parsed.nume or "").strip().lower() == "necunoscut":
-            dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380), 400) if file_mb < 3.0 else min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
-            try:
-                text2, tip2, ocr_err2, ct2, ext2, om2 = extract_text_with_metrics(tmp_path, dpi_retry)
-                parsed2 = parse_full_text(text2 or "", cnp_optional=True)
-                if parsed2 and ((parsed2.nume or "").strip().lower() != "necunoscut" or len(parsed2.rezultate) > len(parsed.rezultate)):
-                    parsed, text, tip, colored_tokens, extractor, ocr_metrics = parsed2, text2, tip2, ct2 or colored_tokens, f"{ext2}+dpi{dpi_retry}", om2 or ocr_metrics
-            except Exception:
-                pass
+            # Retry DPI daca numele e necunoscut
+            if tip == "ocr" and (parsed.nume or "").strip().lower() == "necunoscut":
+                dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380), 400) if file_mb < 3.0 else min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
+                try:
+                    text2, tip2, ocr_err2, ct2, ext2, om2 = extract_text_with_metrics(tmp_path, dpi_retry)
+                    parsed2 = parse_full_text(text2 or "", cnp_optional=True)
+                    if parsed2 and ((parsed2.nume or "").strip().lower() != "necunoscut" or len(parsed2.rezultate) > len(parsed.rezultate)):
+                        parsed, text, tip, colored_tokens, extractor, ocr_metrics = parsed2, text2, tip2, ct2 or colored_tokens, f"{ext2}+dpi{dpi_retry}", om2 or ocr_metrics
+                except Exception:
+                    pass
 
-        normalize_rezultate(parsed.rezultate)
+            normalize_rezultate(parsed.rezultate)
 
-        # Calitate OCR
-        ocr_calitate_slaba_salvata = False
-        if tip == "ocr":
-            q = _calc_upload_quality(parsed)
-            suspect_flags = sum([
-                (parsed.nume or "").strip().lower() == "necunoscut",
-                int(q["total_rez"]) < 3,
-                float(q["unknown_ratio"]) > 0.80,
-                float(q["noise_ratio"]) > 0.80,
-            ])
-            if suspect_flags >= 2:
-                ocr_calitate_slaba_salvata = True
-                upload_warnings.append("Calitate OCR slabă sau date incomplete: buletinul a fost salvat. Recomandăm verificarea cu AI sau corectarea manuală.")
+            # Calitate OCR
+            ocr_calitate_slaba_salvata = False
+            if tip == "ocr":
+                q = _calc_upload_quality(parsed)
+                suspect_flags = sum([
+                    (parsed.nume or "").strip().lower() == "necunoscut",
+                    int(q["total_rez"]) < 3,
+                    float(q["unknown_ratio"]) > 0.80,
+                    float(q["noise_ratio"]) > 0.80,
+                ])
+                if suspect_flags >= 2:
+                    ocr_calitate_slaba_salvata = True
+                    upload_warnings.append("Calitate OCR slabă sau date incomplete: buletinul a fost salvat. Recomandăm verificarea cu AI sau corectarea manuală.")
 
-        ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
-        if tip == "ocr" and ocr_summary:
-            avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
-            avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
-            if avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)) or avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
-                upload_warnings.append(f"OCR cu încredere scăzută (mean_conf={avg_conf:.1f}). Rezultatele au fost marcate pentru verificare.")
+            ocr_summary = (ocr_metrics or {}).get("summary", {}) if isinstance(ocr_metrics, dict) else {}
+            if tip == "ocr" and ocr_summary:
+                avg_conf = float(ocr_summary.get("avg_mean_conf", 0.0) or 0.0)
+                avg_weak = float(ocr_summary.get("avg_weak_ratio", 1.0) or 1.0)
+                if avg_conf < float(getattr(settings, "ocr_retry_min_mean_conf", 50.0)) or avg_weak > float(getattr(settings, "ocr_retry_max_weak_ratio", 0.40)):
+                    upload_warnings.append(f"OCR cu încredere scăzută (mean_conf={avg_conf:.1f}). Rezultatele au fost marcate pentru verificare.")
+                    for r in parsed.rezultate:
+                        if "ocr_conf_scazut" not in r.review_reasons:
+                            r.review_reasons.append("ocr_conf_scazut")
+                        r.needs_review = True
                 for r in parsed.rezultate:
-                    if "ocr_conf_scazut" not in r.review_reasons:
-                        r.review_reasons.append("ocr_conf_scazut")
-                    r.needs_review = True
-            for r in parsed.rezultate:
-                r.ocr_confidence = avg_conf
-                if r.analiza_standard_id is None and "alias_necunoscut" not in r.review_reasons:
-                    r.review_reasons.append("alias_necunoscut")
-                    r.needs_review = True
+                    r.ocr_confidence = avg_conf
+                    if r.analiza_standard_id is None and "alias_necunoscut" not in r.review_reasons:
+                        r.review_reasons.append("alias_necunoscut")
+                        r.needs_review = True
 
-        triage = _calc_triage_ai(parsed, tip, ocr_metrics)
+            triage = _calc_triage_ai(parsed, tip, ocr_metrics)
 
-        # Colored tokens
-        if colored_tokens:
-            for r in parsed.rezultate:
-                if r.flag is None and r.valoare is not None:
-                    val_str = str(r.valoare).rstrip("0").rstrip(".")
-                    if val_str in colored_tokens or val_str.replace(".", ",") in colored_tokens:
-                        r.flag = "L" if r.interval_min is not None and r.valoare < r.interval_min else "H"
+            # Colored tokens
+            if colored_tokens:
+                for r in parsed.rezultate:
+                    if r.flag is None and r.valoare is not None:
+                        val_str = str(r.valoare).rstrip("0").rstrip(".")
+                        if val_str in colored_tokens or val_str.replace(".", ",") in colored_tokens:
+                            r.flag = "L" if r.interval_min is not None and r.valoare < r.interval_min else "H"
 
-        # DB sincron (in thread - OK)
-        pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
-        if not pacient or pacient.get("id") is None:
-            raise RuntimeError("Eroare la salvarea pacientului.")
+            # DB sincron (in thread - OK)
+            pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
+            if not pacient or pacient.get("id") is None:
+                raise RuntimeError("Eroare la salvarea pacientului.")
 
-        data_buletin = _extrage_data_buletin(text or "")
-        buletin = insert_buletin(
-            pacient_id=pacient["id"],
-            data_buletin=data_buletin,
-            laborator=None,
-            fisier_original=filename,
-        )
-        if not buletin or buletin.get("id") is None:
-            raise RuntimeError("Eroare la salvarea buletinului.")
-
-        for idx, r in enumerate(parsed.rezultate):
-            insert_rezultat(
-                buletin_id=buletin["id"],
-                analiza_standard_id=r.analiza_standard_id,
-                denumire_raw=r.denumire_raw,
-                valoare=r.valoare,
-                valoare_text=r.valoare_text,
-                unitate=r.unitate,
-                interval_min=r.interval_min,
-                interval_max=r.interval_max,
-                flag=r.flag,
-                ordine=r.ordine,
-                categorie=r.categorie,
-                rezultat_meta=rezultat_meta_pentru_insert(
-                    getattr(r, "organism_raw", None),
-                    getattr(r, "rezultat_tip", None),
-                    getattr(r, "needs_review", False),
-                    getattr(r, "review_reasons", []),
-                    getattr(r, "ocr_confidence", None),
-                ),
+            data_buletin = _extrage_data_buletin(text or "")
+            buletin = insert_buletin(
+                pacient_id=pacient["id"],
+                data_buletin=data_buletin,
+                laborator=None,
+                fisier_original=filename,
             )
+            if not buletin or buletin.get("id") is None:
+                raise RuntimeError("Eroare la salvarea buletinului.")
 
-        status_code = 200
-        payload = {
-            "message": "PDF procesat cu succes.",
-            "tip_extragere": tip,
-            "extractor": extractor,
-            "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
-            "buletin_id": buletin["id"],
-            "numar_analize": len(parsed.rezultate),
-            "warnings": upload_warnings,
-            "triere_ai": triage,
-            "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
-        }
-        print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={len(parsed.rezultate)} tip={tip}")
+            for idx, r in enumerate(parsed.rezultate):
+                insert_rezultat(
+                    buletin_id=buletin["id"],
+                    analiza_standard_id=r.analiza_standard_id,
+                    denumire_raw=r.denumire_raw,
+                    valoare=r.valoare,
+                    valoare_text=r.valoare_text,
+                    unitate=r.unitate,
+                    interval_min=r.interval_min,
+                    interval_max=r.interval_max,
+                    flag=r.flag,
+                    ordine=r.ordine,
+                    categorie=r.categorie,
+                    rezultat_meta=rezultat_meta_pentru_insert(
+                        getattr(r, "organism_raw", None),
+                        getattr(r, "rezultat_tip", None),
+                        getattr(r, "needs_review", False),
+                        getattr(r, "review_reasons", []),
+                        getattr(r, "ocr_confidence", None),
+                    ),
+                )
+
+            status_code = 200
+            payload = {
+                "message": "PDF procesat cu succes.",
+                "tip_extragere": tip,
+                "extractor": extractor,
+                "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
+                "buletin_id": buletin["id"],
+                "numar_analize": len(parsed.rezultate),
+                "warnings": upload_warnings,
+                "triere_ai": triage,
+                "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
+            }
+            print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={len(parsed.rezultate)} tip={tip}")
     except Exception as ex:
         status_code = 500
         payload = {"detail": str(ex)[:800]}
@@ -1147,6 +795,7 @@ def _process_upload_sync_job(
 @app.post("/upload-async")
 async def upload_pdf_async(
     file: UploadFile = File(...),
+    debug: bool = Query(False, description="Verificare fara salvare in DB (diagnostic)"),
     current_user: dict = Depends(get_current_user),
 ):
     if not file or not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -1186,6 +835,7 @@ async def upload_pdf_async(
         filename=file.filename,
         content=content,
         content_type=file.content_type or "application/pdf",
+        debug=bool(debug and _is_admin(current_user)),
     )
     return {
         "job_id": job_id,
@@ -1330,10 +980,11 @@ async def upload_pdf(
             upload_warnings.append(w)
         parsed = parse_full_text(text, cnp_optional=True)
         if tip == "ocr":
-            # Fallback DPI mai mare doar cand numele pacientului nu e detectat (nu impunem prag de analize).
+            # Fallback DPI mai mare cand numele nu e detectat SAU cand 0 analize pe PDF mic.
             count_now = len(parsed.rezultate)
             unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
-            if unknown_name:
+            zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
+            if unknown_name or zero_analize_pdf_mic:
                 if file_mb >= 3.0:
                     dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
                 else:
@@ -1521,542 +1172,6 @@ async def upload_pdf(
                 os.unlink(tmp_path)
             except OSError:
                 pass
-
-
-@app.get("/pacienti")
-async def lista_pacienti(
-    q: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
-    current_user: dict = Depends(get_current_user),
-):
-    """Lista pacienti paginata. ?q=text pentru cautare, ?limit=50&offset=0 pentru paginare."""
-    items, total = get_pacienti_paginat(limit=limit, offset=offset, q=q)
-    return {"items": items, "total": total}
-
-
-@app.get("/pacient/{cnp}/evolutie-matrice")
-async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(get_current_user)):
-    """
-    Returneaza matricea de evolutie pentru pacient: analize pe randuri, date pe coloane.
-    Format: {pacient: {...}, date_buletine: [...], analize: [{denumire, unitate, valori[], flags[]}]}
-    """
-    pacient_data = get_pacient_cu_analize(cnp)
-    if not pacient_data:
-        raise HTTPException(status_code=404, detail="Pacient negasit.")
-    
-    # 1. Extrage toate buletinele si sorteaza descrescator (cel mai recent la stanga)
-    buletine = pacient_data.get("buletine", [])
-    buletine_sorted = sorted(
-        buletine,
-        key=lambda b: (b.get("data_buletin") or b.get("created_at") or ""),
-        reverse=True
-    )
-    
-    # 2. Construieste lista de date (coloane)
-    date_buletine = []
-    for b in buletine_sorted:
-        data = b.get("data_buletin") or b.get("created_at") or ""
-        # Normalizeaza data ca DD.MM.YYYY
-        if data:
-            # Daca contine timestamp (T sau spatiu + ora), elimina-l
-            if "T" in data:
-                data = data.split("T")[0]
-            elif " " in data and ":" in data:
-                data = data.split(" ")[0]
-            # Aplica normalizare
-            data = _normalizare_data_text(data)
-        date_buletine.append(data or "Necunoscuta")
-    
-    # 3. Grupeaza rezultatele în rânduri pentru matrice.
-    # - Un singur buletin: câte înregistrări în DB, atâtea rânduri (cheie = id rezultat). Altfel
-    #   denumire_raw goală sau identică pentru același cod standard colapsează totul (ex. 28 → 22).
-    # - Mai multe buletine: cheie semantică (id standard, denumire raw, ordine) ca să alinieze coloanele
-    #   în timp; ordine lipsește → folosim id rezultat doar ca fallback pentru cheie.
-    n_buletine = len(buletine_sorted)
-    analize_map = {}  # cheie -> {denumire, unitate, valori_dict: {buletin_id: (valoare, flag)}, categorie, ordine_min}
-    
-    for idx_buletin, b in enumerate(buletine_sorted):
-        buletin_id = b.get("id")
-        # Pentru aliniere intre buletine, folosim aparitia in ordinea PDF per analiza.
-        # Astfel aceeasi analiza standard ramane pe acelasi rand chiar daca denumirea OCR variaza.
-        aparitii_sid: dict[int, int] = {}
-        aparitii_unknown: dict[str, int] = {}
-        for rez in b.get("rezultate", []):
-            raw = (rez.get("denumire_raw") or "").strip()
-            sid = rez.get("analiza_standard_id")
-            std = (rez.get("denumire_standard") or "").strip()
-            rid = rez.get("id")
-            if n_buletine == 1 and rid is not None:
-                cheie = ("rez", int(rid))
-            else:
-                if sid is not None:
-                    try:
-                        sid_int = int(sid)
-                    except (TypeError, ValueError):
-                        sid_int = 0
-                    aparitie = aparitii_sid.get(sid_int, 0)
-                    aparitii_sid[sid_int] = aparitie + 1
-                    cheie = ("m", sid_int, aparitie)
-                else:
-                    unk_label = re.sub(r"\s+", " ", (raw or std or "Necunoscuta").strip()).lower()
-                    aparitie = aparitii_unknown.get(unk_label, 0)
-                    aparitii_unknown[unk_label] = aparitie + 1
-                    cheie = ("u", unk_label, aparitie)
-            
-            if cheie not in analize_map:
-                # Etichetă rând: denumirea din PDF (raw) distinge liniile; fallback la standard din catalog
-                label = (raw or std or "?").strip()
-                analize_map[cheie] = {
-                    "denumire_standard": label,
-                    "unitate": rez.get("unitate") or "",
-                    "valori_dict": {},
-                    "categorie": rez.get("categorie") or "",
-                    "ordine_min": rez.get("ordine") if rez.get("ordine") is not None else 99999,
-                }
-            else:
-                # Actualizeaza ordinea minima (luam cea mai mica ordine din toate buletinele)
-                ord_curent = rez.get("ordine")
-                if ord_curent is not None and ord_curent < analize_map[cheie]["ordine_min"]:
-                    analize_map[cheie]["ordine_min"] = ord_curent
-                # Actualizeaza categoria daca lipseste
-                if not analize_map[cheie]["categorie"] and rez.get("categorie"):
-                    analize_map[cheie]["categorie"] = rez.get("categorie") or ""
-            
-            # Salveaza valoarea pentru acest buletin
-            valoare = rez.get("valoare")
-            if valoare is None and rez.get("valoare_text"):
-                valoare = rez.get("valoare_text")
-            
-            analize_map[cheie]["valori_dict"][buletin_id] = (valoare, rez.get("flag") or "")
-    
-    # 4. Construieste lista finala de analize cu vectori de valori
-    # Sortare: intai pe categorie (cu ordine_categorie), apoi pe ordine_min in PDF
-    # Analizele fara categorie merg la sfarsit in ordine alfabetica
-    _ORDINE_CATEGORIE = {
-        "Hemoleucograma": 0,
-        "Biochimie": 1,
-        "Lipidograma": 2,
-        "Coagulare": 3,
-        "Examen urina": 4,
-        "Electroforeza": 5,
-        "Imunologie si Serologie": 6,
-        "Hormoni tiroidieni": 7,
-        "Hormoni": 8,
-        "Markeri tumorali": 9,
-        "Minerale si electroliti": 10,
-        "Inflamatie": 11,
-    }
-    
-    def _sort_key(cheie_info):
-        cheie, info = cheie_info
-        cat = info.get("categorie") or ""
-        ord_cat = _ORDINE_CATEGORIE.get(cat, 999)
-        ord_pdf = info.get("ordine_min", 99999)
-        # Daca avem ordine din PDF, folosim ord_cat + ord_pdf
-        # Altfel (date vechi fara ordine), sortam alfabetic in cadrul categoriei
-        return (ord_cat, ord_pdf, info["denumire_standard"].lower())
-    
-    analize_result = []
-    for cheie, info in sorted(analize_map.items(), key=_sort_key):
-        valori = []
-        flags = []
-        for b in buletine_sorted:
-            bid = b.get("id")
-            if bid in info["valori_dict"]:
-                val, flag = info["valori_dict"][bid]
-                valori.append(val)
-                flags.append(flag)
-            else:
-                valori.append(None)
-                flags.append("")
-        
-        analize_result.append({
-            "denumire_standard": info["denumire_standard"],
-            "unitate": info["unitate"],
-            "valori": valori,
-            "flags": flags,
-            "categorie": info.get("categorie") or "",
-        })
-
-    # 5. Compactare rânduri complementare (aceeași analiză split-uită pe două rânduri).
-    # Se unesc doar dacă nu există conflict de valoare/flag pe aceeași coloană.
-    def _is_missing(v) -> bool:
-        return v is None or (isinstance(v, str) and not v.strip())
-
-    def _norm_cmp(v) -> str:
-        if _is_missing(v):
-            return ""
-        return re.sub(r"\s+", " ", str(v).strip())
-
-    merged_result = []
-    for row in analize_result:
-        den = (row.get("denumire_standard") or "").strip().lower()
-        unt = (row.get("unitate") or "").strip().lower()
-        cat = (row.get("categorie") or "").strip().lower()
-        valori_row = list(row.get("valori") or [])
-        flags_row = list(row.get("flags") or [])
-
-        merged = False
-        for target in merged_result:
-            t_den = (target.get("denumire_standard") or "").strip().lower()
-            t_unt = (target.get("unitate") or "").strip().lower()
-            t_cat = (target.get("categorie") or "").strip().lower()
-            if (den, unt, cat) != (t_den, t_unt, t_cat):
-                continue
-
-            compat = True
-            t_valori = target.get("valori") or []
-            t_flags = target.get("flags") or []
-            for i in range(min(len(valori_row), len(t_valori))):
-                v_new, v_old = valori_row[i], t_valori[i]
-                if not _is_missing(v_new) and not _is_missing(v_old) and _norm_cmp(v_new) != _norm_cmp(v_old):
-                    compat = False
-                    break
-                f_new, f_old = flags_row[i], t_flags[i]
-                if not _is_missing(f_new) and not _is_missing(f_old) and _norm_cmp(f_new) != _norm_cmp(f_old):
-                    compat = False
-                    break
-            if not compat:
-                continue
-
-            for i in range(min(len(valori_row), len(t_valori))):
-                if _is_missing(t_valori[i]) and not _is_missing(valori_row[i]):
-                    t_valori[i] = valori_row[i]
-                if _is_missing(t_flags[i]) and not _is_missing(flags_row[i]):
-                    t_flags[i] = flags_row[i]
-            target["valori"] = t_valori
-            target["flags"] = t_flags
-            merged = True
-            break
-
-        if not merged:
-            merged_result.append(row)
-    analize_result = merged_result
-
-    # 6. Collapse final: un singur rând per denumire analiză,
-    # chiar dacă au rămas conflicte între upload-uri duplicate sau categorii.
-    # Alegem cea mai "curată" valoare pentru fiecare coloană.
-    def _pick_best_value(values: list):
-        valid = [v for v in values if not _is_missing(v)]
-        if not valid:
-            return None
-        numeric = []
-        texty = []
-        for v in valid:
-            if isinstance(v, (int, float)):
-                numeric.append(v)
-                continue
-            s = _norm_cmp(v)
-            try:
-                numeric.append(float(s.replace(",", ".")))
-            except (TypeError, ValueError):
-                texty.append(s)
-        if numeric:
-            return numeric[0]
-        # Pentru text, preferăm varianta cea mai scurtă (evită șiruri OCR concatenate).
-        texty = [t for t in texty if t]
-        if not texty:
-            return None
-        return sorted(texty, key=lambda t: (len(t), t))[0]
-
-    def _pick_best_flag(flags: list):
-        valid = [_norm_cmp(f) for f in flags if not _is_missing(f)]
-        return valid[0] if valid else ""
-
-    collapsed = {}
-    for row in analize_result:
-        key = (row.get("denumire_standard") or "").strip().lower()
-        if key not in collapsed:
-            collapsed[key] = {
-                "denumire_standard": row.get("denumire_standard"),
-                "unitate": row.get("unitate"),
-                "categorie": row.get("categorie"),
-                "valori": list(row.get("valori") or []),
-                "flags": list(row.get("flags") or []),
-            }
-            continue
-
-        target = collapsed[key]
-        t_vals = target.get("valori") or []
-        t_flags = target.get("flags") or []
-        s_vals = list(row.get("valori") or [])
-        s_flags = list(row.get("flags") or [])
-        n = min(len(t_vals), len(s_vals))
-        for i in range(n):
-            t_vals[i] = _pick_best_value([t_vals[i], s_vals[i]])
-            t_flags[i] = _pick_best_flag([t_flags[i], s_flags[i]])
-        target["valori"] = t_vals
-        target["flags"] = t_flags
-
-    analize_result = list(collapsed.values())
-    
-    rezultate_in_baza = sum(len(b.get("rezultate") or []) for b in buletine_sorted)
-    return {
-        "pacient": {
-            "id": pacient_data.get("id"),
-            "cnp": pacient_data.get("cnp"),
-            "nume": pacient_data.get("nume"),
-            "prenume": pacient_data.get("prenume")
-        },
-        "date_buletine": date_buletine,
-        "buletine_ids": [b.get("id") for b in buletine_sorted],
-        # Număr real de înregistrări în DB (poate coincide cu rândurile din tabel după fix grupare)
-        "rezultate_in_baza": rezultate_in_baza,
-        "analize": analize_result
-    }
-
-
-@app.get("/pacient/{cnp}")
-async def get_pacient(cnp: str, current_user: dict = Depends(get_current_user)):
-    """Pacientul cu CNP dat + toate buletinele + rezultatele."""
-    result = get_pacient_cu_analize(cnp)
-    if not result:
-        raise HTTPException(status_code=404, detail="Pacient negasit.")
-    return result
-
-
-@app.patch("/pacient/{cnp}")
-async def actualizeaza_pacient_nume(cnp: str, body: dict, current_user: dict = Depends(get_current_user)):
-    """Actualizeaza numele si/sau prenumele unui pacient (corectie nume corupte ex: TGO ASAT)."""
-    nume = (body.get("nume") or "").strip()
-    prenume = (body.get("prenume"))
-    if prenume is not None:
-        prenume = str(prenume).strip() or None
-    if not nume:
-        raise HTTPException(status_code=400, detail="Numele nu poate fi gol.")
-    ok = update_pacient_nume(cnp, nume, prenume)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Pacient negasit.")
-    return {"message": "Nume actualizat.", "pacient": get_pacient_cu_analize(cnp)}
-
-
-@app.get("/laboratoare")
-async def lista_laboratoare(current_user: dict = Depends(get_current_user)):
-    """Lista laboratoare cu numar analize in catalog."""
-    return get_laboratoare()
-
-
-@app.get("/laboratoare/{laborator_id}/analize")
-async def catalog_laborator(laborator_id: int, current_user: dict = Depends(get_current_user)):
-    """Catalog analize pentru un laborator."""
-    return get_laborator_analize(laborator_id)
-
-
-@app.get("/analize-standard")
-async def lista_analize_standard(current_user: dict = Depends(get_current_user)):
-    """Lista tuturor tipurilor de analize din baza de date."""
-    return get_all_analize_standard()
-
-
-@app.post("/analize-standard")
-async def adauga_analiza_std(body: AdaugaAnalizaStdBody, current_user: dict = Depends(get_current_user)):
-    """Adauga o noua analiza standard (denumire + cod unic)."""
-    denumire = body.denumire.strip()
-    cod = body.cod.strip()
-    if not denumire or not cod:
-        raise HTTPException(status_code=400, detail="Denumirea si codul sunt obligatorii.")
-    try:
-        analiza = adauga_analiza_standard(denumire, cod)
-        return analiza
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-
-@app.get("/buletin/{buletin_id}/rezultate")
-async def get_buletin_rezultate(buletin_id: int, current_user: dict = Depends(get_current_user)):
-    """Lista tuturor rezultatelor dintr-un buletin (pentru editare manuala)."""
-    rows = get_rezultate_buletin(buletin_id)
-    return rows
-
-
-@app.put("/rezultat/{rezultat_id}")
-async def edit_rezultat(rezultat_id: int, body: dict, current_user: dict = Depends(get_current_user)):
-    """Editeaza partial un rezultat existent: actualizeaza doar campurile trimise.
-    Daca se schimba analiza_standard_id, salveaza denumire_raw ca alias pentru invatare.
-    """
-    if not body:
-        raise HTTPException(status_code=422, detail="Body gol — nimic de actualizat.")
-    ok = update_rezultat(rezultat_id=rezultat_id, body=body)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Rezultatul nu a fost gasit.")
-
-    # Daca s-a schimbat tipul de analiza, inregistreaza denumire_raw ca alias
-    alias_salvat = False
-    new_std_id = body.get("analiza_standard_id")
-    if new_std_id:
-        from backend.database import get_cursor, _use_sqlite
-        with get_cursor(commit=False) as cur:
-            ph = "?" if _use_sqlite() else "%s"
-            cur.execute(f"SELECT denumire_raw FROM rezultate_analize WHERE id = {ph}", (rezultat_id,))
-            row = cur.fetchone()
-            if row:
-                denumire = _row_get(row, 0 if _use_sqlite() else 'denumire_raw')
-                if denumire and denumire.strip():
-                    from backend.normalizer import adauga_alias_nou
-                    alias_salvat = adauga_alias_nou(denumire.strip(), int(new_std_id))
-
-    return {"ok": True, "alias_salvat": alias_salvat}
-
-
-@app.delete("/rezultat/{rezultat_id}")
-async def sterge_rezultat(rezultat_id: int, current_user: dict = Depends(get_current_user)):
-    """Sterge un singur rezultat dintr-un buletin."""
-    ok = delete_rezultat_single(rezultat_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Rezultatul nu a fost gasit.")
-    return {"ok": True}
-
-
-@app.post("/buletin/{buletin_id}/rezultat")
-async def adauga_rezultat(buletin_id: int, body: AdaugaRezultatBody, current_user: dict = Depends(get_current_user)):
-    """Adauga manual un rezultat intr-un buletin existent.
-    Daca se specifica si analiza_standard_id, denumire_raw este salvata ca alias
-    pentru a fi recunoscuta automat la upload-uri viitoare.
-    """
-    denumire = body.denumire_raw.strip()
-    analiza_standard_id = body.analiza_standard_id
-    row = add_rezultat_manual(
-        buletin_id=buletin_id,
-        analiza_standard_id=analiza_standard_id,
-        denumire_raw=denumire,
-        valoare=float(body.valoare),
-        unitate=body.unitate,
-        flag=body.flag,
-    )
-    if not row:
-        raise HTTPException(status_code=500, detail="Eroare la adaugarea rezultatului.")
-
-    # Daca s-a specificat tipul de analiza, inregistreaza denumire_raw ca alias
-    # pentru a fi recunoscuta automat la upload-uri viitoare
-    alias_salvat = False
-    if analiza_standard_id and denumire:
-        from backend.normalizer import adauga_alias_nou
-        alias_salvat = adauga_alias_nou(denumire, int(analiza_standard_id))
-
-    return {"ok": True, "id": row["id"], "alias_salvat": alias_salvat}
-
-
-@app.get("/analize-necunoscute")
-async def lista_necunoscute(toate: bool = False, current_user: dict = Depends(get_current_user)):
-    """Analize nerecunoscute de normalizer (neaprobate sau toate)."""
-    return get_analize_necunoscute(doar_neaprobate=not toate)
-
-
-@app.post("/aproba-alias")
-async def aproba_alias(body: AprobaAliasBody, current_user: dict = Depends(get_current_user)):
-    """
-    Aprobare alias: asociaza o denumire_raw necunoscuta cu o analiza_standard.
-    Body: { "denumire_raw": "...", "analiza_standard_id": 5 }
-    sau { "necunoscuta_id": 12, "analiza_standard_id": 5 } (recomandat din UI – evită probleme cu ghilimele).
-    """
-    aid = body.analiza_standard_id
-    raw = (body.denumire_raw or "").strip()
-    nid = body.necunoscuta_id
-    if nid is not None:
-        nid_int = nid
-        rows = get_necunoscute_by_ids([nid_int])
-        if not rows:
-            return JSONResponse(
-                status_code=404,
-                content={"detail": "Intrarea nu există sau este deja aprobată."},
-            )
-        raw = (rows[0].get("denumire_raw") or "").strip()
-    if not raw or not aid:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "detail": "Campuri obligatorii: analiza_standard_id și (denumire_raw sau necunoscuta_id)."
-            },
-        )
-    from backend.normalizer import adauga_alias_nou
-
-    ok = adauga_alias_nou(raw, int(aid))
-    if ok:
-        return {"ok": True, "mesaj": f"Alias '{raw}' asociat cu succes."}
-    return JSONResponse(status_code=500, content={"detail": "Eroare la salvarea alias-ului."})
-
-
-@app.post("/aproba-alias-bulk")
-async def aproba_alias_bulk(body: AprobaAliasBulkBody, current_user: dict = Depends(get_current_user)):
-    """
-    Aprobare în masă: aceeași analiză standard pentru mai multe rânduri din analiza_necunoscuta.
-    Body: { "necunoscuta_ids": [1, 2, 3], "analiza_standard_id": 5 }
-    """
-    ids = body.necunoscuta_ids or body.ids or []
-    aid_int = body.analiza_standard_id
-    if not isinstance(ids, list) or not ids:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Lista necunoscuta_ids este goală sau invalidă."},
-        )
-
-    rows = get_necunoscute_by_ids(ids)
-    if not rows:
-        return JSONResponse(
-            status_code=404,
-            content={"detail": "Nicio intrare neaprobată găsită pentru id-urile date."},
-        )
-    requested = set()
-    for x in ids:
-        try:
-            requested.add(int(x))
-        except (TypeError, ValueError):
-            pass
-    found_ids = {r.get("id") for r in rows}
-    skipped_ids = sorted(requested - found_ids)
-
-    denumiri = [(r.get("denumire_raw") or "").strip() for r in rows]
-    denumiri = [d for d in denumiri if d]
-    if not denumiri:
-        return JSONResponse(status_code=400, content={"detail": "Denumiri goale."})
-
-    from backend.normalizer import adauga_aliasuri_bulk
-
-    result = adauga_aliasuri_bulk(denumiri, aid_int)
-    if not result.get("ok"):
-        return JSONResponse(
-            status_code=500,
-            content={"detail": result.get("error") or "Eroare la aprobare în masă."},
-        )
-    return {
-        "ok": True,
-        "mesaj": f"Asociate {result.get('processed', 0)} denumiri la analiza standard {aid_int}.",
-        "processed": result.get("processed", 0),
-        "rows_matched": len(rows),
-        "skipped_ids": skipped_ids,
-    }
-
-
-@app.post("/invalideaza-cache-alias")
-async def invalideaza_cache_alias(current_user: dict = Depends(get_current_user)):
-    """Invalideaza cache-ul alias-urilor (dupa aprobari bulk) - asigura ca toate workerii invata."""
-    from backend.normalizer import invalideaza_cache
-    invalideaza_cache()
-    return {"ok": True, "mesaj": "Cache alias invalidat."}
-
-
-@app.post("/goleste-analize-asociate")
-async def goleste_asociate(current_user: dict = Depends(get_current_user)):
-    """Șterge toate intrările din analiza_necunoscuta și analiza_alias."""
-    from backend.normalizer import invalideaza_cache
-    result = goleste_analize_asociate()
-    invalideaza_cache()
-    return result
-
-
-@app.delete("/analiza-necunoscuta/{id_nec}")
-async def sterge_necunoscuta(id_nec: int, current_user: dict = Depends(get_current_user)):
-    """Sterge o analiza necunoscuta (ex: zgomot, artefact OCR)."""
-    sterge_analiza_necunoscuta(id_nec)
-    return {"ok": True}
-
-
-@app.get("/analiza-historicul/{analiza_id}")
-async def historicul_analiza(analiza_id: int, current_user: dict = Depends(get_current_user)):
-    """Toate rezultatele pentru un tip de analiza (dupa id), de la toti pacientii."""
-    rezultate = get_historicul_analiza(analiza_id)
-    return {"analiza_id": analiza_id, "rezultate": rezultate, "total": len(rezultate)}
 
 
 # ─── Interfata HTML Medic ─────────────────────────────────────────────────────
@@ -2566,8 +1681,8 @@ async def index():
       <div id="upload-out"></div>
     </div>
     <div class="card" id="card-pacienti-recenti" style="display:none">
-      <h2>Pacienți încărcați</h2>
-      <div id="lista-recenti" style="max-height:400px;overflow-y:auto"></div>
+      <h2>Ultimele buletine încărcate</h2>
+      <div id="lista-recenti" style="max-height:420px;overflow-y:auto"></div>
     </div>
   </div>
 
@@ -3481,8 +2596,8 @@ async function _uploadCuRetry(uploadUrl, fd) {
   return { response: lastResp, text: lastText };
 }
 
-async function _proceseazaUploadAsync(fd, onStatus) {
-  const start = await _uploadCuRetry('/upload-async', fd);
+async function _proceseazaUploadAsync(fd, onStatus, uploadUrl = '/upload-async') {
+  const start = await _uploadCuRetry(uploadUrl, fd);
   if (start.aborted) return { aborted: true };
   const rs = start.response;
   const txtStart = start.text || '';
@@ -3561,20 +2676,18 @@ async function trimite(debugMode) {
 
     const fd = new FormData();
     fd.append('file', f);
-    const uploadUrl = '/upload' + (debugMode ? '?debug=1' : '?traceback=1');
     let status = 'ok', mesaj = '', pacientInfo = null;
     try {
-      // Procesare asincronă pe /upload-async (job stocat în PostgreSQL, partajat între replici Railway).
-      // Debug/Verificare folosesc /upload sincron (răspuns imediat cu diagnostic).
-      const rq = debugMode
-        ? await _uploadCuRetry(uploadUrl, fd)
-        : await _proceseazaUploadAsync(fd, (st) => {
-            if (st === 'processing') {
-              prog.textContent = f.name + ' – se procesează pe server (OCR)…';
-            } else if (st === 'queued') {
-              prog.textContent = f.name + ' – în coadă de procesare…';
-            }
-          });
+      // Procesare asincronă pe /upload-async pentru ambele moduri (evita timeout Railway pe OCR lung).
+      // Debug/Verificare trimit debug=1 -> job fara salvare in DB, returneaza diagnostic.
+      const asyncUrl = debugMode ? '/upload-async?debug=1' : '/upload-async';
+      const rq = await _proceseazaUploadAsync(fd, (st) => {
+          if (st === 'processing') {
+            prog.textContent = f.name + (debugMode ? ' – se verifică pe server (OCR)…' : ' – se procesează pe server (OCR)…');
+          } else if (st === 'queued') {
+            prog.textContent = f.name + (debugMode ? ' – în coadă de verificare…' : ' – în coadă de procesare…');
+          }
+        }, asyncUrl);
       if (rq.aborted) return;
       const r = rq.response;
       const txt = rq.text || '';
@@ -3703,17 +2816,29 @@ async function trimite(debugMode) {
 
 async function incarcaRecenti() {
   try {
-    const r = await fetch('/pacienti?limit=50&offset=0', { headers: getAuthHeaders() });
+    const r = await fetch('/buletine/recente?limit=20', { headers: getAuthHeaders() });
     if (r.status === 401) { clearToken(); location.reload(); return; }
-    const data = r.ok ? await r.json() : {};
-    const lista = Array.isArray(data) ? data : (data.items || []);
-    if (!lista.length) return;
+    const lista = r.ok ? await r.json() : [];
+    if (!Array.isArray(lista) || !lista.length) return;
     document.getElementById('card-pacienti-recenti').style.display = '';
-    document.getElementById('lista-recenti').innerHTML =
-      lista.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span><strong>${escHtml(p.nume||'')}</strong>${(p.prenume?' '+escHtml(p.prenume):'')} <span style="color:var(--gri);font-size:0.82rem">CNP: ${escHtml(p.cnp)}</span></span>
-        <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.8rem" onclick="veziPacient('${escHtml(p.cnp)}')">Vezi</button>
-      </div>`).join('');
+    document.getElementById('lista-recenti').innerHTML = lista.map(b => {
+      const numeComplet = escHtml((b.nume||'') + (b.prenume ? ' ' + b.prenume : ''));
+      const dataBuletin = (b.data_buletin || b.created_at || '').slice(0, 10);
+      const fisier = b.fisier_original ? escHtml(b.fisier_original) : '';
+      const nrAnalize = b.nr_analize != null ? b.nr_analize + ' analize' : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:0">
+          <span style="font-weight:600">${numeComplet}</span>
+          <span style="color:var(--gri);font-size:0.8rem;margin-left:8px">CNP: ${escHtml(b.cnp||'')}</span>
+          <div style="font-size:0.78rem;color:var(--gri);margin-top:2px">
+            ${dataBuletin ? '📅 ' + dataBuletin : ''}
+            ${nrAnalize ? ' &nbsp;·&nbsp; 🔬 ' + nrAnalize : ''}
+            ${fisier ? ' &nbsp;·&nbsp; 📄 ' + fisier : ''}
+          </div>
+        </div>
+        <button class="btn btn-secondary" style="padding:6px 14px;font-size:0.8rem;flex-shrink:0;margin-left:12px" onclick="veziPacient('${escHtml(b.cnp||'')}')">Vezi</button>
+      </div>`;
+    }).join('');
   } catch {}
 }
 

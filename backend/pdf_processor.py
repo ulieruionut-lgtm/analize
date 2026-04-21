@@ -54,6 +54,31 @@ def tesseract_availability() -> Tuple[bool, str | None]:
 
 
 # ---------------------------------------------------------------------------
+# Detectare pagini grafice (evolutie Regina Maria)
+# ---------------------------------------------------------------------------
+
+def _este_pagina_grafice(page_fitz) -> bool:
+    """
+    Detecteaza paginile de evolutie grafica din buletine Regina Maria.
+    Aceste pagini contin mesajul 'Draga ... iata evolutia in timp a analizelor tale'.
+    Detectia se bazeaza EXCLUSIV pe markeri textuali expliciti — nu pe heuristici
+    bazate pe numar de cuvinte / blocuri imagine (ar elimina pagini scanate valide).
+    """
+    try:
+        text = page_fitz.get_text() or ""
+        text_lower = text.lower()
+        if "evolutia in timp" in text_lower:
+            return True
+        if "iata evolutia" in text_lower:
+            return True
+        if "draga " in text_lower and "analiz" in text_lower:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Preprocesare imagine
 # ---------------------------------------------------------------------------
 
@@ -649,6 +674,9 @@ def _run_ocr_all_pages(pdf_path: str, dpi_override: int | None = None) -> Tuple[
 
         for page_num in range(len(doc)):
             page = doc[page_num]
+            if _este_pagina_grafice(page):
+                _log.info("[OCR_SKIP] Pagina %d/%d - grafic evolutie, sarire.", page_num + 1, len(doc))
+                continue
             mat = fitz.Matrix(dpi / 72, dpi / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
             pix_bytes = pix.tobytes("png")
@@ -765,6 +793,8 @@ def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False, dpi_over
         import pymupdf
         doc = pymupdf.open(pdf_path)
         for page in doc:
+            if _este_pagina_grafice(page):
+                continue
             try:
                 text_fitz += page.get_text(sort=True) + "\n"
             except TypeError:
@@ -776,6 +806,8 @@ def extract_text_from_pdf(pdf_path: str, include_metrics: bool = False, dpi_over
             import fitz
             doc = fitz.open(pdf_path)
             for page in doc:
+                if _este_pagina_grafice(page):
+                    continue
                 try:
                     text_fitz += page.get_text(sort=True) + "\n"
                 except TypeError:

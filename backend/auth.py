@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 from backend.config import settings
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
-SECRET_KEY = settings.jwt_secret_key
+SECRET_KEY = settings.get_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 ore
 

@@ -1,4 +1,5 @@
 """Setari aplicatie (env)."""
+import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -41,6 +42,21 @@ class Settings(BaseSettings):
     upload_enable_detailed_errors: bool = False
     jwt_secret_key: str = ""
 
+    def get_jwt_secret(self) -> str:
+        """Returneaza JWT secret key. Daca nu e setat, genereaza unul random (valabil doar in procesul curent)."""
+        key = (self.jwt_secret_key or "").strip()
+        if key:
+            return key
+        # Fara secret configurat: genereaza unul ephemer si avertizeaza.
+        # La restart toate sesiunile active expira - acceptabil in dev, nerecomandat in prod.
+        import logging
+        logging.getLogger(__name__).warning(
+            "[CONFIG] JWT_SECRET_KEY nu este setat! "
+            "Se foloseste o cheie generata aleator - toate sesiunile expira la restart. "
+            "Seteaza JWT_SECRET_KEY in .env pentru persistenta sesiunilor."
+        )
+        return secrets.token_hex(32)
+
     @property
     def db_path(self) -> Path:
         if self.database_url and not self.database_url.strip().lower().startswith("sqlite"):
@@ -59,8 +75,15 @@ if not _url or _url.startswith("sqlite") or _url.endswith(".db"):
     print("\n[CONFIG] DATABASE_URL neconfigurat - folosim SQLite. Seteaza DATABASE_URL (PostgreSQL) pentru productie.\n")
 
 _env = (settings.app_env or "development").strip().lower()
-if _env in {"prod", "production"} and not (settings.jwt_secret_key or "").strip():
-    raise RuntimeError("APP_ENV=production necesită JWT_SECRET_KEY setat în environment.")
+if not (settings.jwt_secret_key or "").strip():
+    if _env in {"prod", "production"}:
+        raise RuntimeError(
+            "APP_ENV=production necesită JWT_SECRET_KEY setat în environment. "
+            "Genereaza cu: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    # In dev/staging: avertisment - get_jwt_secret() va genera ephemer la primul apel
+    print("\n[CONFIG] ⚠️  JWT_SECRET_KEY nu este setat! Sesiunile expira la restart serverului.\n"
+          "[CONFIG]     Seteaza JWT_SECRET_KEY in .env pentru persistenta sesiunilor.\n")
 if _env in {"prod", "production"} and (not _url or _url.startswith("sqlite") or _url.endswith(".db")):
     print("\n[CONFIG] ⚠️  ATENTIE: APP_ENV=production dar DATABASE_URL foloseste SQLite!")
     print("[CONFIG] ⚠️  Datele NU se pastreaza intre redeploy-uri pe Railway cu SQLite!")

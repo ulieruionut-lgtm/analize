@@ -531,6 +531,54 @@ def insert_buletin(pacient_id: int, data_buletin=None, laborator: Optional[str] 
         return _fetchone_dict(cur) or {}
 
 
+def get_buletine_recente(limit: int = 20) -> list:
+    """Returneaza ultimele `limit` buletine incarcate, cu info pacient, ordonate dupa data upload."""
+    limit = max(1, min(int(limit), 100))
+    with get_cursor(commit=False) as cur:
+        if _use_sqlite():
+            cur.execute(
+                """
+                SELECT b.id, b.data_buletin, b.laborator, b.fisier_original, b.created_at,
+                       p.cnp, p.nume, p.prenume,
+                       (SELECT COUNT(*) FROM rezultate_analize r WHERE r.buletin_id = b.id) AS nr_analize
+                FROM buletine b
+                JOIN pacienti p ON p.id = b.pacient_id
+                ORDER BY b.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT b.id, b.data_buletin, b.laborator, b.fisier_original, b.created_at,
+                       p.cnp, p.nume, p.prenume,
+                       (SELECT COUNT(*) FROM rezultate_analize r WHERE r.buletin_id = b.id)::int AS nr_analize
+                FROM buletine b
+                JOIN pacienti p ON p.id = b.pacient_id
+                ORDER BY b.id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        rows = cur.fetchall()
+        result = []
+        for row in rows:
+            if hasattr(row, "keys"):
+                d = dict(row)
+            else:
+                keys = ["id", "data_buletin", "laborator", "fisier_original", "created_at",
+                        "cnp", "nume", "prenume", "nr_analize"]
+                d = dict(zip(keys, row))
+            # Normalizeaza data_buletin la string simplu
+            for k in ("data_buletin", "created_at"):
+                v = d.get(k)
+                if v is not None and not isinstance(v, str):
+                    d[k] = str(v)
+            result.append(d)
+        return result
+
+
 # Limite aliniate la schema PostgreSQL (evită crash la INSERT)
 _REZ_DEN_MAX = 255
 _REZ_UNIT_MAX = 64
