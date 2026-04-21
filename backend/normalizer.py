@@ -135,6 +135,45 @@ _CACHE_RAW: Optional[dict] = None
 _CACHE_TIMESTAMP: float = 0.0
 _CACHE_TTL_SECUNDE: int = 60  # 60 secunde — aliasurile noi din DB apar rapid; nu e nevoie de restart
 
+# Cache denumiri standard (pentru auto-matching pas 8 — actualizat rar)
+_CACHE_STD: Optional[dict] = None  # {norm_str: analiza_standard_id}
+_CACHE_STD_TIMESTAMP: float = 0.0
+_CACHE_STD_TTL: int = 300  # 5 minute
+
+
+def _incarca_cache_standard() -> dict:
+    """Incarca denumirile oficiale din analiza_standard pentru auto-matching la pas 8."""
+    global _CACHE_STD, _CACHE_STD_TIMESTAMP
+    acum = time.time()
+    if _CACHE_STD is not None and (acum - _CACHE_STD_TIMESTAMP) < _CACHE_STD_TTL:
+        return _CACHE_STD
+    try:
+        from backend.database import get_cursor, _row_get
+        cache: dict = {}
+        with get_cursor(commit=False) as cur:
+            cur.execute("SELECT id, denumire_standard FROM analiza_standard")
+            for row in cur.fetchall():
+                if row is None:
+                    continue
+                std_id = _row_get(row, 'id' if hasattr(row, 'keys') else 0)
+                denumire = _row_get(row, 'denumire_standard' if hasattr(row, 'keys') else 1)
+                if std_id is not None and denumire:
+                    n = _normalizeaza(str(denumire).strip())
+                    if n:
+                        cache[n] = int(std_id)
+        _CACHE_STD = cache
+        _CACHE_STD_TIMESTAMP = acum
+        return cache
+    except Exception as e:
+        logging.warning("[AUTO-ALIAS] Eroare incarcare cache standard: %s", e)
+        return {}
+
+
+def _invalideaza_cache_standard() -> None:
+    global _CACHE_STD, _CACHE_STD_TIMESTAMP
+    _CACHE_STD = None
+    _CACHE_STD_TIMESTAMP = 0.0
+
 
 def _incarca_cache() -> tuple[dict, dict]:
     global _CACHE, _CACHE_RAW, _CACHE_TIMESTAMP
@@ -177,6 +216,20 @@ def invalideaza_cache():
     _CACHE = None
     _CACHE_RAW = None
     _CACHE_TIMESTAMP = 0.0
+
+
+def _auto_salveaza_alias(denumire_raw: str, analiza_standard_id: int) -> None:
+    """
+    Salveaza automat un alias descoperit la pasul 8 (fuzzy pe analiza_standard).
+    Foloseste adauga_alias_nou() pentru alias + actualizare retroactiva + invalidare cache.
+    """
+    try:
+        ok = adauga_alias_nou(denumire_raw.strip(), analiza_standard_id)
+        if ok:
+            logging.info("[AUTO-ALIAS] Salvat: %r → std_id=%d", denumire_raw[:80], analiza_standard_id)
+        _invalideaza_cache_standard()
+    except Exception as e:
+        logging.warning("[AUTO-ALIAS] Eroare salvare: %s", e)
 
 
 def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
@@ -269,6 +322,41 @@ def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
                 max_start = max(2, len(baza_fuzz) // 3)
                 if al.src_start <= max_start:
                     return cache_norm[match_key]
+
+    # 8. Auto-match direct pe denumiri din analiza_standard (fallback final cu auto-salvare alias).
+    # Se aplica doar cand toate strategiile pe alias-uri (1-7b) au esuat.
+    if len(baza_fuzz) >= 5:
+        std_cache = _incarca_cache_standard()
+        if std_cache:
+            # 8a. difflib full-ratio pe denumiri standard
+            cutoff8 = _prag_fuzzy_difflib(baza_fuzz)
+            matches8 = difflib.get_close_matches(baza_fuzz, std_cache.keys(), n=1, cutoff=cutoff8)
+            if matches8:
+                m8 = matches8[0]
+                if len(baza_fuzz) >= 10 or m8.startswith(baza_fuzz[:4]):
+                    std_id = std_cache[m8]
+                    _auto_salveaza_alias(raw_curat, std_id)
+                    return std_id
+            # 8b. rapidfuzz partial_ratio — prinde "Glucoza (glicemie)" → "glucoza"
+            if len(baza_fuzz) >= 6:
+                try:
+                    from rapidfuzz import fuzz as _fuzz, process as _proc
+                    sc_cut8 = _prag_fuzzy_partial(baza_fuzz)
+                    best8 = _proc.extractOne(
+                        baza_fuzz,
+                        list(std_cache.keys()),
+                        scorer=_fuzz.partial_ratio,
+                        score_cutoff=sc_cut8,
+                    )
+                    if best8 is not None:
+                        mk8, _sc8, _idx8 = best8
+                        al8 = _fuzz.partial_ratio_alignment(baza_fuzz, mk8)
+                        if al8.src_start <= max(2, len(baza_fuzz) // 3):
+                            std_id = std_cache[mk8]
+                            _auto_salveaza_alias(raw_curat, std_id)
+                            return std_id
+                except ImportError:
+                    pass
 
     return None
 
@@ -491,3 +579,54 @@ def adauga_aliasuri_bulk(denumiri_raw: list[str], analiza_standard_id: int) -> d
     except Exception as e:
         logging.exception("adauga_aliasuri_bulk: %s", e)
         return {"ok": False, "processed": 0, "unique_strings": 0, "error": str(e)[:500]}
+
+
+def auto_rezolva_necunoscute() -> dict:
+    """
+    Parcurge toate intrarile neaprobate din analiza_necunoscuta si incearca
+    auto-matching pe analiza_standard (pasul 8 din _cauta_in_cache).
+    Daca gaseste match cu scor suficient → salveaza alias + actualizare retroactiva.
+    Returneaza: {procesate, rezolvate, nerezolvate, erori}
+    """
+    try:
+        from backend.database import get_cursor, _use_sqlite, _row_get
+        with get_cursor(commit=False) as cur:
+            if _use_sqlite():
+                cur.execute(
+                    "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta WHERE aprobata = 0 OR aprobata IS NULL"
+                )
+            else:
+                cur.execute(
+                    "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta WHERE aprobata IS NOT TRUE"
+                )
+            rows = cur.fetchall()
+    except Exception as e:
+        return {"ok": False, "procesate": 0, "rezolvate": 0, "nerezolvate": 0, "erori": [str(e)[:200]]}
+
+    procesate = 0
+    rezolvate = 0
+    erori: list[str] = []
+
+    for row in rows:
+        try:
+            denumire = str(_row_get(row, 'denumire_raw' if hasattr(row, 'keys') else 1) or '').strip()
+            categorie = str(_row_get(row, 'categorie' if hasattr(row, 'keys') else 2) or '').strip() or None
+            if not denumire:
+                continue
+            procesate += 1
+            std_id = _cauta_in_cache(denumire, categorie)
+            if std_id is not None:
+                # _cauta_in_cache a apelat deja _auto_salveaza_alias intern la pasul 8
+                # dar daca a gasit prin alt pas (1-7), apelam explicit adauga_alias_nou
+                adauga_alias_nou(denumire, std_id)
+                rezolvate += 1
+        except Exception as e:
+            erori.append(str(e)[:150])
+
+    return {
+        "ok": True,
+        "procesate": procesate,
+        "rezolvate": rezolvate,
+        "nerezolvate": procesate - rezolvate,
+        "erori": erori[:20],
+    }

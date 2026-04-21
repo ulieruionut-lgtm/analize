@@ -194,6 +194,18 @@ async def invalideaza_cache_alias(current_user: dict = Depends(get_current_user)
     return {"ok": True, "mesaj": "Cache alias invalidat."}
 
 
+@router.post("/api/admin/auto-alias-necunoscute")
+async def auto_alias_necunoscute(current_user: dict = Depends(get_current_user)):
+    """
+    Parcurge analiza_necunoscuta (neaprobate) si incearca auto-matching pe analiza_standard.
+    Salveaza automat alias + actualizare retroactiva pentru match-urile cu scor suficient.
+    """
+    from backend.normalizer import auto_rezolva_necunoscute
+    import asyncio
+    result = await asyncio.get_event_loop().run_in_executor(None, auto_rezolva_necunoscute)
+    return result
+
+
 @router.post("/goleste-analize-asociate")
 async def goleste_asociate(current_user: dict = Depends(get_current_user)):
     """Sterge toate intrarile din analiza_necunoscuta si analiza_alias."""

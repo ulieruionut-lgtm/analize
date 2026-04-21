@@ -1787,8 +1787,10 @@ async def index():
       </p>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="incarcaNecunoscute()">🔄 Reîncarcă lista</button>
+        <button class="btn btn-primary" id="btn-auto-alias" onclick="autoRezolvaNerecunoscute()" title="Încearcă să mapeze automat analizele necunoscute la analizele standard (fuzzy matching)">⚡ Auto-rezolvă necunoscute</button>
         <button class="btn btn-secondary" onclick="golesteAnalizeAsociate()" style="color:var(--rosu)" title="Șterge toate analizele necunoscute și alias-urile (asocierile)">🗑️ Șterge toate asocierile</button>
       </div>
+      <div id="auto-alias-result" style="display:none;margin-bottom:12px"></div>
       <div id="nec-bulk-bar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--albastru-deschis);border-radius:8px;border:1px solid var(--border)">
         <strong style="font-size:0.85rem">Aprobare în masă</strong>
         <span id="nec-bulk-count" style="font-size:0.82rem;color:var(--gri)">0 selectate</span>
@@ -3783,6 +3785,33 @@ async function incarcaStandardeCache() {
     _analize_std_cache = await r.json();
   } catch { _analize_std_cache = []; }
   return _analize_std_cache;
+}
+
+async function autoRezolvaNerecunoscute() {
+  const btn = document.getElementById('btn-auto-alias');
+  const resEl = document.getElementById('auto-alias-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Se procesează…';
+  resEl.style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/auto-alias-necunoscute', { method: 'POST', headers: getAuthHeaders() });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      const cls = j.rezolvate > 0 ? 'succes' : 'info';
+      resEl.innerHTML = `<div class="mesaj ${cls}"><strong>Auto-rezolvare finalizată</strong><br>Procesate: ${j.procesate} · Rezolvate automat: <strong>${j.rezolvate}</strong> · Nerezolvate (manual): ${j.nerezolvate}${j.erori && j.erori.length ? '<br><small>Erori: ' + escHtml(j.erori.join('; ')) + '</small>' : ''}</div>`;
+      resEl.style.display = 'block';
+      if (j.rezolvate > 0) incarcaNecunoscute();
+    } else {
+      resEl.innerHTML = `<div class="mesaj eroare">Eroare: ${escHtml(j.detail || JSON.stringify(j))}</div>`;
+      resEl.style.display = 'block';
+    }
+  } catch (e) {
+    resEl.innerHTML = `<div class="mesaj eroare">Eroare rețea: ${escHtml(e.message)}</div>`;
+    resEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Auto-rezolvă necunoscute';
+  }
 }
 
 async function golesteAnalizeAsociate() {
