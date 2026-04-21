@@ -135,8 +135,9 @@ _LINII_EXCLUSE = re.compile(
     # Data eliberarii, Data nastere, Dat nastere (inclusiv "Data. eliberarii")
     r"Data[.,]?\s*eliberarii|Data\s+eliberarii|eliberarii\s+rezultatului|"
     r"Dat\s+nastere|Data\s+nasterii|Data\s+na[sș]terii|"
-    # Bioclinica/ clinic + GENERAT + dată
+    # Bioclinica/ clinic + GENERAT + dată (inclusiv concatenat fara spatii: laboratorBrasovGENERAT)
     r"Bioclinica\s+[A-Za-z]+\s+GENERAT|GENERAT\s+\d{2}\.\d{2}\.\d{4}|"
+    r"laborator[A-Za-z]+GENERAT|[A-Za-z]{5,}GENERAT\s*$|"
     # Analiza + dată (ex: "Glucază 15.04.2024", "Creatinină serică 10.02.2025")
     r"^[A-Za-zăâîșț]+\s+\d{1,2}\.\d{1,2}\.\d{4}\s*$|"
     # NOTĂ: NU excludem generic „orice linie care se termină cu DD.MM.YYYY" — multe PDF-uri Bioclinica/Synevo
@@ -1629,6 +1630,10 @@ def _corecteaza_decimal_pierdut(valoare: float, interval_min, interval_max, denu
     """
     # Strategie 1: cu interval
     if interval_max is not None and interval_max > 0:
+        # Nu corecta valori cu referinta mica (CRP ≤0.33, hormoni, etc.)
+        # Valorile clinice mari (ex. CRP 2.26 cu ref ≤0.33) sunt legitime, nu erori OCR.
+        if interval_max < 5.0:
+            return valoare
         # Daca valoarea are deja zecimale si intervalul e suspect de mare, intervalul e cel corupt
         has_decimals = (valoare != int(valoare)) if valoare is not None else False
         if has_decimals and interval_max > valoare * 8 and valoare > 0:
