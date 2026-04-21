@@ -23,21 +23,39 @@ def normalizare_data_text(raw: str) -> str:
 def extrage_data_buletin(text: str) -> Optional[str]:
     """
     Extrage data reala din buletin (fara ora).
-    Prioritate: Data emitere -> Data buletin -> Data recoltare -> prima data valida.
+    Prioritate: Data eliberarii / emitere / buletin -> Data recoltarii -> prima data valida
+    (excludem Data nasterii / Data inregistrarii care nu sunt date ale buletinului).
     """
     if not text:
         return None
-    patterns = [
+    # Patternuri cu etichetă explicită — ordonate de la cea mai specifică la mai generală
+    labeled = [
+        r"Data\s+eliber[aă]rii\s+rezultat(?:ului)?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
         r"Data\s+emitere\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
         r"Data\s+buletin(?:ului)?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
+        r"Data\s+recoltarii?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
         r"Data\s+recoltare\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
-        r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b",
-        r"\b(\d{4}[./-]\d{2}[./-]\d{2})\b",
+        r"Data\s+receptiei?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
+        r"Data\s+inregistrarii?\s*[:\-]?\s*(\d{2}[./-]\d{2}[./-]\d{4})",
     ]
-    for pat in patterns:
+    for pat in labeled:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
             return normalizare_data_text(m.group(1))
+    # Fallback: prima dată DD.MM.YYYY care NU apare după "Data nasterii" / "nasterii"
+    # Înlocuim orice segment "Data nasterii: XX.XX.XXXX" înainte de căutare
+    text_fara_nastere = re.sub(
+        r"Data\s+nasterii\s*[:\-]?\s*\d{2}[./-]\d{2}[./-]\d{4}", "", text, flags=re.IGNORECASE
+    )
+    text_fara_nastere = re.sub(
+        r"nasterii\s+\d{2}[./-]\d{2}[./-]\d{4}", "", text_fara_nastere, flags=re.IGNORECASE
+    )
+    m = re.search(r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b", text_fara_nastere)
+    if m:
+        return normalizare_data_text(m.group(1))
+    m = re.search(r"\b(\d{4}[./-]\d{2}[./-]\d{2})\b", text_fara_nastere)
+    if m:
+        return normalizare_data_text(m.group(1))
     return None
 
 

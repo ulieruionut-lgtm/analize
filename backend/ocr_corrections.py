@@ -247,6 +247,32 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
         return linie
     s = linie
 
+    # --- TEO HEALTH / Sf. Constantin Brasov: artefacte de format ---
+    # "*PR Maniu" / "*PR " = marcaj punct de recolta — eliminat de la inceput de linie
+    s = re.sub(r"^\*?PR\s+\w+\s*", "", s)
+    # "Cod proba: XXXXX" / "Cod cerere analize (CA): XXXXX" — linii administrative
+    # (returnate neschimbate; parserul le va ignora ca non-analiza)
+    # "Bacteriurie <1000 UFC/ml" — valoare text microbiologie, pastram intact
+    # "UFC/ml" → "UFC/mL" (normalizare minora)
+    s = re.sub(r"\bUFC/ml\b", "UFC/mL", s)
+    # "fara semnificatie clinica" — comentariu microbiologie, nu valoare
+    # Deduplicare diacritice corupte frecvente la scan Sf. Constantin
+    s = re.sub(r"\bGlicemie\s+\(glucoza\s+serica\)\b", "Glicemie", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bTGO\s*/\s*AST\s*-\s*ASPARTATAMINOTRANSFERAZA\b", "TGO AST", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bTGP\s*/\s*ALT\s*-\s*ALANINAMINOTRANSFERAZA\b", "TGP ALT", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPCR\s*-\s*Proteina\s+C\s+reactiva\b", "PCR Proteina C reactiva", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bFactor\s+Reumatoid\s+\(FR\s*-\s*cantitativ\)\b", "Factor Reumatoid FR cantitativ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bFT4\s*-\s*Tiroxina\s+libera\b", "FT4 Tiroxina libera", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bRBC\s+\(Numar\s+eritrocite\)\b", "RBC Numar eritrocite", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bWBC\s+\(Numar\s+leucocite\)\b", "WBC Numar leucocite", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bPLT\s+\(Numar\s+trombocite\)\b", "PLT Numar trombocite", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bMPV\s+\(Volumul\s+trombocitar\s+mediu\)\b", "MPV Volumul trombocitar mediu", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bRDW%\s+\(Largimea\s+distributiei\s+eritrocitare\)\b", "RDW% Largimea distributiei eritrocitare", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bMCHC\s+\(Concentratia\s+eritrocitara\s+medie\s+de\s+hemoglobina\)\b", "MCHC", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bHCT%\s+\(Hematocrit\)\b", "HCT% Hematocrit", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bHGB\s+\(Hemoglobina\)\b", "HGB Hemoglobina", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bMCV\s+\(Volum\s+eritrocitar\s+mediu\)\b", "MCV Volum eritrocitar mediu", s, flags=re.IGNORECASE)
+
     # --- Prefix | la inceput de linie (Sante Vie: "| Hemoglobina Glicozilata 14,80 %") ---
     s = re.sub(r"^\|\s*", "", s)
 
