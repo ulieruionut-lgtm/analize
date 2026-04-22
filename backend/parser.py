@@ -1950,11 +1950,11 @@ def _combina_linii_ocr_fragmente_valoare(lines: list[str]) -> list[str]:
 
 def _strip_dash_value_prefix(s: str) -> str:
     """
-    MedLife PDR OCR: linii de valoare care incep cu '- NUMBER' (ex: '- 76.2 fL.:. 72-88f.').
-    Linia reprezinta continuarea unui rand de tabel unde OCR a taiat separatorul de coloana.
     Sterge liniuta/cratima initiala ca sa nu fie exclusa de _LINII_EXCLUSE (care exclude '^\s*[-]\s').
+    - MedLife PDR: '- 76.2 fL' (valoare continuare coloana)
+    - SCJUB scanat: '- eGFR*', '- Clearance la creatinina*' (sub-item marker sectiune)
     """
-    m = re.match(r"^[-–]\s+(\d)", s)
+    m = re.match(r"^[-–]\s+(\w)", s)
     if m:
         return s[m.start(1):]
     return s
