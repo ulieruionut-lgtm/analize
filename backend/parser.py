@@ -2170,8 +2170,12 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     """
     # Pagina de evolutie Regina Maria ("Draga X, iata evolutia in timp...") nu contine
     # rezultate noi — trunchiaza tot ce urmeaza dupa acest marker.
+    # Pagina de evolutie Regina Maria apare la sfarsitul PDF-ului in extragerea normala.
+    # In "medlife-tsv-bbox", blocurile sunt sortate global pe Y, asadar pagina 4 (evolutie)
+    # poate aparea la INCEPUT (Y≈0 pe pagina sa). Trunchierea e sigura doar daca markerul
+    # apare dupa cel putin 25% din text, altfel liniile individuale il filtreaza.
     _m_evo = re.search(r"iata\s+evolutia\s+in\s+timp", text, re.IGNORECASE)
-    if _m_evo:
+    if _m_evo and _m_evo.start() > len(text) * 0.25:
         text = text[:_m_evo.start()]
 
     lines_raw = [
