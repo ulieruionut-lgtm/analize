@@ -57,14 +57,7 @@ _LINII_EXCLUSE = re.compile(
     r"^medic\s+[A-ZĂÂÎȘȚa-zăâîșț]|^MEDIC\s+[A-ZĂÂÎȘȚ]|"
     r"^\d{5}\s+Laborator|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
-    r"Bacteriurie\s*[:(]|Bacteriurie\s*<\s*\d|Leucociturie\s*[:(]|"
-    r"UFC\s*=\s*unit|UFC\s*=\s*unitati|"
-    # Proba (Sange) / Proba (Urina) — antet tabel TEO HEALTH
-    r"^Proba\s*[\(:]|^Proba\s+\w+\s*$|"
-    # Adresa laboratorului cu prefix OCR (ex: "_ BRASOV, Str CALEA BUCURESTI")
-    r"^\s*_\s*BRASOV\s*[,\s]|Str\s+CALEA\s+BUCURE|"
-    # Metode laborator (TEO HEALTH / Sf. Constantin): "Metoda: microscopie in flux" etc.
-    r"^Metoda:\s|^Metoda\s+spectrofotom|"
+    r"Bacteriurie\s*[:(]|Leucociturie\s*[:(]|"
     r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
     r"Punct\s+de\s+lucru|Cod\s+de\s+bare|Cod:|Coad:|PD\s+\d|"
     r"Data\s+-\s+ora\s+recolt|ora\s+recoltare|Data\s+recoltare|"
@@ -123,7 +116,7 @@ _LINII_EXCLUSE = re.compile(
     r"E\s+Moderat\s+crescut|Interpretare\s+valori\s+glicemie|"
     r"Bilirubina\s+Negativ\s*:|"
     r"Eritrocite\s+Absente|Leucocite\s+Foarte\s+rare|"
-    r"^Culoare\*?|^Claritate\*?|^Aspect\*?|Mucus\s+Absent|"
+    r"Culoare\*|Claritate\*|Aspect\*|Mucus\s+Absent|"
     r"^\s*rare\s*$|^\s*rara\s*$|^\s*deschis\s*$|^\s*Alte\s*$|"
     r"k\s*=\s*$|k\s*=\s*\d|eGFR:\s*\d+\s*-|"
     # Gunoi OCR Iancu: linii de interpretare si artefacte
@@ -1463,31 +1456,6 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
                     unitate=unitate_reala,
                 )
 
-    # Format fara unitate cu interval in paranteze drepte: "pH urinar 6 [5 - 7]", "Densitate urinara 1020 [1010 - 1030]"
-    m_fara_um = re.search(
-        r"(?<!\S)(\d+[.,]?\d*)\s+\[\s*(\d+[.,]?\d*)\s*[-–]\s*(\d+[.,]?\d*)\s*\]",
-        linie,
-    )
-    if m_fara_um:
-        _name_fum = linie[:m_fara_um.start()].strip()
-        _name_fum = _strip_prefix_numar_linie(_name_fum)
-        _name_fum = re.sub(r'^["\'\*%\s]+', '', _name_fum).strip()
-        if _name_fum and len(_name_fum) >= 2 and not re.match(r'^\d+[.,]?\d*\s*$', _name_fum):
-            _v_fum = _parse_european_number(m_fara_um.group(1))
-            if _v_fum is None:
-                try:
-                    _v_fum = float(m_fara_um.group(1).replace(",", "."))
-                except ValueError:
-                    _v_fum = None
-            if _v_fum is not None:
-                return RezultatParsat(
-                    denumire_raw=_name_fum,
-                    valoare=_v_fum,
-                    unitate=None,
-                    interval_min=_parse_european_number(m_fara_um.group(2)),
-                    interval_max=_parse_european_number(m_fara_um.group(3)),
-                )
-
     # Gaseste primul numar izolat (valoarea) - nu face parte din nume
     # Unități MedLife: *10^6/µL; Sante Vie: 10^9/L; valori «< 73» cu comparator opțional
     m_val = re.search(
@@ -2168,16 +2136,6 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     Detecteaza automat sectiunile (Hemoleucograma, Biochimie etc.) si le ataseaza
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
-    # Pagina de evolutie Regina Maria ("Draga X, iata evolutia in timp...") nu contine
-    # rezultate noi — trunchiaza tot ce urmeaza dupa acest marker.
-    # Pagina de evolutie Regina Maria apare la sfarsitul PDF-ului in extragerea normala.
-    # In "medlife-tsv-bbox", blocurile sunt sortate global pe Y, asadar pagina 4 (evolutie)
-    # poate aparea la INCEPUT (Y≈0 pe pagina sa). Trunchierea e sigura doar daca markerul
-    # apare dupa cel putin 25% din text, altfel liniile individuale il filtreaza.
-    _m_evo = re.search(r"iata\s+evolutia\s+in\s+timp", text, re.IGNORECASE)
-    if _m_evo and _m_evo.start() > len(text) * 0.25:
-        text = text[:_m_evo.start()]
-
     lines_raw = [
         corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(_normalizeaza_rand_pipe(l.strip()))))
         for l in text.replace("\r", "\n").split("\n")

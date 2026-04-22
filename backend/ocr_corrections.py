@@ -247,11 +247,6 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
         return linie
     s = linie
 
-    # --- Regina Maria: artefacte OCR sediment urinar ---
-    # "Hore bacteriana" / "Fiora bacteriana" — OCR citeste "Flora" gresit
-    s = re.sub(r"\bHore\s+bacteriana\b", "Flora bacteriana", s, flags=re.IGNORECASE)
-    s = re.sub(r"\bFiora\s+bacteriana\b", "Flora bacteriana", s, flags=re.IGNORECASE)
-
     # --- TEO HEALTH / Sf. Constantin Brasov: artefacte de format ---
     # "*PR Maniu" / "*PR " = marcaj punct de recolta — eliminat de la inceput de linie
     s = re.sub(r"^\*?PR\s+\w+\s*", "", s)
@@ -313,12 +308,6 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"\*10[%\'`]3", "*10^3", s)
     # *1073 / *1075 / *1073 (OCR confundă ^ cu 7) → *10^3
     s = re.sub(r"\*107([3-6])", r"*10^\1", s)
-    # TEO HEALTH: 10^3/ul si 10^6/ul FARA prefix * (spre deosebire de MedLife care are *)
-    # OCR citeste "10^3/ul" ca "1043/ul" sau "10'3/ul" (^ → 4 sau ')
-    s = re.sub(r"\b1043\s*/\s*([uμUl][lL]?)\b", r"10^3/\1", s, flags=re.IGNORECASE)
-    s = re.sub(r"\b1046\s*/\s*([uμUl][lL]?)\b", r"10^6/\1", s, flags=re.IGNORECASE)
-    s = re.sub(r"\b10[\'`]\s*3\s*/\s*([uμUl][lL]?)\b", r"10^3/\1", s, flags=re.IGNORECASE)
-    s = re.sub(r"\b10[\'`]\s*6\s*/\s*([uμUl][lL]?)\b", r"10^6/\1", s, flags=re.IGNORECASE)
     # ng/mL scris ca ng/ml (normalizare minora)
     # pUlimL / pUliml → pUI/mL (TSH interval)
     s = re.sub(r"\bp[Uu]l?i?m[lL]\b", "pUI/mL", s)
