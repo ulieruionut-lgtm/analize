@@ -58,6 +58,13 @@ _LINII_EXCLUSE = re.compile(
     r"^\d{5}\s+Laborator|"
     r"amoxicillin|Cefuroxime|diabet\s+zaharat|"
     r"Bacteriurie\s*[:(]|Bacteriurie\s*<\s*\d|Leucociturie\s*[:(]|"
+    r"UFC\s*=\s*unit|UFC\s*=\s*unitati|"
+    # Proba (Sange) / Proba (Urina) — antet tabel TEO HEALTH
+    r"^Proba\s*[\(:]|^Proba\s+\w+\s*$|"
+    # Adresa laboratorului cu prefix OCR (ex: "_ BRASOV, Str CALEA BUCURESTI")
+    r"^\s*_\s*BRASOV\s*[,\s]|Str\s+CALEA\s+BUCURE|"
+    # Metode laborator (TEO HEALTH / Sf. Constantin): "Metoda: microscopie in flux" etc.
+    r"^Metoda:\s|^Metoda\s+spectrofotom|"
     r"RETEAUA\s+PRIVATA|RETEA\s+PRIVAT|Regina\s+Maria|REGINA\s+MARIA|"
     r"Punct\s+de\s+lucru|Cod\s+de\s+bare|Cod:|Coad:|PD\s+\d|"
     r"Data\s+-\s+ora\s+recolt|ora\s+recoltare|Data\s+recoltare|"

@@ -93,6 +93,13 @@ FRAGMENTE_ADMINISTRATIVE_NORMALIZATE: FrozenSet[str] = frozenset(
         "testele cu marcajul",
         "aceste rezultate pot fi",
         "cod document pgl",
+        # TEO HEALTH: antete tabel probe
+        "proba (sange)",
+        "proba (urina)",
+        "proba (ser)",
+        "ufc= unitati",
+        "ufc = unitati",
+        "unitati formatoare de colonii",
         # Regina Maria: pagina evolutie in timp (pagina 4)
         "iata evolutia in timp",
         "draga ana",
