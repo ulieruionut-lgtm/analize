@@ -1953,8 +1953,9 @@ def _strip_dash_value_prefix(s: str) -> str:
     Sterge liniuta/cratima initiala ca sa nu fie exclusa de _LINII_EXCLUSE (care exclude '^\s*[-]\s').
     - MedLife PDR: '- 76.2 fL' (valoare continuare coloana)
     - SCJUB scanat: '- eGFR*', '- Clearance la creatinina*' (sub-item marker sectiune)
+    - SCJUB scanat OCR: '_- eGFR*' (underscore + linie, artefact OCR de chenar tabel)
     """
-    m = re.match(r"^[-–]\s+(\w)", s)
+    m = re.match(r"^_?[-–]\s+(\w)", s)
     if m:
         return s[m.start(1):]
     return s
