@@ -9,6 +9,16 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    """JSON encoder that serializes datetime/date objects to ISO 8601 strings."""
+
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 from backend.config import settings
 
 _USE_SQLITE = None
@@ -1812,7 +1822,7 @@ def upload_async_job_merge_db(job_id: str, **fields: Any) -> dict:
         base.update(fields)
         rj = None
         if base.get("result") is not None:
-            rj = json.dumps(base["result"], ensure_ascii=False)
+            rj = json.dumps(base["result"], ensure_ascii=False, cls=DateTimeEncoder)
         owner = base.get("owner") or ""
         cur.execute(
             """
