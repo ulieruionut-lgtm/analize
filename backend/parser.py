@@ -123,8 +123,8 @@ _LINII_EXCLUSE = re.compile(
     r"Metoda:\s+Reflectometrie|Metoda:\s+Calcul|Metoda:\s+Spectrofotometrie|"
     r"Tip\s+proba:\s+Urina|Tip\s+proba:\s+Ser|"
     r"era,\s*\|\s*negativ|a\)\s*<\s*45\s*-\s*risc|"
-    r"Albumina\s+%.*PA\s+E|_Globuline\s+alfa|_UROBILINOGEN,|"
-    r"Paisie:|NITRITI,\s*[\"']?negativ|"
+    r"Albumina\s+%.*PA\s+E|"
+    r"Paisie:|NITRITI,\s*[\"']negativ|"
     r"30-300\s+crestere\s+moderata|200-240\s+mg|"
     # Linii care sunt footer de pagina cu data embedded
     r"Aceste\s+rezultate\s+pot\s+fi\s+folosite.*Pagina|"
@@ -1954,11 +1954,23 @@ def _strip_dash_value_prefix(s: str) -> str:
     - MedLife PDR: '- 76.2 fL' (valoare continuare coloana)
     - SCJUB scanat: '- eGFR*', '- Clearance la creatinina*' (sub-item marker sectiune)
     - SCJUB scanat OCR: '_- eGFR*' (underscore + linie, artefact OCR de chenar tabel)
+    - SCJUB scanat OCR: '_Globuline alfa', '_UROBILINOGEN,' (underscore inainte de litera)
     """
     m = re.match(r"^_?[-–]\s+(\w)", s)
     if m:
         return s[m.start(1):]
+    # Underscore izolat inainte de litera (artefact OCR SCJUB: _Globuline, _UROBILINOGEN)
+    if re.match(r"^_[A-Za-zĂÂÎȘȚăâîșț]", s):
+        return s[1:]
     return s
+
+
+_RE_LEADING_TYPOGRAPHIC_QUOTES = re.compile(r'^[\u201e\u201c\u201d\u00ab\u00bb]+')
+
+
+def _strip_leading_typographic_quotes(s: str) -> str:
+    """Strip leading OCR typographic quotes (artefact of dot/bullet marks in SCJUB format)."""
+    return _RE_LEADING_TYPOGRAPHIC_QUOTES.sub('', s).strip()
 
 
 def _strip_trailing_date_recoltare(linie: str) -> str:
@@ -2115,6 +2127,13 @@ def _normalizeaza_rand_pipe(linie: str) -> str:
     'Creatinina serica | 0.97 | mg/dL | 0.50-0.90' -> 'Creatinina serica 0.97 mg/dL 0.50-0.90'
     Conditii: prima coloana = denumire (min 3 litere), a doua = numar.
     """
+    # Strip leading pipe (OCR artifact from table border: '| Creatinina...')
+    if linie.startswith("|"):
+        linie = linie[1:].strip()
+        if not linie:
+            return ""
+    # Strip trailing pipe(s)
+    linie = re.sub(r'\s*\|+\s*$', '', linie)
     if "|" not in linie:
         return linie
     parts = [p.strip() for p in linie.split("|")]
@@ -2138,7 +2157,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
     fiecarui rezultat impreuna cu ordinea din PDF.
     """
     lines_raw = [
-        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_dash_value_prefix(_normalizeaza_rand_pipe(l.strip()))))
+        corecteaza_ocr_linie_buletin(_strip_trailing_date_recoltare(_strip_leading_typographic_quotes(_strip_dash_value_prefix(_normalizeaza_rand_pipe(l.strip())))))
         for l in text.replace("\r", "\n").split("\n")
     ]
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica

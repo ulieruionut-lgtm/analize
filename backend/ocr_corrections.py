@@ -293,6 +293,11 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"(?<=\s)[¢§°~`^±†‡¶]+(?=\s)", "", s)
     # "TSH¢2.88" (fără spații) → "TSH 2.88"
     s = re.sub(r"([A-Za-z])[¢§°~`^±†‡¶]+(\d)", r"\1 \2", s)
+    # SCJUB OCR: ghilimea inglobata inainte de valoare text ('NITRITI, "negativ' → 'NITRITI, negativ')
+    s = re.sub(r',\s*["\u201c\u201d\u201e]+\s*(negativ|pozitiv|absent|prezent|normal)',
+               r', \1', s, flags=re.IGNORECASE)
+    # SCJUB OCR: silabe repetate lowercase ('aaa', 'eee') → spatiu (artefact OCR scanat)
+    s = re.sub(r'\b([a-z])\1{2,}\b', ' ', s)
 
     # --- Unități OCR corupte (MedLife, Synevo scanat) ---
     # pmoliL / pmolil / pmoll → pmol/L  (cu sau fara spatiu inaintea unitatii)
@@ -308,6 +313,11 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"\*10[%\'`]3", "*10^3", s)
     # *1073 / *1075 / *1073 (OCR confundă ^ cu 7) → *10^3
     s = re.sub(r"\*107([3-6])", r"*10^\1", s)
+    # SCJUB hematologie: 10^3uL (fara slash) → 10^3/uL; 10^6uL → 10^6/uL
+    s = re.sub(r"\b10\^([3-9])([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    # SCJUB OCR: 10A3/uL sau 10A3uL (^ citit ca litera A) → 10^3/uL
+    s = re.sub(r"\b10A([3-9])/([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    s = re.sub(r"\b10A([3-9])([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
     # ng/mL scris ca ng/ml (normalizare minora)
     # pUlimL / pUliml → pUI/mL (TSH interval)
     s = re.sub(r"\bp[Uu]l?i?m[lL]\b", "pUI/mL", s)
