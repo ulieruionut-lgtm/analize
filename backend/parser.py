@@ -144,7 +144,7 @@ _LINII_EXCLUSE = re.compile(
     r"Dat\s+nastere|Data\s+nasterii|Data\s+na[sș]terii|"
     # Bioclinica/ clinic + GENERAT + dată (inclusiv concatenat fara spatii: laboratorBrasovGENERAT)
     r"Bioclinica\s+[A-Za-z]+\s+GENERAT|GENERAT\s+\d{2}\.\d{2}\.\d{4}|"
-    r"laborator[A-Za-z]+GENERAT|[A-Za-z]{5,}GENERAT\s*$|"
+    r"laborator[A-Za-zĂÂÎȘȚăâîșț]+GENERAT|[A-Za-zĂÂÎȘȚăâîșț]{5,}GENERAT\s*$|"
     # Analiza + dată (ex: "Glucază 15.04.2024", "Creatinină serică 10.02.2025")
     r"^[A-Za-zăâîșț]+\s+\d{1,2}\.\d{1,2}\.\d{4}\s*$|"
     # NOTĂ: NU excludem generic „orice linie care se termină cu DD.MM.YYYY" — multe PDF-uri Bioclinica/Synevo
@@ -158,6 +158,8 @@ _LINII_EXCLUSE = re.compile(
     r"care\s+.*creatin|suplimentează\s+dieta|"
     # Unități solitare sau fragmente (mg/dL, (≠ 8.33))
     r"^mg/dL\s*\(|^[a-zA-Z/%µ²³]+/?[a-zA-Z]*\s*\(\s*[≠<>≤≥]|"
+    # Fracție pagina (ex: "1 / 2", "2 / 3") - footer Bioclinica, nu valoare analiză
+    r"^\d+\s*/\s*\d+\s*$|"
     # Intervale/risc fără denumire analiză (doar numere și "risc")
     r"^<?\d{1,3}\s*[-–]?\s*$|^\d{1,3}\s*[-–]\s*\d{1,3}\s+-\s+risc|"
     r"^<\s*45\s*-\s*risc|^45\s*-\s*65\s*-\s*risc|Borderline\s+crescut\s+\d+|"
@@ -537,7 +539,7 @@ _VALOARE_TEXT_RE = re.compile(
 
 # Format Bioclinica: valoare+unitate + interval in paranteza
 RE_VALOARE_LINIE = re.compile(
-    r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\s/]+?)\s*\(\s*([\d.,]+)\s*[-–]\s*([\d.,]+)\s*\)",
+    r"^([\d.,]+)\s*([a-zA-Z0-9/%µμg·²³\u00b3\s/]+?)\s*\(\s*([\d.,]+)\s*[-–−]\s*([\d.,]+)\s*\)",
     re.IGNORECASE,
 )
 
