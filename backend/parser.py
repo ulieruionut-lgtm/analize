@@ -560,14 +560,22 @@ _RE_TABULAR_ROW_VAL_UM_INTERVAL = re.compile(
 )
 
 # Format valoare + referinta singulara (≤ X) la inceputul liniei - ex: "2,260mg/dL (<= 0,33)"
+# Permite sufix "+N" sau "-N" inainte de ")" (Bioclinica: "22,60 mg/L (≤ 3,30 +1)")
 RE_VALOARE_REF_SINGULAR = re.compile(
-    r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*\)",
+    r"^([\d.,]+)\s*([a-zA-Z/%µμg·²³\u00b3\s/]+?)\s*\(\s*(?:[≤≥<>]|<=|>=)\s*([\d.,]+)\s*(?:[+\-]\d+)?\s*\)",
     re.IGNORECASE,
 )
 
 # Format valoare simpla fara interval (inclusiv UM tip *10^3/µL)
 RE_VALOARE_PARTIAL = re.compile(
     r"^\s*(?:[<>≤≥]\s*)?([\d.,]+)\s+(\*[\w/.^µμ³·]+|[a-zA-Z/%µμg·²³][\w/.^µμ³·\s/m]*)$",
+    re.IGNORECASE,
+)
+
+# Format Bioclinica pdfplumber: valoare lipita de unitate cu slash, fara spatiu, fara interval pe linie
+# ex: "4.650.000/mm3", "323.000/mm3", "3.980/mm3", "2.260/mm3"
+RE_VALOARE_SLASH_UNIT = re.compile(
+    r"^([\d.,]+)/([a-zA-Z0-9µμ³²]+)\s*$",
     re.IGNORECASE,
 )
 
@@ -1785,6 +1793,8 @@ def _line_has_extractable_value_row(s: str) -> bool:
         return True
     if RE_VALOARE_PARTIAL.match(t):
         return True
+    if RE_VALOARE_SLASH_UNIT.match(t):
+        return True
     if RE_BIOCLINICA_ONELINE.search(t) or RE_BIOCLINICA_REF_SINGULAR.search(t):
         return True
     # «Parametru valoare UM min - max» pe aceeași linie (OCR uneori lipește tot rândul)
@@ -2497,7 +2507,10 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         if not m and not m_sing and not m_dash:
             lv2 = re.sub(r"^[\s\•\-\*\.:;]+", "", lv).strip()
             m_part = RE_VALOARE_PARTIAL.match(lv2)
+        m_slash = None
         if not m and not m_sing and not m_dash and not m_part:
+            m_slash = RE_VALOARE_SLASH_UNIT.match(lv)
+        if not m and not m_sing and not m_dash and not m_part and not m_slash:
             continue
         if m:
             valoare = _parse_european_number(m.group(1))
@@ -2543,6 +2556,13 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                     interval_min = interval_max = None
             if interval_min is not None and interval_max is not None and interval_min >= interval_max:
                 interval_min = interval_max = None
+        elif m_slash:
+            # Format «valoare/unitate» fără spațiu — ex: "4.650.000/mm3" (Bioclinica hemoleucograma)
+            valoare = _parse_european_number(m_slash.group(1))
+            if valoare is None:
+                continue
+            unitate = "/" + m_slash.group(2)
+            interval_min = interval_max = None
         else:
             # Doar «valoare UM» pe linie (fără paranteze) — Bioclinica/Synevo pe 2 rânduri
             valoare = _parse_european_number(m_part.group(1))
