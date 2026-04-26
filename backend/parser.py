@@ -1075,13 +1075,13 @@ def _este_gunoi_ocr(linie: str) -> bool:
         return False
     # Cuvinte reale de analize medicale — daca oricare apare, NU e gunoi (in general)
     _CUVINTE_MEDICALE = re.compile(
-        r"\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|"
+        r"\b(hemoglobina|hemoglobine?|hemoglobin|hematocrit|hematii|hematie|eritrocite?|leucocite?|trombocite?|neutrofile?|limfocite?|"
         r"monocite?|eozinofile?|bazofile?|creatinin[aei]?|glucoz[ae]?|glicemi[ae]?|colesterol|triglicerid|"
         r"bilirubina|feritina|fier|sodiu|potasiu|calciu|magneziu|fosfor|uree|acid|"
         r"proteina|albumin[ae]?|globulin[ae]?|fibrinogen|vitamina|hormon|tsh|t3|t4|cortizol|"
         r"insulina|hemoglo|plachetar|eritrocitar|seric[ae]?|urinar|sediment|sumar|"
         r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|"
-        r"chem|mchc?|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
+        r"chem|mchc?|mcv|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
         r"tsh|lh|fsh|ft4|free\s*t4|egfr|clearance|"
         r"chlamydia|mycoplasma|ureaplasma|trachomatis)\b",
         re.IGNORECASE,
