@@ -126,6 +126,13 @@ _LINII_EXCLUSE = re.compile(
     r"Albumina\s+%.*PA\s+E|"
     r"Paisie:|NITRITI,\s*[\"']negativ|"
     r"30-300\s+crestere\s+moderata|200-240\s+mg|"
+    # SCJUB: linii administrative specifice (spital, aparat, doctorand)
+    r"^\+\d+\s*,\s*[A-Za-z]|"  # OCR artifact: "+2, Rezultatele se refera strict..."
+    r"Cont\s*:\s*RO\d{2}|RO\d{2}\s+TREZ[A-Z0-9]|"  # IBAN cont bancar
+    r"COBAS\s*PRO|COBASPRO|"  # Aparat laborator Roche (nu analiza)
+    r"CONSILIUL\s+JUDE[TȚŢ]EAN|"  # Institutie administrativa
+    r"Tinta\s+terapeutic[aă]\s|"  # Nota clinica target terapeutic
+    r"^\d+\s+Dr\.\s+[A-ZĂÂÎȘȚ]|"  # SCJUB: "7 Dr. PIRAU RALUCA" — numar pagina + medic validant
     # Linii care sunt footer de pagina cu data embedded
     r"Aceste\s+rezultate\s+pot\s+fi\s+folosite.*Pagina|"
     r"in\s+\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2})|"
@@ -202,7 +209,9 @@ _LINII_EXCLUSE = re.compile(
 
 
 _RE_PAGINA_COMPLETA_OCR = re.compile(
-    r"Buletin\s+de\s+analize|Punct\s+de\s+recoltare|SANTE\s+VIE|SmartLabs\s+5",
+    r"Buletin\s+de\s+analize|Punct\s+de\s+recoltare|SANTE\s+VIE|SmartLabs\s+5|"
+    r"BULETINDEANALIZE|BuletinDeAnalize|"  # SCJUB: antet PDF concatenat fara spatii
+    r"SRENISO|SR\.EN\.ISO",               # SCJUB: SR EN ISO certificare concatenata
     re.IGNORECASE,
 )
 
@@ -219,6 +228,12 @@ def _linie_este_exclusa(s: str) -> bool:
         return False
     # Linie masiva OCR (toata pagina pe o linie) — contine antet de laborator
     if len(t) > 400 and _RE_PAGINA_COMPLETA_OCR.search(t):
+        return True
+    # SCJUB: linii cu text concatenat fara spatii (semn de super-linie OCR), indiferent de lungime
+    if re.search(r"BULETINDEANALIZE|SRENISO", t, re.IGNORECASE):
+        return True
+    # SCJUB: IBAN cont bancar oriunde in linie (prefixe OCR: "wo Cont:", "ai '", etc.)
+    if re.search(r"RO\d{2}\s*TREZ\w+\s+Trezoria", t, re.IGNORECASE):
         return True
     m_exc = _LINII_EXCLUSE.match(t)
     # Evită alternativa goală din regex: match de lungime 0 nu înseamnă linie exclusă
@@ -412,7 +427,7 @@ _SECTIUNI = [
      "Electroforeza"),
     (re.compile(r"IMUNOLOGIE\s+SI\s+SEROLOGIE|IMUNOLOGIE|SEROLOGIE", re.IGNORECASE),
      "Imunologie si Serologie"),
-    (re.compile(r"HORMONI\s+TIROID|TIROID", re.IGNORECASE),
+    (re.compile(r"HORMONI\s+TIROID|^TIROID", re.IGNORECASE),
      "Hormoni tiroidieni"),
     (re.compile(r"HORMONI|ENDOCRIN|ENDOCRINOLOGIE", re.IGNORECASE),
      "Hormoni"),
@@ -1788,7 +1803,17 @@ def _looks_like_medlife_test_only_line(s: str) -> bool:
         return False
     if _line_has_extractable_value_row(t):
         return False
-    if not re.search(r"[A-Za-zĂÂÎȘȚăâîșț]{3,}", t):
+    # Trebuie să conțină cel puțin un cuvânt lung (≥4 litere) SAU o abreviere majusculă (≥2 majuscule)
+    # Exclude gunoi OCR de tipul "wen ee." sau "i i i" (3 litere trece vechiul prag dar nu e test medical)
+    has_long_word = bool(re.search(r"[A-Za-zĂÂÎȘȚăâîșț]{4,}", t))
+    has_abbreviation = bool(re.search(r"[A-ZĂÂÎȘȚ]{2,}", t))
+    if not (has_long_word or has_abbreviation):
+        return False
+    # Linia conține un interval numeric (ex: "6.40 - 8.30") → e range de referință, nu test-only
+    if re.search(r"\d+[.,]\d+\s*[-–]\s*\d+[.,]\d+", t):
+        return False
+    # Interval intreg fara zecimale (ex: "000-1400", "4-10") si fara alte valori zecimale → referinta
+    if re.search(r"\b\d{2,}\s*[-–]\s*\d{2,}\s*$", t) and not re.search(r"\d[.,]\d", t):
         return False
     # Are deja model «nume valoare UM» pe același rând
     if re.search(r"(?<!\S)(?:[<>≤≥]\s*)?\d+[.,]\d+\s+[\w%µ*/]", t) or re.search(
@@ -2247,6 +2272,12 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         # Daca OCR a lipit rezultat/UM dupa separator de coloana, pastram doar denumirea.
         den_clean = re.sub(r"\s*\|.*$", "", den_clean).strip()
         den_clean = den_clean.strip(" -:;.,")
+        # Strip calificatori text inclusi accidental in denumire din OCR multi-coloana
+        # "PROTEINE TOTALE URINARE, negativ OO" → "PROTEINE TOTALE URINARE"
+        den_clean = re.sub(
+            r',\s*(?:negativ[ae]?|pozitiv[ae]?|absent[ae]?|prezent[ae]?)\b.*$',
+            '', den_clean, flags=re.IGNORECASE
+        ).strip()
         if not den_clean:
             return
         r.denumire_raw = den_clean
@@ -2317,6 +2348,14 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         if _pare_rand_tabel_concatenat(r):
             return
         if _RE_DOAR_VALOARE_CA_PARAMETRU.match(r.denumire_raw.strip()):
+            return
+        # Valori extreme = eroare OCR (numar concatenat, cod pagina etc.) — nu analiza reala
+        # Threshold 10M: sigur mai mare decat orice valoare reala (trombocite max ~1M/µL, eritrocite ~5M/µL)
+        if r.valoare is not None and abs(r.valoare) > 10_000_000:
+            return
+        # Unitate suspicioasa: text lung concatenat OCR (ex "NumartombociteOOO262200OO")
+        # Unitatile legitime au max ~15 caractere (ex "mL/min/1.73m2" = 13, "*10^6/µL" = 8)
+        if r.unitate and len(r.unitate.strip()) > 20:
             return
         if r.valoare is not None:
             val_key: object = round(r.valoare, 3)
@@ -2531,7 +2570,10 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             # Nu folosi un rând deja complet (ex. Hematocrit 35.5 % …) ca „parametru" pentru valoarea de dedesubt
             if _parse_oneline(cand) is not None:
                 continue
-            if _este_linie_parametru(cand) and not RE_VALOARE_LINIE.match(cand) and not RE_VALOARE_PARTIAL.match(cand):
+            if (_este_linie_parametru(cand)
+                    and not RE_VALOARE_LINIE.match(cand)
+                    and not RE_VALOARE_PARTIAL.match(cand)
+                    and not RE_VALOARE_REF_SINGULAR.match(cand)):
                 denumire = cand
                 cat_linie = line_sectiune[j]
                 break  # parametru valid gasit
