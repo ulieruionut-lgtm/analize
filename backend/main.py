@@ -551,7 +551,7 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-tsv-bbox-20260427-ratio-fix"
+_PARSER_VERSION = "medlife-tsv-bbox-20260427b-ph-lt-density"
 
 @app.get("/health")
 async def health():

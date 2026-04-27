@@ -602,6 +602,10 @@ def _parse_european_number(s: str) -> Optional[float]:
     s = (s or "").strip()
     if not s:
         return None
+    # Valori cu < sau > (ex: "< 8", "> 60") — pastram valoarea numerica
+    s = re.sub(r"^[<>≤≥]\s*", "", s)
+    if not s:
+        return None
     # Corecție OCR conservatoare: litere confundate cu cifre.
     # Aplicăm DOAR dacă stringul conține cel puțin o cifră reală,
     # ca să nu modificăm texte/denumiri care nu sunt numere.
@@ -1082,11 +1086,15 @@ def _este_gunoi_ocr(linie: str) -> bool:
         r"insulina|hemoglo|plachetar|eritrocitar|seric[ae]?|urinar|sediment|sumar|"
         r"homocistein|complement|anticorp|imunoglobul|DAO|VSH|CRP|ALT|AST|GGT|"
         r"chem|mchc?|mcv|rdw|vem|vtm|pdw|pct|mpv|aslo|estradiol|progesteron|fosfataza|"
-        r"tsh|lh|fsh|ft4|free\s*t4|egfr|clearance|"
-        r"chlamydia|mycoplasma|ureaplasma|trachomatis)\b",
+        r"tsh|lh|fsh|ft4|free\s*t4|egfr|clearance|densitate|urobilinogen|pigment|"
+        r"chlamydia|mycoplasma|ureaplasma|trachomatis|fier|feritina|magnezi|calciu|"
+        r"transferina|bilirubina|amilaza|lipaza|fibrinogen|prolactina|testosteron)\b",
         re.IGNORECASE,
     )
     are_cuvant_medical = bool(_CUVINTE_MEDICALE.search(linie))
+    # PH (2 litere) nu prinde regex \b — verificare separata
+    if re.match(r"^\s*PH\b", linie, re.IGNORECASE):
+        are_cuvant_medical = True
     # Rând «… valoare UM min - max» (MedLife): multe token-uri numerice trec pragul „silabe scurte".
     # NU apelăm _parse_oneline aici (în unele medii poate interacționa cu _este_linie_parametru la încărcare).
     m_tab = _RE_TABULAR_ROW_VAL_UM_INTERVAL.search(linie)
