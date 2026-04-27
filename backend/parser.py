@@ -1103,10 +1103,14 @@ def _este_gunoi_ocr(linie: str) -> bool:
     # Artefact OCR: cuvant cu 3+ litere identice consecutive (ex: "RRR", "SSS") => gunoi sigur
     if re.search(r"\b([A-Za-z])\1{2,}\b", linie):
         return True
-    # Daca >75% silabe scurte => gunoi chiar daca contine cuvant medical (ex: "Free T4 i i : : .")
+    # Linii medicale valide cu unitati scurte (%, /mm3, fL, pg) au ratio ~0.83 — nu le excludem.
+    # Doar ratio extrem (>0.85) cu cuvant medical indica gunoi real (ex: "Free T4 i i : : .")
+    if are_cuvant_medical and ratio_scurte <= 0.85:
+        return False
+    # Daca >75% silabe scurte => gunoi
     if ratio_scurte > 0.75:
         return True
-    # Daca cuvant medical prezent si ratio rezonabil => NU e gunoi
+    # Daca cuvant medical prezent => NU e gunoi
     if are_cuvant_medical:
         return False
     # Daca >55% sunt silabe scurte => gunoi OCR
