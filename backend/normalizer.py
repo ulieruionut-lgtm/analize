@@ -8,8 +8,11 @@ Strategii de matching (in ordine, se opreste la primul match):
   4. Match fara paranteze + normalizat
   5. Match dupa primele 2 cuvinte semnificative (conservator)
   6. Match dupa >= 3 cuvinte cheie comune
-  7. Fuzzy match (similaritate >= 88%) pentru erori OCR (ex: Hcmoglobina -> Hemoglobina)
-  7b. rapidfuzz.partial_ratio (opțional, prag 90) dacă difflib nu găsește — alias scurt în linie lungă
+  7. Fuzzy: candidați din difflib + re-ranking cu scor ponderat (ratio / partial / token_sort rapidfuzz)
+  7b. rapidfuzz extract + același scor ponderat + regulă de aliniere (nu primul candidat „din întâmplare”)
+
+La fallback global, dacă există catalog laborator (upload cu laborator_id), acel catalog primește
+un mic bonus la scor pentru dezambiguizare între rețele.
 
 Daca nu gaseste nimic: salveaza in analiza_necunoscuta pentru aprobare manuala.
 """
@@ -68,6 +71,18 @@ def _fara_paranteze(text: str) -> str:
     return re.sub(r'\s*\(.*?\)', '', text).strip()
 
 
+# Override categorie urina: parametri cu acelasi nume in sange si in urina.
+# Cand categorie contine 'urin', acesti termeni merg catre standardele urinare
+# in loc de cele serice (Leucocite → WBC, Eritrocite → RBC etc.).
+_URINA_OVERRIDE: dict[str, str] = {
+    'leucocite':  'leucocite urinare',
+    'eritrocite': 'eritrocite urinare',
+    'glucoza':    'glucoza urinara',
+    'proteine':   'proteine urinare',
+    'bilirubina': 'bilirubina urinara',
+}
+
+
 def _cuvinte_cheie(text: str) -> set:
     """Extrage cuvinte cu >= 3 litere (ignora unitati, cifre)."""
     return {w for w in re.split(r'[\s\-/\(\)]+', text) if len(w) >= 3 and not w.isdigit()}
@@ -110,6 +125,46 @@ def _prag_fuzzy_partial(text_norm: str) -> int:
     return 91
 
 
+# Ponderi fuzzy (0–100): ratio = potrivire globală, partial = OCR în șir lung,
+# token_sort = cuvinte permutate („hemoglobina glicata hba1c” vs „hba1c …”).
+_FUZZ_W_RATIO: float = 0.38
+_FUZZ_W_PARTIAL: float = 0.32
+_FUZZ_W_TOKEN_SORT: float = 0.30
+# Bonus la scor (aceeași scală 0–100) pentru analize din catalogul laboratorului la pasul global.
+_FUZZ_LAB_PREF_BONUS: float = 4.0
+
+
+def _weighted_fuzzy_score(query: str, candidate: str) -> float:
+    """
+    Scor 0–100 combinând ratio, partial_ratio și token_sort_ratio (rapidfuzz).
+    Fără rapidfuzz: echivalent aproximativ prin SequenceMatcher * 100.
+    """
+    if not query or not candidate:
+        return 0.0
+    try:
+        from rapidfuzz import fuzz as rf
+
+        return (
+            _FUZZ_W_RATIO * float(rf.ratio(query, candidate))
+            + _FUZZ_W_PARTIAL * float(rf.partial_ratio(query, candidate))
+            + _FUZZ_W_TOKEN_SORT * float(rf.token_sort_ratio(query, candidate))
+        )
+    except ImportError:
+        return float(difflib.SequenceMatcher(None, query, candidate).ratio() * 100.0)
+
+
+def _fuzz_score_cu_lab(
+    query: str,
+    cand_key: str,
+    aid: int,
+    lab_preferred: Optional[frozenset[int]],
+) -> float:
+    sc = _weighted_fuzzy_score(query, cand_key)
+    if lab_preferred is not None and aid in lab_preferred:
+        sc = min(100.0, sc + _FUZZ_LAB_PREF_BONUS)
+    return sc
+
+
 def _strip_prefix_regina_maria(raw: str) -> str:
     """
     Elimina prefixele numerice din formatul Regina Maria (Nr. denumire test).
@@ -139,6 +194,36 @@ _CACHE_TTL_SECUNDE: int = 60  # 60 secunde — aliasurile noi din DB apar rapid;
 _CACHE_STD: Optional[dict] = None  # {norm_str: analiza_standard_id}
 _CACHE_STD_TIMESTAMP: float = 0.0
 _CACHE_STD_TTL: int = 300  # 5 minute
+
+# Cache catalog analize per laborator (laborator_analize)
+_LAB_STD_CACHE: dict[int, tuple[Optional[frozenset[int]], float]] = {}
+_LAB_STD_CACHE_TTL: float = 120.0
+
+
+def _lab_catalog_std_ids(laborator_id: int) -> Optional[frozenset[int]]:
+    """ID-uri analiza_standard din `laborator_analize`. None = fără rânduri (nu restrânge matching)."""
+    global _LAB_STD_CACHE
+    try:
+        lid = int(laborator_id)
+    except (TypeError, ValueError):
+        return None
+    acum = time.time()
+    ent = _LAB_STD_CACHE.get(lid)
+    if ent is not None and (acum - ent[1]) < _LAB_STD_CACHE_TTL:
+        return ent[0]
+    try:
+        from backend.database import get_analiza_standard_ids_for_laborator
+
+        ids = get_analiza_standard_ids_for_laborator(lid)
+    except Exception:
+        ids = []
+    frozen: Optional[frozenset[int]]
+    if not ids:
+        frozen = None
+    else:
+        frozen = frozenset(int(x) for x in ids)
+    _LAB_STD_CACHE[lid] = (frozen, acum)
+    return frozen
 
 
 def _incarca_cache_standard() -> dict:
@@ -212,10 +297,11 @@ def _incarca_cache() -> tuple[dict, dict]:
 
 def invalideaza_cache():
     """Apelat dupa ce se adauga un alias nou - forteaza reincarcare imediata."""
-    global _CACHE, _CACHE_RAW, _CACHE_TIMESTAMP
+    global _CACHE, _CACHE_RAW, _CACHE_TIMESTAMP, _LAB_STD_CACHE
     _CACHE = None
     _CACHE_RAW = None
     _CACHE_TIMESTAMP = 0.0
+    _LAB_STD_CACHE = {}
 
 
 def _auto_salveaza_alias(denumire_raw: str, analiza_standard_id: int) -> None:
@@ -232,50 +318,30 @@ def _auto_salveaza_alias(denumire_raw: str, analiza_standard_id: int) -> None:
         logging.warning("[AUTO-ALIAS] Eroare salvare: %s", e)
 
 
-def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
+def _aid_passes_lab(aid: int, lab_allowed: Optional[frozenset[int]]) -> bool:
+    return lab_allowed is None or aid in lab_allowed
+
+
+def _heuristic_alias_and_std_match(
+    raw_norm: str,
+    raw_curat: str,
+    cache_norm: dict,
+    lab_allowed: Optional[frozenset[int]],
+    lab_preferred: Optional[frozenset[int]] = None,
+) -> Optional[int]:
     """
-    Incearca mai multe strategii de matching si returneaza analiza_standard_id sau None.
-    Daca nu gaseste nimic sigur, returneaza None (va fi salvata ca necunoscuta).
+    Pașii 5–8: euristici pe alias, fuzzy, apoi match pe `analiza_standard`.
+    Dacă `lab_allowed` e setat, se consideră doar candidați din catalogul laboratorului
+    (reduce confuzii între rețele); apelantul poate relua fără filtru ca fallback.
+    `lab_preferred`: la fallback global, bonus de scor pentru ID-uri din acest catalog (dezambiguizare).
     """
-    cache_norm, cache_raw = _incarca_cache()
-    if not cache_norm:
-        return None
-
-    raw = raw.strip()
-    # Elimina prefixe Regina Maria (1.1.4, 1:2, 1-3, ai:, $.1.11) inainte de matching
-    raw = _strip_prefix_regina_maria(raw)
-    # Curata artefactele de laborator (*, <, >, etc.) inainte de matching
-    raw_curat = _curata_artefacte(raw)
-    raw_lower = raw_curat.lower()
-    domeniu = categorie_la_domeniu(categorie)
-    raw_norm = aplica_pipeline_ocr_normalizat(_normalizeaza(raw_curat), domeniu)
-    raw_fara_par = aplica_pipeline_ocr_normalizat(
-        _normalizeaza(_fara_paranteze(raw_curat)), domeniu
-    )
-
-    # 1. Exact match pe textul original (case-insensitive)
-    if raw.lower() in cache_raw:
-        return cache_raw[raw.lower()]
-
-    # 2. Exact match dupa curatare artefacte (case-insensitive)
-    if raw_lower in cache_raw:
-        return cache_raw[raw_lower]
-
-    # 3. Match normalizat (diacritice eliminate)
-    if raw_norm in cache_norm:
-        return cache_norm[raw_norm]
-
-    # 4. Match fara paranteze + normalizat
-    if raw_fara_par and raw_fara_par in cache_norm:
-        return cache_norm[raw_fara_par]
-
-    # 4b. (integrat) Pipeline OCR e deja aplicat pe raw_norm / raw_fara_par mai sus.
-
     # 5. Match dupa primele 2 cuvinte semnificative (mai conservator)
     cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', raw_norm) if len(w) >= 3 and not w.isdigit()]
     if len(cuvinte) >= 2:
         first_two = cuvinte[:2]
         for alias_norm, aid in cache_norm.items():
+            if not _aid_passes_lab(aid, lab_allowed):
+                continue
             alias_cuvinte = [w for w in re.split(r'[\s\-/\(\)]+', alias_norm)
                              if len(w) >= 3 and not w.isdigit()]
             if len(alias_cuvinte) >= 2 and alias_cuvinte[:2] == first_two:
@@ -285,24 +351,37 @@ def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
     raw_kw = _cuvinte_cheie(raw_norm)
     if len(raw_kw) >= 3:
         for alias_norm, aid in cache_norm.items():
+            if not _aid_passes_lab(aid, lab_allowed):
+                continue
             alias_kw = _cuvinte_cheie(alias_norm)
             if len(raw_kw & alias_kw) >= 3:
                 return aid
 
-    # 7. Fuzzy pe baza denumirii (fără valori numerice la coadă) — difflib
     baza_fuzz = _baza_denumire_pentru_fuzzy(raw_norm)
+    min_prefix = 4 if len(baza_fuzz) < 10 else 3
+
+    # 7. Fuzzy pe baza denumirii — difflib pentru candidați, apoi cel mai bun scor ponderat
     if len(baza_fuzz) >= 5:
         cutoff = _prag_fuzzy_difflib(baza_fuzz)
-        matches = difflib.get_close_matches(baza_fuzz, cache_norm.keys(), n=1, cutoff=cutoff)
-        if matches:
-            m = matches[0]
-            # Pentru denumiri foarte scurte, cerem și prefix similar.
-            if len(baza_fuzz) < 10 and not m.startswith(baza_fuzz[:4]):
-                pass
-            else:
-                return cache_norm[m]
+        matches = difflib.get_close_matches(baza_fuzz, cache_norm.keys(), n=24, cutoff=cutoff)
+        best_aid: Optional[int] = None
+        best_sc = -1.0
+        best_tie = (9999, 0)  # (|len diff|, -partial proxy) — minim e mai bun
+        for m in matches:
+            aid = cache_norm[m]
+            if not _aid_passes_lab(aid, lab_allowed):
+                continue
+            if len(baza_fuzz) < 10 and not m.startswith(baza_fuzz[:min_prefix]):
+                continue
+            sc = _fuzz_score_cu_lab(baza_fuzz, m, aid, lab_preferred)
+            ld = abs(len(m) - len(baza_fuzz))
+            tie = (ld, -int(difflib.SequenceMatcher(None, baza_fuzz, m).ratio() * 100))
+            if sc > best_sc or (abs(sc - best_sc) < 0.25 and tie < best_tie):
+                best_sc, best_aid, best_tie = sc, aid, tie
+        if best_aid is not None:
+            return best_aid
 
-    # 7b. rapidfuzz partial_ratio pe aceeași bază; aliniere la începutul șirului
+    # 7b. rapidfuzz partial_ratio — mai mulți candidați, alegere după scor ponderat + aliniere
     if len(baza_fuzz) >= 6:
         try:
             from rapidfuzz import fuzz, process
@@ -310,86 +389,226 @@ def _cauta_in_cache(raw: str, categorie: Optional[str] = None) -> Optional[int]:
             pass
         else:
             sc_cut = _prag_fuzzy_partial(baza_fuzz)
-            best = process.extractOne(
+            keys_list = list(cache_norm.keys())
+            cands = process.extract(
                 baza_fuzz,
-                list(cache_norm.keys()),
+                keys_list,
                 scorer=fuzz.partial_ratio,
                 score_cutoff=sc_cut,
+                limit=20,
             )
-            if best is not None:
-                match_key, _score, _idx = best
+            best_aid = None
+            best_sc = -1.0
+            best_tie = (9999, 0)
+            for match_key, partial_sc, _idx in cands or []:
+                aid = cache_norm[match_key]
+                if not _aid_passes_lab(aid, lab_allowed):
+                    continue
                 al = fuzz.partial_ratio_alignment(baza_fuzz, match_key)
                 max_start = max(2, len(baza_fuzz) // 3)
-                if al.src_start <= max_start:
-                    return cache_norm[match_key]
+                if al.src_start > max_start:
+                    continue
+                sc = _fuzz_score_cu_lab(baza_fuzz, match_key, aid, lab_preferred)
+                ld = abs(len(match_key) - len(baza_fuzz))
+                tie = (ld, -partial_sc)
+                if sc > best_sc or (abs(sc - best_sc) < 0.25 and tie < best_tie):
+                    best_sc, best_aid, best_tie = sc, aid, tie
+            if best_aid is not None:
+                return best_aid
 
     # 8. Auto-match direct pe denumiri din analiza_standard (fallback final cu auto-salvare alias).
-    # Se aplica doar cand toate strategiile pe alias-uri (1-7b) au esuat.
     if len(baza_fuzz) >= 5:
-        std_cache = _incarca_cache_standard()
-        if std_cache:
-            # 8a. difflib full-ratio pe denumiri standard
-            cutoff8 = _prag_fuzzy_difflib(baza_fuzz)
-            matches8 = difflib.get_close_matches(baza_fuzz, std_cache.keys(), n=1, cutoff=cutoff8)
-            if matches8:
-                m8 = matches8[0]
-                if len(baza_fuzz) >= 10 or m8.startswith(baza_fuzz[:4]):
+        std_cache_full = _incarca_cache_standard()
+        if std_cache_full:
+            if lab_allowed:
+                std_cache = {k: v for k, v in std_cache_full.items() if v in lab_allowed}
+            else:
+                std_cache = dict(std_cache_full)
+            if std_cache:
+                cutoff8 = _prag_fuzzy_difflib(baza_fuzz)
+                matches8 = difflib.get_close_matches(baza_fuzz, std_cache.keys(), n=24, cutoff=cutoff8)
+                best_id: Optional[int] = None
+                best_sc = -1.0
+                best_tie = (9999, 0)
+                for m8 in matches8:
+                    if len(baza_fuzz) < 10 and not m8.startswith(baza_fuzz[:min_prefix]):
+                        continue
                     std_id = std_cache[m8]
-                    _auto_salveaza_alias(raw_curat, std_id)
-                    return std_id
-            # 8b. rapidfuzz partial_ratio — prinde "Glucoza (glicemie)" → "glucoza"
-            if len(baza_fuzz) >= 6:
-                try:
-                    from rapidfuzz import fuzz as _fuzz, process as _proc
-                    sc_cut8 = _prag_fuzzy_partial(baza_fuzz)
-                    best8 = _proc.extractOne(
-                        baza_fuzz,
-                        list(std_cache.keys()),
-                        scorer=_fuzz.partial_ratio,
-                        score_cutoff=sc_cut8,
-                    )
-                    if best8 is not None:
-                        mk8, _sc8, _idx8 = best8
-                        al8 = _fuzz.partial_ratio_alignment(baza_fuzz, mk8)
-                        if al8.src_start <= max(2, len(baza_fuzz) // 3):
+                    sc = _fuzz_score_cu_lab(baza_fuzz, m8, std_id, lab_preferred)
+                    ld = abs(len(m8) - len(baza_fuzz))
+                    tie = (ld, -int(difflib.SequenceMatcher(None, baza_fuzz, m8).ratio() * 100))
+                    if sc > best_sc or (abs(sc - best_sc) < 0.25 and tie < best_tie):
+                        best_sc, best_id, best_tie = sc, std_id, tie
+                if best_id is not None:
+                    _auto_salveaza_alias(raw_curat, best_id)
+                    return best_id
+                if len(baza_fuzz) >= 6:
+                    try:
+                        from rapidfuzz import fuzz as _fuzz, process as _proc
+                        sc_cut8 = _prag_fuzzy_partial(baza_fuzz)
+                        cands8 = _proc.extract(
+                            baza_fuzz,
+                            list(std_cache.keys()),
+                            scorer=_fuzz.partial_ratio,
+                            score_cutoff=sc_cut8,
+                            limit=20,
+                        )
+                        best_id = None
+                        best_sc = -1.0
+                        best_tie = (9999, 0)
+                        for mk8, partial_sc8, _idx8 in cands8 or []:
+                            al8 = _fuzz.partial_ratio_alignment(baza_fuzz, mk8)
+                            if al8.src_start > max(2, len(baza_fuzz) // 3):
+                                continue
                             std_id = std_cache[mk8]
-                            _auto_salveaza_alias(raw_curat, std_id)
-                            return std_id
-                except ImportError:
-                    pass
+                            sc = _fuzz_score_cu_lab(baza_fuzz, mk8, std_id, lab_preferred)
+                            ld = abs(len(mk8) - len(baza_fuzz))
+                            tie = (ld, -partial_sc8)
+                            if sc > best_sc or (abs(sc - best_sc) < 0.25 and tie < best_tie):
+                                best_sc, best_id, best_tie = sc, std_id, tie
+                        if best_id is not None:
+                            _auto_salveaza_alias(raw_curat, best_id)
+                            return best_id
+                    except ImportError:
+                        pass
 
     return None
 
 
-def _log_necunoscuta(denumire_raw: str, categorie_buletin: Optional[str] = None) -> None:
-    """Salveaza analiza necunoscuta in DB pentru aprobare ulterioara (cu secțiunea din PDF dacă există)."""
+def _cauta_in_cache(
+    raw: str,
+    categorie: Optional[str] = None,
+    laborator_id: Optional[int] = None,
+) -> Optional[int]:
+    """
+    Incearca mai multe strategii de matching si returneaza analiza_standard_id sau None.
+    Dacă `laborator_id` e setat și există rânduri în `laborator_analize`, pașii 5–8 rulează
+    întâi restrânși la acel catalog; dacă nu găsesc nimic, se repetă pașii 5–8 pe tot setul
+    (comportament identic cu versiunea anterioară).
+    """
+    cache_norm, cache_raw = _incarca_cache()
+    if not cache_norm:
+        return None
+
+    raw = raw.strip()
+    raw = _strip_prefix_regina_maria(raw)
+    raw_curat = _curata_artefacte(raw)
+    raw_lower = raw_curat.lower()
+    domeniu = categorie_la_domeniu(categorie)
+    raw_norm = aplica_pipeline_ocr_normalizat(_normalizeaza(raw_curat), domeniu)
+    raw_fara_par = aplica_pipeline_ocr_normalizat(
+        _normalizeaza(_fara_paranteze(raw_curat)), domeniu
+    )
+
+    # 0. Override categorie urina
+    if categorie and re.search(r'urin', categorie, re.IGNORECASE):
+        raw_norm_base = _normalizeaza(_fara_paranteze(raw_curat))
+        urina_std_name = _URINA_OVERRIDE.get(raw_norm_base)
+        if urina_std_name:
+            std_cache = _incarca_cache_standard()
+            urina_std_norm = _normalizeaza(urina_std_name)
+            if urina_std_norm in std_cache:
+                return std_cache[urina_std_norm]
+
+    # 1–4. Match exact (alias global) — neschimbat, indiferent de laborator
+    if raw.lower() in cache_raw:
+        return cache_raw[raw.lower()]
+    if raw_lower in cache_raw:
+        return cache_raw[raw_lower]
+    if raw_norm in cache_norm:
+        return cache_norm[raw_norm]
+    if raw_fara_par and raw_fara_par in cache_norm:
+        return cache_norm[raw_fara_par]
+
+    lab_subset: Optional[frozenset[int]] = None
+    if laborator_id is not None:
+        lab_subset = _lab_catalog_std_ids(int(laborator_id))
+
+    if lab_subset and len(lab_subset) > 0:
+        hit = _heuristic_alias_and_std_match(
+            raw_norm, raw_curat, cache_norm, lab_subset, lab_preferred=None
+        )
+        if hit is not None:
+            return hit
+
+    return _heuristic_alias_and_std_match(
+        raw_norm, raw_curat, cache_norm, None, lab_preferred=lab_subset
+    )
+
+
+def _log_necunoscuta(
+    denumire_raw: str,
+    categorie_buletin: Optional[str] = None,
+    laborator_id: Optional[int] = None,
+) -> None:
+    """Salvează analiza necunoscută pentru aprobare; păstrează `laborator_id` pentru auto-rezolvare contextuală."""
     try:
         from backend.database import get_cursor, _use_sqlite
         raw = denumire_raw.strip()
         cat = (categorie_buletin or "").strip() or None
+        lab: Optional[int] = None
+        if laborator_id is not None:
+            try:
+                lab = int(laborator_id)
+            except (TypeError, ValueError):
+                lab = None
         with get_cursor() as cur:
             if _use_sqlite():
-                cur.execute(
-                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
-                       VALUES (?, 1, ?)
-                       ON CONFLICT(denumire_raw) DO UPDATE SET
-                           aparitii = aparitii + 1,
-                           categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
-                             THEN excluded.categorie ELSE analiza_necunoscuta.categorie END,
-                           updated_at = datetime('now')""",
-                    (raw, cat),
-                )
+                try:
+                    cur.execute(
+                        """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie, laborator_id)
+                           VALUES (?, 1, ?, ?)
+                           ON CONFLICT(denumire_raw) DO UPDATE SET
+                               aparitii = aparitii + 1,
+                               categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                                 THEN excluded.categorie ELSE analiza_necunoscuta.categorie END,
+                               laborator_id = COALESCE(excluded.laborator_id, analiza_necunoscuta.laborator_id),
+                               updated_at = datetime('now')""",
+                        (raw, cat, lab),
+                    )
+                except Exception as ex:
+                    if "laborator_id" not in str(ex).lower():
+                        raise
+                    cur.execute(
+                        """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
+                           VALUES (?, 1, ?)
+                           ON CONFLICT(denumire_raw) DO UPDATE SET
+                               aparitii = aparitii + 1,
+                               categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                                 THEN excluded.categorie ELSE analiza_necunoscuta.categorie END,
+                               updated_at = datetime('now')""",
+                        (raw, cat),
+                    )
             else:
-                cur.execute(
-                    """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
-                       VALUES (%s, 1, %s)
-                       ON CONFLICT(denumire_raw) DO UPDATE SET
-                           aparitii = analiza_necunoscuta.aparitii + EXCLUDED.aparitii,
-                           categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
-                             THEN EXCLUDED.categorie ELSE analiza_necunoscuta.categorie END,
-                           updated_at = NOW()""",
-                    (raw, cat),
-                )
+                try:
+                    cur.execute(
+                        """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie, laborator_id)
+                           VALUES (%s, 1, %s, %s)
+                           ON CONFLICT(denumire_raw) DO UPDATE SET
+                               aparitii = analiza_necunoscuta.aparitii + EXCLUDED.aparitii,
+                               categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                                 THEN EXCLUDED.categorie ELSE analiza_necunoscuta.categorie END,
+                               laborator_id = COALESCE(EXCLUDED.laborator_id, analiza_necunoscuta.laborator_id),
+                               updated_at = NOW()""",
+                        (raw, cat, lab),
+                    )
+                except Exception as ex:
+                    if "laborator_id" not in str(ex).lower() and "undefinedcolumn" not in str(ex).lower():
+                        raise
+                    try:
+                        cur.connection.rollback()
+                    except Exception:
+                        pass
+                    cur.execute(
+                        """INSERT INTO analiza_necunoscuta (denumire_raw, aparitii, categorie)
+                           VALUES (%s, 1, %s)
+                           ON CONFLICT(denumire_raw) DO UPDATE SET
+                               aparitii = analiza_necunoscuta.aparitii + EXCLUDED.aparitii,
+                               categorie = CASE WHEN analiza_necunoscuta.categorie IS NULL
+                                 THEN EXCLUDED.categorie ELSE analiza_necunoscuta.categorie END,
+                               updated_at = NOW()""",
+                        (raw, cat),
+                    )
     except Exception as e:
         raw_preview = (denumire_raw or "")[:80]
         if len(denumire_raw or "") > 80:
@@ -397,7 +616,7 @@ def _log_necunoscuta(denumire_raw: str, categorie_buletin: Optional[str] = None)
         logging.error(f"analiza_necunoscuta INSERT failed for '{raw_preview}': {e}")
 
 
-def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
+def normalize_rezultat(r: RezultatParsat, laborator_id: Optional[int] = None) -> RezultatParsat:
     """
     Cauta denumire_raw in alias-uri si seteaza analiza_standard_id.
     Daca nu gaseste, logheaza ca necunoscuta (pentru aprobare manuala).
@@ -405,7 +624,7 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
     if not r.denumire_raw:
         return r
 
-    aid = _cauta_in_cache(r.denumire_raw, r.categorie)
+    aid = _cauta_in_cache(r.denumire_raw, r.categorie, laborator_id)
     if aid is not None:
         r.analiza_standard_id = aid
     else:
@@ -422,7 +641,7 @@ def normalize_rezultat(r: RezultatParsat) -> RezultatParsat:
         else:
             logging.info("[NEC_AMBIGUU] %s", den[:140])
         # Logam pentru aprobare - medicul va putea asigna ulterior (cu categoria din buletin)
-        _log_necunoscuta(r.denumire_raw, r.categorie)
+        _log_necunoscuta(r.denumire_raw, r.categorie, laborator_id)
 
     return r
 
@@ -464,9 +683,12 @@ def _aplica_flag_din_valoare_text(r: RezultatParsat) -> None:
             r.flag = r.flag or "H"
 
 
-def normalize_rezultate(lista: list[RezultatParsat]) -> list[RezultatParsat]:
+def normalize_rezultate(
+    lista: list[RezultatParsat],
+    laborator_id: Optional[int] = None,
+) -> list[RezultatParsat]:
     """Aplica normalizarea pe fiecare rezultat din lista."""
-    rezultate = [normalize_rezultat(r) for r in lista]
+    rezultate = [normalize_rezultat(r, laborator_id) for r in lista]
     for r in rezultate:
         _aplica_flag_din_valoare_text(r)
     return rezultate
@@ -592,13 +814,31 @@ def auto_rezolva_necunoscute() -> dict:
         from backend.database import get_cursor, _use_sqlite, _row_get
         with get_cursor(commit=False) as cur:
             if _use_sqlite():
-                cur.execute(
-                    "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta WHERE aprobata = 0 OR aprobata IS NULL"
-                )
+                try:
+                    cur.execute(
+                        "SELECT id, denumire_raw, categorie, laborator_id FROM analiza_necunoscuta "
+                        "WHERE aprobata = 0 OR aprobata IS NULL"
+                    )
+                except Exception:
+                    cur.execute(
+                        "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta "
+                        "WHERE aprobata = 0 OR aprobata IS NULL"
+                    )
             else:
-                cur.execute(
-                    "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta WHERE aprobata IS NOT TRUE"
-                )
+                try:
+                    cur.execute(
+                        "SELECT id, denumire_raw, categorie, laborator_id FROM analiza_necunoscuta "
+                        "WHERE aprobata IS DISTINCT FROM 1"
+                    )
+                except Exception:
+                    try:
+                        cur.connection.rollback()
+                    except Exception:
+                        pass
+                    cur.execute(
+                        "SELECT id, denumire_raw, categorie FROM analiza_necunoscuta "
+                        "WHERE aprobata IS DISTINCT FROM 1"
+                    )
             rows = cur.fetchall()
     except Exception as e:
         return {"ok": False, "procesate": 0, "rezolvate": 0, "nerezolvate": 0, "erori": [str(e)[:200]]}
@@ -609,12 +849,19 @@ def auto_rezolva_necunoscute() -> dict:
 
     for row in rows:
         try:
-            denumire = str(_row_get(row, 'denumire_raw' if hasattr(row, 'keys') else 1) or '').strip()
-            categorie = str(_row_get(row, 'categorie' if hasattr(row, 'keys') else 2) or '').strip() or None
+            denumire = str(_row_get(row, "denumire_raw") or "").strip()
+            categorie = str(_row_get(row, "categorie") or "").strip() or None
+            lab_row = _row_get(row, "laborator_id")
+            lab_ctx: Optional[int] = None
+            if lab_row is not None:
+                try:
+                    lab_ctx = int(lab_row)
+                except (TypeError, ValueError):
+                    lab_ctx = None
             if not denumire:
                 continue
             procesate += 1
-            std_id = _cauta_in_cache(denumire, categorie)
+            std_id = _cauta_in_cache(denumire, categorie, lab_ctx)
             if std_id is not None:
                 # _cauta_in_cache a apelat deja _auto_salveaza_alias intern la pasul 8
                 # dar daca a gasit prin alt pas (1-7), apelam explicit adauga_alias_nou
