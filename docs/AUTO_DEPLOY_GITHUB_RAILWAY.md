@@ -19,7 +19,7 @@ Nu e nevoie de FTP sau copiere manuală a fișierelor pe server.
 ## Verificare după deploy
 
 - **`GET /health`** → `parser_version` trebuie să coincidă cu constanta din `backend/main.py` (`_PARSER_VERSION`).
-- **Interfața**: în header, versiunea afișată e legată de același marcator (+ opțional `BUILD_VERSION` din imagine, dacă e diferit).
+- **Interfața**: în header apare `parser_version` din cod și `build` din fișierul `BUILD_VERSION` al imaginii (ambele pe același rând în Docker).
 
 ## GitHub Actions (repo-ul tău)
 

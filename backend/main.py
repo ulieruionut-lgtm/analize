@@ -567,7 +567,7 @@ async def catch_all_errors(request, call_next):
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
 _PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-urina-fragment"
 
-# BUILD_VERSION e scris la build Docker (vezi Dockerfile); același text poate apărea în header dacă e diferit de parser.
+# BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
 
 
@@ -582,11 +582,11 @@ def _read_docker_build_stamp() -> Optional[str]:
 
 
 def _app_header_version_string() -> str:
-    """Versiune afișată în panou: același marcator ca /health + stamp imagine (dacă e informativ)."""
+    """Versiune în panou: mereu parser (ca /health) + stamp imagine, chiar dacă textele se suprapun."""
     base = _PARSER_VERSION
     stamp = _read_docker_build_stamp()
-    if stamp and stamp not in base:
-        return f"{base} · build {stamp}"
+    if stamp:
+        return f"{base} | build {stamp}"
     return base
 
 
@@ -1729,7 +1729,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub" title="Același marcator ca /health (parser_version). Se actualizează la fiecare deploy.">Panou medic – __APP_VERSION__ | <span id="user-display"></span></div>
+    <div class="sub" title="parser = /health; build = BUILD_VERSION din imagine (ambele la fiecare deploy).">Panou medic – __APP_VERSION__ | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none" title="Exportă backup înainte de redeploy (Railway)">📥 Export backup</button>
