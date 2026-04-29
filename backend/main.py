@@ -1,4 +1,4 @@
-﻿"""FastAPI – Analize medicale PDF. Interfata medic + API REST."""
+"""FastAPI – Analize medicale PDF. Interfata medic + API REST."""
 import json
 import os
 import re
@@ -380,6 +380,12 @@ def _startup_blocking_work() -> None:
             for sql_name, sql_label in [
                 ("018_pg_indexes.sql", "indexuri performanta"),
                 ("019_pg_medlife_pdr_aliases.sql", "aliasuri MedLife PDR"),
+                ("020_pg_urina_params.sql", "parametri sumar urinar"),
+                ("021_pg_teo_health_aliases.sql", "aliasuri TEO HEALTH Brasov"),
+                ("022_pg_teo_health_aliases2.sql", "aliasuri TEO HEALTH lipide+electroforeza+RAC"),
+                ("023_pg_sediment_urina.sql", "parametri sediment urinar TEO HEALTH"),
+                ("024_pg_teo_health_sediment2.sql", "cristale sediment + acid ascorbic TEO HEALTH"),
+                ("025_pg_necunoscuta_laborator.sql", "laborator_id pe analiza_necunoscuta"),
             ]:
                 sql_file = Path(__file__).resolve().parent.parent / "sql" / sql_name
                 if url and sql_file.exists():
@@ -438,6 +444,12 @@ def _startup_blocking_work() -> None:
                     conn_cat.execute("ALTER TABLE analiza_necunoscuta ADD COLUMN categorie TEXT")
                     conn_cat.commit()
                     print("[STARTUP] OK SQLite: coloana categorie pe analiza_necunoscuta")
+                cur2 = conn_cat.execute("PRAGMA table_info(analiza_necunoscuta)")
+                col2 = [row[1] for row in cur2.fetchall()]
+                if "laborator_id" not in col2:
+                    conn_cat.execute("ALTER TABLE analiza_necunoscuta ADD COLUMN laborator_id INTEGER")
+                    conn_cat.commit()
+                    print("[STARTUP] OK SQLite: coloana laborator_id pe analiza_necunoscuta")
             except Exception as ex:
                 if "duplicate" not in str(ex).lower():
                     print(f"[STARTUP] SQLite categorie necunoscute: {ex}")
@@ -551,7 +563,8 @@ async def catch_all_errors(request, call_next):
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
-_PARSER_VERSION = "medlife-tsv-bbox-20260427b-ph-lt-density"
+# După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
+_PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-urina-fragment"
 
 @app.get("/health")
 async def health():
@@ -592,6 +605,8 @@ def _process_upload_sync_job(
     content: bytes,
     content_type: str,
     debug: bool = False,
+    laborator_id_override: Optional[int] = None,
+    laborator_name_override: Optional[str] = None,
 ) -> None:
     """Procesare completa PDF in thread sincron: OCR + parse + DB. Nu blocheaza event loop-ul."""
     _set_upload_async_job(
@@ -620,12 +635,19 @@ def _process_upload_sync_job(
         text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path, dpi_first)
 
         if debug:
+            from backend.lab_detect import resolve_laborator_id_for_text
             from backend.parser import _linie_este_exclusa
             tdbg = text or ""
             parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
             lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
-            normalize_rezultate(parsed_dbg.rezultate)
+            _lab_id_dbg, _ = resolve_laborator_id_for_text(
+                tdbg,
+                filename,
+                laborator_id_override=laborator_id_override,
+                laborator_name_override=laborator_name_override,
+            )
+            normalize_rezultate(parsed_dbg.rezultate, laborator_id=_lab_id_dbg)
             triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
             analize_list = [
                 {
@@ -678,7 +700,15 @@ def _process_upload_sync_job(
                 except Exception:
                     pass
 
-            normalize_rezultate(parsed.rezultate)
+            from backend.lab_detect import resolve_laborator_id_for_text
+
+            lab_id, lab_nume = resolve_laborator_id_for_text(
+                text or "",
+                filename,
+                laborator_id_override=laborator_id_override,
+                laborator_name_override=laborator_name_override,
+            )
+            normalize_rezultate(parsed.rezultate, laborator_id=lab_id)
 
             # Calitate OCR
             ocr_calitate_slaba_salvata = False
@@ -729,13 +759,18 @@ def _process_upload_sync_job(
             buletin = insert_buletin(
                 pacient_id=pacient["id"],
                 data_buletin=data_buletin,
-                laborator=None,
+                laborator=lab_nume,
                 fisier_original=filename,
             )
             if not buletin or buletin.get("id") is None:
                 raise RuntimeError("Eroare la salvarea buletinului.")
 
+            inserted_std_ids: set = set()
+            nr_inserted = 0
             for idx, r in enumerate(parsed.rezultate):
+                # Deduplicare per buletin: skip daca acelasi analiza_standard_id deja inserat
+                if r.analiza_standard_id is not None and r.analiza_standard_id in inserted_std_ids:
+                    continue
                 insert_rezultat(
                     buletin_id=buletin["id"],
                     analiza_standard_id=r.analiza_standard_id,
@@ -756,6 +791,9 @@ def _process_upload_sync_job(
                         getattr(r, "ocr_confidence", None),
                     ),
                 )
+                if r.analiza_standard_id is not None:
+                    inserted_std_ids.add(r.analiza_standard_id)
+                nr_inserted += 1
 
             status_code = 200
             payload = {
@@ -764,12 +802,12 @@ def _process_upload_sync_job(
                 "extractor": extractor,
                 "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
                 "buletin_id": buletin["id"],
-                "numar_analize": len(parsed.rezultate),
+                "numar_analize": nr_inserted,
                 "warnings": upload_warnings,
                 "triere_ai": triage,
                 "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
             }
-            print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={len(parsed.rezultate)} tip={tip}")
+            print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={nr_inserted} tip={tip}")
     except Exception as ex:
         status_code = 500
         payload = {"detail": str(ex)[:800]}
@@ -796,6 +834,14 @@ def _process_upload_sync_job(
 async def upload_pdf_async(
     file: UploadFile = File(...),
     debug: bool = Query(False, description="Verificare fara salvare in DB (diagnostic)"),
+    laborator_id: Optional[int] = Query(
+        None,
+        description="ID laborator din baza (opțional); îmbunătățește maparea dacă există catalog.",
+    ),
+    laborator: Optional[str] = Query(
+        None,
+        description="Nume laborator (override manual, opțional).",
+    ),
     current_user: dict = Depends(get_current_user),
 ):
     if not file or not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -836,6 +882,8 @@ async def upload_pdf_async(
         content=content,
         content_type=file.content_type or "application/pdf",
         debug=bool(debug and _is_admin(current_user)),
+        laborator_id_override=laborator_id,
+        laborator_name_override=((laborator or "").strip() or None),
     )
     return {
         "job_id": job_id,
@@ -892,6 +940,14 @@ async def upload_pdf(
     file: UploadFile = File(...),
     debug: bool = Query(False, description="Returneaza info diagnostic (text extras, analize parse)"),
     traceback_debug: bool = Query(False, alias="traceback", description="Incluzand traceback complet in eroare"),
+    laborator_id: Optional[int] = Query(
+        None,
+        description="ID laborator din baza (opțional); îmbunătățește maparea dacă există catalog.",
+    ),
+    laborator: Optional[str] = Query(
+        None,
+        description="Nume laborator (override manual, opțional).",
+    ),
     current_user: dict = Depends(get_current_user),
 ):
     """Primeste PDF, extrage text (sau OCR), parseaza CNP + nume + analize, salveaza in DB."""
@@ -936,12 +992,20 @@ async def upload_pdf(
         )
         if debug:
             # Verificare fara salvare: CNP optional ca sa vezi analize chiar fara CNP in PDF
+            from backend.lab_detect import resolve_laborator_id_for_text
             from backend.parser import _linie_este_exclusa
             tdbg = text or ""
             parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
             lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
-            normalize_rezultate(parsed_dbg.rezultate)
+            _lab_ov = (laborator or "").strip() or None
+            _lid_dbg, _ = resolve_laborator_id_for_text(
+                tdbg,
+                file.filename,
+                laborator_id_override=laborator_id,
+                laborator_name_override=_lab_ov,
+            )
+            normalize_rezultate(parsed_dbg.rezultate, laborator_id=_lid_dbg)
             triage_dbg = _calc_triage_ai(parsed_dbg, tip, ocr_metrics)
             analize_list = [
                 {
@@ -1040,7 +1104,16 @@ async def upload_pdf(
                 "Nu s-au extras analize din text; buletinul a fost salvat fără linii de rezultate. "
                 "Poți folosi Verificare sau trimitere spre analiză (AI) când consideri."
             )
-        normalize_rezultate(parsed.rezultate)
+        from backend.lab_detect import resolve_laborator_id_for_text
+
+        _lab_ov = (laborator or "").strip() or None
+        _lab_id_up, _lab_nume_up = resolve_laborator_id_for_text(
+            text or "",
+            file.filename,
+            laborator_id_override=laborator_id,
+            laborator_name_override=_lab_ov,
+        )
+        normalize_rezultate(parsed.rezultate, laborator_id=_lab_id_up)
         if ocr_calitate_slaba_salvata:
             upload_warnings.append(
                 "Calitate OCR slabă sau date incomplete: buletinul a fost salvat. "
@@ -1102,11 +1175,11 @@ async def upload_pdf(
         data_buletin = _extrage_data_buletin(text)
         try:
             buletin = insert_buletin(
-            pacient_id=pacient["id"],
-            data_buletin=data_buletin,
-            laborator=None,
-            fisier_original=file.filename,
-        )
+                pacient_id=pacient["id"],
+                data_buletin=data_buletin,
+                laborator=_lab_nume_up,
+                fisier_original=file.filename,
+            )
         except Exception as ex:
             raise RuntimeError(f"Eroare la insert_buletin: {ex}") from ex
         if not buletin or buletin.get("id") is None:
@@ -1663,6 +1736,13 @@ async def index():
         <div id="file-name"></div>
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple>
+      <div style="margin-top:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+        <label for="sel-laborator-upload" style="font-size:0.85rem;color:var(--gri);white-space:nowrap">Laborator (prioritate recunoaștere):</label>
+        <select id="sel-laborator-upload" style="min-width:220px;max-width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem"
+          title="Dacă alegi un laborator, catalogul și aliasurile lui au prioritate la mapare. Lasă „Auto” pentru detectare din PDF.">
+          <option value="">Auto (din PDF / implicit)</option>
+        </select>
+      </div>
       <div style="margin-top:16px;">
         <div style="display:flex; flex-direction:column; gap:10px;">
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -2008,6 +2088,26 @@ function handle401(r) {
   return false;
 }
 
+/** Map id -> nume pentru afișare la analize necunoscute; populat din /laboratoare. */
+let _laboratoriNumeById = {};
+
+async function incarcaLaboratoriUpload() {
+  const sel = document.getElementById('sel-laborator-upload');
+  if (!sel) return;
+  const past = sel.value;
+  try {
+    const r = await fetch('/laboratoare', { headers: getAuthHeaders() });
+    if (handle401(r)) return;
+    if (!r.ok) return;
+    const arr = await r.json();
+    _laboratoriNumeById = {};
+    (arr || []).forEach((l) => { if (l && l.id != null) _laboratoriNumeById[l.id] = l.nume || ''; });
+    sel.innerHTML = '<option value="">Auto (din PDF / implicit)</option>' +
+      (arr || []).map((l) => '<option value="' + l.id + '">' + escHtml(l.nume || '') + '</option>').join('');
+    if (past && Array.from(sel.options).some((o) => o.value === past)) sel.value = past;
+  } catch {}
+}
+
 async function checkAuth() {
   const token = getToken();
   if (!token) { document.getElementById('login-screen').style.display='block'; return; }
@@ -2020,6 +2120,7 @@ async function checkAuth() {
       document.getElementById('user-display').textContent = 'Logat: ' + (u.username || '');
       const btnBackup = document.getElementById('btn-header-backup');
       if (btnBackup) btnBackup.style.display = (u.username || '').toLowerCase() === 'admin' ? 'inline-block' : 'none';
+      incarcaLaboratoriUpload();
       incarcaRecenti();
       (async () => {
         try {
@@ -2682,7 +2783,12 @@ async function trimite(debugMode) {
     try {
       // Procesare asincronă pe /upload-async pentru ambele moduri (evita timeout Railway pe OCR lung).
       // Debug/Verificare trimit debug=1 -> job fara salvare in DB, returneaza diagnostic.
-      const asyncUrl = debugMode ? '/upload-async?debug=1' : '/upload-async';
+      const labSel = document.getElementById('sel-laborator-upload');
+      const labId = labSel && labSel.value ? String(labSel.value).trim() : '';
+      const qs = [];
+      if (debugMode) qs.push('debug=1');
+      if (labId) qs.push('laborator_id=' + encodeURIComponent(labId));
+      const asyncUrl = '/upload-async' + (qs.length ? ('?' + qs.join('&')) : '');
       const rq = await _proceseazaUploadAsync(fd, (st) => {
           if (st === 'processing') {
             prog.textContent = f.name + (debugMode ? ' – se verifică pe server (OCR)…' : ' – se procesează pe server (OCR)…');
@@ -2952,7 +3058,7 @@ async function veziPacient(cnp) {
               style="background:none;border:none;cursor:pointer;color:var(--albastru);font-size:0.75rem;padding:2px 6px;margin-left:6px">✏️</button>
           </h3>
           <p>CNP: <strong style="font-family:monospace">${escHtml(data.pacient.cnp)}</strong></p>
-          <p>Buletine: <strong>${data.date_buletine.length}</strong> &nbsp;|&nbsp; Analize: <strong>${typeof data.rezultate_in_baza === 'number' ? data.rezultate_in_baza : data.analize.length}</strong>${typeof data.rezultate_in_baza === 'number' && data.rezultate_in_baza !== data.analize.length ? ' <span style="font-size:0.78rem;color:var(--gri)" title="Rânduri distincte în tabel (grupare)">(' + data.analize.length + ' rânduri)</span>' : ''}</p>
+          <p>Buletine: <strong>${data.date_buletine.length}</strong> &nbsp;|&nbsp; Analize: <strong>${data.analize.length}</strong></p>
         </div>
         <div style="margin-left:auto">
           <button class="btn" style="background:var(--rosu);color:white;padding:8px 16px;font-size:0.82rem"
@@ -3835,9 +3941,19 @@ async function incarcaNecunoscute() {
   const el = document.getElementById('lista-necunoscute');
   el.innerHTML = '<p style="color:var(--gri)">Se încarcă…</p>';
   try {
-    const rNec = await fetch('/analize-necunoscute', { headers: getAuthHeaders() });
-    if (handle401(rNec)) return;
+    const [rNec, rLab] = await Promise.all([
+      fetch('/analize-necunoscute', { headers: getAuthHeaders() }),
+      fetch('/laboratoare', { headers: getAuthHeaders() }),
+    ]);
+    if (handle401(rNec) || handle401(rLab)) return;
     const nec = rNec.ok ? await rNec.json() : [];
+    if (rLab.ok) {
+      try {
+        const labs = await rLab.json();
+        _laboratoriNumeById = {};
+        (labs || []).forEach((l) => { if (l && l.id != null) _laboratoriNumeById[l.id] = l.nume || ''; });
+      } catch {}
+    }
     const std = await incarcaStandardeCache();
 
     // Actualizeaza badge
@@ -3871,6 +3987,7 @@ async function incarcaNecunoscute() {
           <input type="checkbox" id="nec-select-all" aria-label="Bifează toate" onchange="toggleSelectAllNec(this)">
         </th>
         <th>Secțiune PDF</th>
+        <th>Laborator</th>
         <th>Denumire din PDF</th>
         <th>Apariții</th>
         <th>Asociază cu analiza standard</th>
@@ -3883,11 +4000,16 @@ async function incarcaNecunoscute() {
           ? `<span class="badge badge-norm" title="Categorie extrasă la parsare din buletin" style="max-width:160px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(catPdf)}</span>`
           : '<span style="color:var(--gri);font-size:0.8rem" title="Reîncărcați după upload-uri noi sau lipsă secțiune în PDF">—</span>';
         const opts = buildStdSelectOptionsHtml(std, n.categorie);
+        const lid = n.laborator_id;
+        const labCell = (lid != null && lid !== '')
+          ? `<span class="badge badge-norm" title="Laborator folosit la upload (prioritate recunoaștere)">${escHtml(_laboratoriNumeById[lid] || ('ID ' + lid))}</span>`
+          : '<span style="color:var(--gri);font-size:0.8rem" title="Nespecificat sau vechi înainte de coloana laborator">—</span>';
         return `<tr id="nec-row-${n.id}">
         <td style="vertical-align:middle;text-align:center">
           <input type="checkbox" class="nec-cb" data-id="${n.id}" onchange="updateNecBulkCount()" aria-label="Selectează rând">
         </td>
         <td style="vertical-align:top">${catBadge}</td>
+        <td style="vertical-align:top;max-width:140px">${labCell}</td>
         <td>
           <strong>${escHtml(n.denumire_raw)}</strong>
           <div style="font-size:0.75rem;color:var(--gri);margin-top:2px">Prima apariție: ${(n.created_at||'').substring(0,10)}</div>
@@ -3943,7 +4065,7 @@ async function aprobaAlias(id) {
     if (r.ok) {
       const row = document.getElementById('nec-row-' + id);
       if (row) {
-        row.innerHTML = `<td colspan="6">
+        row.innerHTML = `<td colspan="7">
           <span style="color:var(--verde)">✅ Asociere reușită. Rezultatele existente au fost actualizate; la următorul upload recunoașterea va fi automată.</span>
         </td>`;
       }
