@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from html import escape as html_escape
 import tempfile
 import threading
 import traceback
@@ -565,6 +566,29 @@ async def catch_all_errors(request, call_next):
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
 _PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-urina-fragment"
+
+# BUILD_VERSION e scris la build Docker (vezi Dockerfile); același text poate apărea în header dacă e diferit de parser.
+_BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
+
+
+def _read_docker_build_stamp() -> Optional[str]:
+    try:
+        if _BUILD_STAMP_PATH.is_file():
+            s = _BUILD_STAMP_PATH.read_text(encoding="utf-8").strip()
+            return s or None
+    except OSError:
+        pass
+    return None
+
+
+def _app_header_version_string() -> str:
+    """Versiune afișată în panou: același marcator ca /health + stamp imagine (dacă e informativ)."""
+    base = _PARSER_VERSION
+    stamp = _read_docker_build_stamp()
+    if stamp and stamp not in base:
+        return f"{base} · build {stamp}"
+    return base
+
 
 @app.get("/health")
 async def health():
@@ -1705,7 +1729,7 @@ async def index():
 <div class="header" style="justify-content:space-between">
   <div>
     <h1>🏥 Analize Medicale</h1>
-    <div class="sub">Panou medic – v26.03.2026 | <span id="user-display"></span></div>
+    <div class="sub" title="Același marcator ca /health (parser_version). Se actualizează la fiecare deploy.">Panou medic – __APP_VERSION__ | <span id="user-display"></span></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <button class="btn-logout" id="btn-header-backup" onclick="exportBackup(this)" style="display:none" title="Exportă backup înainte de redeploy (Railway)">📥 Export backup</button>
@@ -4171,6 +4195,7 @@ function afiseazaMesaj(containerId, tip, html) {
 </div><!-- /app-container -->
 </body>
 </html>"""
+    html = html.replace("__APP_VERSION__", html_escape(_app_header_version_string(), quote=False))
     return html
 
 
