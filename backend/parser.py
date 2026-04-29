@@ -416,6 +416,8 @@ def este_denumire_gunoi(denumire: str) -> bool:
 _SECTIUNI = [
     (re.compile(r"HEMATOLOGIE|HEMOLEUCOGRAMA|FORMULA\s+LEUCOCITAR|HEMOGRAM", re.IGNORECASE),
      "Hemoleucograma"),
+    # Înainte de pattern-ul generic URIN[AĂ] — altfel «Proba: Urină» din titlul bacteriologiei devine „Examen urină”.
+    (re.compile(r"^\s*BACTERIOLOGIE\b|^\s*Bacteriologie\b", re.IGNORECASE), "Microbiologie"),
     (re.compile(
         r"ANALIZA\s+DE\s+URIN|BIOCHIMIE\s+URIN|EXAMEN\s+COMPLET\s+DE\s+URIN|SUMAR\s+URIN|SUMAR\s+SI\s+SEDIMENT|"
         r"SUMAR\s*\(\s*URIN|SEDIMENT\s+URINAR|SEDIMENT\s+URIN|EXAMEN\s+MICROSCOPIC|^SEDIMENT\s*$|"
@@ -515,16 +517,26 @@ _RE_METADATE_VARSTA_LINIE = re.compile(
 def _detecteaza_sectiune(linie: str) -> Optional[str]:
     """Returneaza numele sectiunii daca linia este un antet de sectiune, altfel None."""
     linie_orig = linie.strip()
-    if not linie_orig or len(linie_orig) > 100:
+    if not linie_orig:
         return None
+    # Antet + valoare pe același rând (ex. «V. Markeri … : 0,482 ng/ml») — sub ~100 caractere dar cu «: valoare» tot trebuie trunchiat.
+    linie_work = linie_orig
+    if len(linie_orig) > 80 and re.search(r":\s*[\d<>+±≤≥]", linie_orig):
+        parts = re.split(r":\s*(?=[\d<>+±≤≥])", linie_orig, maxsplit=1)
+        probe = parts[0].strip() if parts else linie_orig
+        if len(probe) >= 12:
+            linie_work = probe
     # Numerotare tip 1. / 1.1 / 1.2.3 pe același rând cu titlul (TEO HEALTH, Regina Maria, etc.).
     # Fără asta, „1.1 Sumar (urina)” conține „1,1” în testul numeric de mai jos și nu mai e recunoscută ca secțiune.
-    linie = re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", linie_orig).strip()
+    linie = re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", linie_work).strip()
     linie = re.sub(r"^\*+\s*", "", linie).strip()
     if not linie:
-        linie = linie_orig
-    # Nu trebuie sa contina valori numerice (nu e un rezultat)
-    if re.search(r"\d+[.,]\d+|\s\d+\s", linie):
+        linie = linie_work
+    # Nu trebuie sa contina valori numerice (nu e un rezultat) — exceptie: antete microbiologie cu UFC în text.
+    if re.search(r"\d+[.,]\d+|\s\d+\s", linie) and not re.search(
+        r"(?i)bacteriologie|microbiologie|urocultur|antibiogram",
+        (linie[:50] if linie else ""),
+    ):
         return None
     # Linii care sunt clar denumiri de analiză, nu antet de bloc (ex: buletine Capatan / Synevo)
     if re.search(r"cantitativ[aă]?\b|cantitativ\b", linie, re.IGNORECASE):
@@ -1497,6 +1509,20 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
     if not linie:
         return None
 
+    # Urocultură cu rezultat descriptiv (MedLife/TEO) — nu extrage 100.000 UFC ca valoare principală.
+    if re.search(r"(?i)urocultur[aă]\s*:", linie):
+        tail = linie[re.search(r"(?i)urocultur[aă]\s*:", linie).end() :].strip()
+        if re.search(r"(?i)pozitiv|negativ|absent|prezent", tail) and not re.match(
+            r"^\s*[\d<>≤≥]", tail
+        ):
+            return RezultatParsat(
+                denumire_raw="Urocultură",
+                valoare=None,
+                valoare_text=tail[:4000],
+                unitate=None,
+                rezultat_tip="microbiology",
+            )
+
     # După UM, referință «< N» la sfârșit (ex. microalbumină «mg/L < 10») — nu e valoare separată
     if re.search(r"(?i)mg/dL|mg/L|g/dL|g/L|mmol/L", linie):
         linie = re.sub(r"\s+<\s*\d[\d\.,]*\s*$", "", linie).strip()
@@ -2291,6 +2317,102 @@ _TRIPLE_CODE_SPLIT = re.compile(
 )
 _RAC_INLINE_SPLIT = re.compile(r"(?<=\S)\s+(?=\d\s*\*\s*RAC\b)", re.IGNORECASE)
 
+# MedLife / TEO: OCR pune tot buletinul pe un singur rând (fără \n). Fără fragmentare,
+# _este_linie_parametru refuză liniile >220 caractere → 0 analize.
+_MEGA_FLAT_ROMAN = re.compile(
+    r"(?<=[\.\)\w\u0103\u00e2\u00ee\u0219\u021b\u0102\u00c2\u00ce\u0218\u021a0-9%])\s+"
+    r"(?=(?:II|III|IV|V|VI)\.\s)",
+    re.IGNORECASE,
+)
+# «…Cefuroxime.II. Biochimie» — fără spațiu înainte de numerotare romană.
+_MEGA_FLAT_ROMAN_DOT = re.compile(
+    r"(?<=[a-zăâîșț0-9\u0103\u00e2\u00ee\u0219\u021b²³])\.(?=(?:II|III|IV|V|VI)\.\s)",
+    re.IGNORECASE,
+)
+# «…(Risc … > 60).HDL» sau «…1,3).eGFR» — permite și eGFR la început după închidere.
+_MEGA_FLAT_PAREN_DOT_PARAM = re.compile(
+    r"\)(?:\.|\s)+\s*(?=(?:eGFR\b|[A-ZĂÂÎȘȚ][A-Za-zăâîșț0-9 ,()'/.%\-]{0,62}:\s*[\d<>+±≤≥]))",
+    re.IGNORECASE,
+)
+# «…7,5)Densitate» sau «…66)Alfa1-globuline» — OCR fără punct după paranteză.
+_MEGA_FLAT_PAREN_CAP = re.compile(
+    r"\)(?=[A-ZĂÂÎȘȚ][A-Za-zăâîșț0-9\-]{3,}(?:\s|:))",
+)
+# «…13).V. Markeri» — punct între ) și numerotare romanică.
+_MEGA_FLAT_PAREN_DOT_ROMAN = re.compile(r"(?<=\))\.\s*(?=(?:II|III|IV|V|VI)\.\s)", re.IGNORECASE)
+# «…(Sânge/Ser) Trigliceride serice: 66» — paranteză + spațiu + parametru cu valoare.
+_MEGA_FLAT_PAREN_SPACE_PARAM = re.compile(
+    r"(?<=\))\s+(?=[A-ZĂÂÎȘȚ][a-zăâîșț0-9 ,()'/.%\-]{0,62}:\s*[\d<>+±≤≥])",
+    re.IGNORECASE,
+)
+# «…completă:RBC (Eritrocite):» — două puncte înainte de abreviere caps + paranteză.
+_MEGA_FLAT_COLON_ABBR_PAREN = re.compile(
+    r":(?=[A-ZĂÂÎȘȚ]{2,10}\s*\()",
+    re.IGNORECASE,
+)
+# «…serice:Albumină: 56» — lipire între subtitlu electroforeză și fracțiuni.
+_MEGA_FLAT_COLON_CHAIN = re.compile(
+    r"(?<=[a-zăâîșț0-9%²³\)]):\s*(?=[A-ZĂÂÎȘȚ][a-zăâîșț0-9]{1,24}\s*:)",
+    re.IGNORECASE,
+)
+# «urină.Alte bacterii» sau «m².Potasiu» — punct după literă / cifră / ²³, urmat de majusculă (nu zecimal 100.000).
+_MEGA_FLAT_LOWER_DOT_CAP = re.compile(
+    r"(?<=[a-zăâîșț\u0103\u00e2\u00ee\u0219\u021b0-9%²³])\.(?=[A-ZĂÂÎȘȚ])",
+)
+# «…Peste limităLeucocite:» — lipire frecventă MedLife (fără punct între cuvinte).
+_MEGA_FLAT_LIMITA_LEUCO = re.compile(r"(?i)(?<=limită)(?=Leucocite\s*:)", re.IGNORECASE)
+# «…limităProteine» — același tip de lipire (sumar urină).
+_MEGA_FLAT_LIMITA_PROTEINE = re.compile(r"(?i)(?<=limită)(?=Proteine)", re.IGNORECASE)
+
+
+def _fragmenteaza_linii_mega_medlife_flat(lines: list[str]) -> list[str]:
+    """
+    Desparte buletine MedLife/TEO lipite pe un singur rând (fără coduri 1.1.1).
+    Idempotentă pentru rânduri deja scurte.
+    """
+    lim = 220
+
+    def _split_one_blob(s: str) -> list[str]:
+        t = s.strip()
+        if len(t) <= lim:
+            return [t]
+        prev = None
+        for _ in range(14):
+            if len(t) <= lim:
+                break
+            prev = t
+            t = _MEGA_FLAT_ROMAN.sub("\n", t)
+            t = _MEGA_FLAT_ROMAN_DOT.sub(".\n", t)
+            t = _MEGA_FLAT_PAREN_SPACE_PARAM.sub("\n", t)
+            t = _MEGA_FLAT_PAREN_DOT_PARAM.sub(")\n", t)
+            t = _MEGA_FLAT_PAREN_CAP.sub(")\n", t)
+            t = _MEGA_FLAT_PAREN_DOT_ROMAN.sub(")\n", t)
+            t = _MEGA_FLAT_COLON_ABBR_PAREN.sub(":\n", t)
+            t = _MEGA_FLAT_COLON_CHAIN.sub(":\n", t)
+            t = _MEGA_FLAT_LIMITA_LEUCO.sub("\n", t)
+            t = _MEGA_FLAT_LIMITA_PROTEINE.sub("\n", t)
+            t = _MEGA_FLAT_LOWER_DOT_CAP.sub(".\n", t)
+            if t == prev:
+                break
+        parts = [p.strip() for p in t.split("\n") if p.strip()]
+        if len(parts) < 2:
+            return [s.strip()]
+        out: list[str] = []
+        for p in parts:
+            if len(p) > lim:
+                out.extend(_split_one_blob(p))
+            else:
+                out.append(p)
+        return out
+
+    out_lines: list[str] = []
+    for ln in lines:
+        s = (ln or "").strip()
+        if not s:
+            continue
+        out_lines.extend(_split_one_blob(s))
+    return out_lines
+
 
 def _fragmenteaza_linii_mega_teo(lines: list[str]) -> list[str]:
     """
@@ -2364,9 +2486,11 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
         for l in text.replace("\r", "\n").split("\n")
     ]
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica
-    lines = _fragmenteaza_linii_mega_teo(
-        _combina_linii_bioclinica(
-            _combina_linii_ocr_fragmente_valoare(_combina_linii_medlife(lines_raw))
+    lines = _fragmenteaza_linii_mega_medlife_flat(
+        _fragmenteaza_linii_mega_teo(
+            _combina_linii_bioclinica(
+                _combina_linii_ocr_fragmente_valoare(_combina_linii_medlife(lines_raw))
+            )
         )
     )
     results: list[RezultatParsat] = []

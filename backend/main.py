@@ -565,7 +565,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-urina-fragment"
+_PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-megaflat-uro"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
