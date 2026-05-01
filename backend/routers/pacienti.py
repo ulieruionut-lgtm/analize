@@ -24,6 +24,8 @@ _ORDINE_CATEGORIE = {
     "Lipidograma": 2,
     "Coagulare": 3,
     "Examen urina": 4,
+    "Examen urina sediment": 4,
+    "Examen urina biochimie": 4,
     "Electroforeza": 5,
     "Imunologie si Serologie": 6,
     "Hormoni tiroidieni": 7,
@@ -159,6 +161,7 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             "valori": valori,
             "flags": flags,
             "categorie": info.get("categorie") or "",
+            "ordine_pdf": info.get("ordine_min", 99999),
         })
 
     def _is_missing(v) -> bool:
@@ -211,7 +214,8 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
             merged_result.append(row)
     analize_result = merged_result
 
-    # Collapse final: un singur rand per denumire
+    # Colaps: același text de afișare poate veni de la contexte diferite (ex. Eritrocite sumar vs
+    # sediment). Fără categorie + ordine, «un singur rând per denumire» pierdea ~3 analize (17 vs 20).
     def _pick_best_value(values: list):
         valid = [v for v in values if not _is_missing(v)]
         if not valid:
@@ -238,9 +242,16 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
         valid = [_norm_cmp(f) for f in flags if not _is_missing(f)]
         return valid[0] if valid else ""
 
-    collapsed = {}
+    collapsed: dict[tuple, dict] = {}
     for row in analize_result:
-        key = (row.get("denumire_standard") or "").strip().lower()
+        den = (row.get("denumire_standard") or "").strip().lower()
+        cat = (row.get("categorie") or "").strip().lower()
+        unt = (row.get("unitate") or "").strip().lower()
+        try:
+            ord_pdf = int(row.get("ordine_pdf") if row.get("ordine_pdf") is not None else 99999)
+        except (TypeError, ValueError):
+            ord_pdf = 99999
+        key = (den, cat, unt, ord_pdf)
         if key not in collapsed:
             collapsed[key] = {
                 "denumire_standard": row.get("denumire_standard"),
@@ -248,6 +259,7 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
                 "categorie": row.get("categorie"),
                 "valori": list(row.get("valori") or []),
                 "flags": list(row.get("flags") or []),
+                "ordine_pdf": ord_pdf,
             }
             continue
         target = collapsed[key]
@@ -262,7 +274,16 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
         target["valori"] = t_vals
         target["flags"] = t_flags
 
-    analize_result = list(collapsed.values())
+    analize_result = sorted(
+        collapsed.values(),
+        key=lambda r: (
+            _ORDINE_CATEGORIE.get((r.get("categorie") or "").strip(), 999),
+            int(r.get("ordine_pdf") or 99999) if isinstance(r.get("ordine_pdf"), (int, float)) else 99999,
+            (r.get("denumire_standard") or "").lower(),
+        ),
+    )
+    for r in analize_result:
+        r.pop("ordine_pdf", None)
     rezultate_in_baza = sum(len(b.get("rezultate") or []) for b in buletine_sorted)
 
     return {

@@ -32,15 +32,24 @@ class Settings(BaseSettings):
     # True = alege clean vs hard dupa contrastul imaginii (mai precis decat mereu hard)
     ocr_preprocess_auto: bool = True
     ocr_layout_auto: bool = True
-    ocr_column_segmentation: bool = False
+    # True = în reconstrucția TSV inserează tab-uri la goluri mari între cuvinte (tabele multi-coloană)
+    ocr_column_segmentation: bool = True
 
     tessdata_prefix: str | None = None
+    # Cale explicită către tesseract.exe (Windows: dacă nu e în PATH). Alternativă: variabila de mediu TESSERACT_CMD.
+    tesseract_cmd: str | None = None
     pdf_text_min_chars: int = 200
     upload_max_mb: int = 20
     # Timeout de bază (secunde) pentru un singur pas OCR la upload; se adaugă supliment după dimensiunea fișierului.
     upload_ocr_timeout_seconds: int = 180
     upload_enable_detailed_errors: bool = False
     jwt_secret_key: str = ""
+
+    # AI Copilot — audit LLM la upload (temporar, implicit oprit). Oprire: false sau fără LLM_API_KEY/OPENAI_API_KEY.
+    llm_buletin_audit_enabled: bool = False
+    llm_buletin_audit_timeout_seconds: float = 90.0
+    llm_base_url: str | None = None
+    llm_model: str | None = None
 
     def get_jwt_secret(self) -> str:
         """Returneaza JWT secret key. Daca nu e setat, genereaza unul random (valabil doar in procesul curent)."""

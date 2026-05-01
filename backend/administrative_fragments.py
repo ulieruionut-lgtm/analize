@@ -93,6 +93,26 @@ FRAGMENTE_ADMINISTRATIVE_NORMALIZATE: FrozenSet[str] = frozenset(
         "testele cu marcajul",
         "aceste rezultate pot fi",
         "cod document pgl",
+        # SCJUB / Spitalul Clinic Judetean — text administrativ
+        "tinta terapeutica",
+        "cobaspro",
+        "cobas pro",
+        "consiliul judetean",
+        "cont bancar",
+        "rezultatele se refera strict",
+        "sreniso",
+        "trezoria brasov",
+        "cod fiscal",
+        # Observatii sediment urinar (nu analize numerice)
+        "examenul sedimentului urinar",
+        "leucocite rare",
+        "epitelii rare",
+        "hematii absente",
+        "hematii rare",
+        # Adrese sediu / recoltare (OCR tabel: «… BRASOV, Str. CALEA BUCURESTI, nr/»)
+        "str calea",
+        "str calea bucuresti",
+        "brasov str",
     }
 )
 
@@ -116,4 +136,7 @@ def contin_fragment_administrativ(text: str) -> bool:
     if not text or not str(text).strip():
         return False
     n = _normalizeaza_pentru_fragmente(text)
+    # Capatan / sediment: «Observatii Mucus prezent» — rezultat de analiză, nu antet administrativ
+    if "observatii" in n and "mucus" in n and len(n) < 80:
+        return False
     return any(frag in n for frag in FRAGMENTE_ADMINISTRATIVE_NORMALIZATE)

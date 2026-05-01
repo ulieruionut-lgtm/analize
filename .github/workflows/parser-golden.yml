@@ -11,6 +11,7 @@ on:
       - "scripts/ocr_golden_set*.json"
       - "tests/golden_set/**"
       - "samples/golden_pdfs/**"
+      - "docs/AUDIT_RECUNOASTERE_ANALIZE_SCANATE.md"
   pull_request:
     paths:
       - "backend/**"
@@ -18,6 +19,7 @@ on:
       - "scripts/ocr_golden_set*.json"
       - "tests/golden_set/**"
       - "samples/golden_pdfs/**"
+      - "docs/AUDIT_RECUNOASTERE_ANALIZE_SCANATE.md"
 
 jobs:
   verify:
@@ -41,6 +43,11 @@ jobs:
 
       - name: Sintaxă script golden
         run: python -m py_compile scripts/verifica_parser_pdf.py
+
+      - name: Pytest fixture-uri text parser
+        run: |
+          export PYTHONPATH=.
+          python -m pytest backend/tests/test_parser_text_fixtures.py backend/tests/test_gaman_luca_bulletin.py -v --tb=short
 
       - name: Golden set (dacă există PDF-uri)
         run: |

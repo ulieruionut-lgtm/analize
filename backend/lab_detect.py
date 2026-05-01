@@ -53,6 +53,37 @@ def _detect_from_filename(filename: Optional[str]) -> Optional[str]:
     return None
 
 
+def enumerate_lab_brand_mentions(text: str) -> list[dict]:
+    """
+    Caută mărci/rețele de laborator în **tot** textul (nu doar antetul).
+
+    Utile când un PDF conține mai multe buletine sau anteturi repetate: vezi
+    apariții multiple sau două rețele diferite — `resolve_laborator_id_for_text`
+    folosește doar începutul documentului pentru potrivire automată.
+    """
+    if not text or len(text.strip()) < 8:
+        return []
+    by_canon: dict[str, list[int]] = {}
+    for pattern, canonical in _TEXT_ALIASES:
+        try:
+            for m in re.finditer(pattern, text, flags=re.IGNORECASE):
+                by_canon.setdefault(canonical, []).append(m.start())
+        except re.error:
+            continue
+    out: list[dict] = []
+    for canon in sorted(by_canon.keys()):
+        pos = sorted(by_canon[canon])
+        out.append(
+            {
+                "laborator": canon,
+                "aparitii": len(pos),
+                "prima_pozitie_caracter": pos[0],
+                "ultima_pozitie_caracter": pos[-1],
+            }
+        )
+    return out
+
+
 def resolve_laborator_id_for_text(
     text: str,
     filename: Optional[str] = None,

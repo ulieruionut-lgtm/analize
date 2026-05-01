@@ -238,6 +238,32 @@ def text_ocr_suspect(s: str) -> bool:
     return False
 
 
+def _strip_leading_emoji_si_antet_pictograme(s: str) -> str:
+    """
+    Elimină emoji / simboluri decorative de la începutul rândului (ex.: 🩸 1. HEMATOLOGIE).
+    Păstrează cifrele și literele care încep efectiv titlul sau analiza.
+    """
+    t = (s or "").lstrip("\ufeff\u200b\u00a0")
+    i = 0
+    while i < len(t):
+        ch = t[i]
+        o = ord(ch)
+        cat = unicodedata.category(ch)
+        if (
+            cat in ("So", "Sk")
+            or ch in "\u200d\ufe0f"
+            or (0x1F000 <= o <= 0x1FFFF)
+            or (0x2600 <= o <= 0x27BF)
+        ):
+            i += 1
+            continue
+        if ch.isspace() or ch in ".:-*•·":
+            i += 1
+            continue
+        break
+    return t[i:].lstrip()
+
+
 def corecteaza_ocr_linie_buletin(linie: str) -> str:
     """
     Corecții OCR pe linie înainte de parsare.
@@ -245,7 +271,7 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     """
     if not linie or not linie.strip():
         return linie
-    s = linie
+    s = _strip_leading_emoji_si_antet_pictograme(linie)
 
     # --- TEO HEALTH / Sf. Constantin Brasov: artefacte de format ---
     # "*PR Maniu" / "*PR " = marcaj punct de recolta — eliminat de la inceput de linie
@@ -318,6 +344,20 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     # SCJUB OCR: 10A3/uL sau 10A3uL (^ citit ca litera A) → 10^3/uL
     s = re.sub(r"\b10A([3-9])/([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
     s = re.sub(r"\b10A([3-9])([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    # SCJUB OCR: "10^3/uL" citit ca "1043/uL" (^ → cifra 4); "10^6/uL" → "1046/uL"
+    s = re.sub(r"\b104([3-9])/([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    s = re.sub(r"\b104([3-9])([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    # SCJUB OCR: "10^3/uL" citit ca "10.43 uL" sau "10.43uL" (^ → ".", "3/" → "43 ")
+    s = re.sub(r"\b10\.4([3-9])\s+([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    s = re.sub(r"\b10\.4([3-9])([a-zA-Zµμ]+)\b", r"10^\1/\2", s)
+    # SCJUB OCR: "iat" fantoma intre valoare si interval (artefact background PDF scanat)
+    # "eGFR* 62.77 iat >60.00 mL/min/1.73m2" → "eGFR* 62.77 mL/min/1.73m2 >60.00"
+    s = re.sub(
+        r'(\d+[.,]\d+)\s+iat\s+([<>≤≥]+\s*\d+[.,]\d+)\s+(mL/min/[\d.m²2]+)',
+        r'\1 \3 \2', s
+    )
+    # fallback: sterge "iat" izolat dupa orice valoare numerica (nu e o unitate medicala)
+    s = re.sub(r'(\d+[.,]\d+)\s+iat\b', r'\1', s)
     # ng/mL scris ca ng/ml (normalizare minora)
     # pUlimL / pUliml → pUI/mL (TSH interval)
     s = re.sub(r"\bp[Uu]l?i?m[lL]\b", "pUI/mL", s)
@@ -368,6 +408,20 @@ def corecteaza_ocr_linie_buletin(linie: str) -> str:
     s = re.sub(r"\bmgg\b", "mg/g", s, flags=re.IGNORECASE)
     # gd (fara bara) → g/dL  ex: "168gd" → "168 g/dL"
     s = re.sub(r"\bgd\b(?!/)", "g/dL", s, flags=re.IGNORECASE)
+
+    # --- Regina Maria scanat OCR ---
+    # Valori incadrate in chenar → "[40.7 mg/dL]" → "40.7 mg/dL", "[1008]" → "1008"
+    # NU atingem "[min - max]" (intervale de referinta care au liniuta dupa numar)
+    s = re.sub(r"\[(\d+[.,]?\d*)\s*([\w/%]*)\]", r"\1 \2", s)
+    s = re.sub(r"\[(\d+[.,]?\d*)\s+(?![-\u2013\d])", r"\1 ", s)
+    # mg/d → mg/dL (L disparuta la sfarsit de rand)
+    s = re.sub(r"\bmg/d\b", "mg/dL", s)
+    # mi/min → mL/min (eGFR: mL citit ca mi)
+    s = re.sub(r"\bmi/min\b", "mL/min", s, flags=re.IGNORECASE)
+    # 9/dL → g/dL (g citit ca 9, Hemoglobina)
+    s = re.sub(r"\b9/dL\b", "g/dL", s)
+    # UI. → UI/L (slash si L disparute, AST)
+    s = re.sub(r"\bUI\.(?=\s|$)", "UI/L", s)
 
     # --- Simboluri parazite specifice SANTE VIE scanat ---
     # £ inainte de cifra (OCR confunda espace sau semn egal cu £): £168 → 168

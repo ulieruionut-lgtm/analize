@@ -1,4 +1,5 @@
 """FastAPI – Analize medicale PDF. Interfata medic + API REST."""
+import asyncio
 import json
 import os
 import re
@@ -387,6 +388,7 @@ def _startup_blocking_work() -> None:
                 ("023_pg_sediment_urina.sql", "parametri sediment urinar TEO HEALTH"),
                 ("024_pg_teo_health_sediment2.sql", "cristale sediment + acid ascorbic TEO HEALTH"),
                 ("025_pg_necunoscuta_laborator.sql", "laborator_id pe analiza_necunoscuta"),
+                ("026_pg_medlife_uroculture_text.sql", "MedLife: sediment fallback + texte urocultură"),
             ]:
                 sql_file = Path(__file__).resolve().parent.parent / "sql" / sql_name
                 if url and sql_file.exists():
@@ -565,7 +567,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "medlife-tsv-bbox-20260429-teo-megaflat-uro"
+_PARSER_VERSION = "parser-20260501-x10-interval-gaman-lh-sider-ocr-coltab-v1"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -605,7 +607,13 @@ async def health():
             db_host = m.group(1)
     except Exception:
         pass
-    return {"status": "ok", "database_type": db_type, "parser_version": _PARSER_VERSION, "db_host": db_host}
+    return {
+        "status": "ok",
+        "database_type": db_type,
+        "parser_version": _PARSER_VERSION,
+        "db_host": db_host,
+        "build_stamp": _read_docker_build_stamp(),
+    }
 
 
 # --- Endpoint-urile /api/migrate, /api/fix-schema, /login, /users, /api/backup,
@@ -619,6 +627,61 @@ import concurrent.futures as _cf
 # Executor dedicat pentru joburi de upload (max 2 joburi OCR simultan).
 # Rulam totul SINCRON in thread - evitam blocarea event loop-ului cu apeluri DB sincrone.
 _UPLOAD_JOB_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="upload-job")
+
+
+def _maybe_retry_ocr_higher_dpi_for_upload(
+    tmp_path: str,
+    file_mb: float,
+    text: str,
+    tip: str,
+    ocr_err,
+    colored_tokens,
+    extractor: str,
+    ocr_metrics,
+):
+    """
+    A doua trecere OCR (DPI mai mare) când ajută: nume necunoscut, 0 analize pe PDF mic,
+    sau „prea puține” analize pe PDF mare (OCR). Folosit **identic** la Verificare (debug)
+    și la Salvare, ca să nu difere numărul de analize între cele două moduri pe același fișier.
+    """
+    from backend.parser import parse_full_text
+    from backend.pdf_processor import extract_text_with_metrics
+
+    if tip != "ocr":
+        return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
+
+    parsed = parse_full_text(text or "", cnp_optional=True)
+    count_now = len(parsed.rezultate)
+    unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
+    zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
+    suspect_putine_analize = bool(file_mb >= 2.5 and 0 < count_now < 52)
+
+    if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
+        return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
+
+    dpi_retry = (
+        min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380), 400)
+        if file_mb < 3.0
+        else min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
+    )
+    try:
+        text2, tip2, ocr_err2, ct2, ext2, om2 = extract_text_with_metrics(tmp_path, dpi_retry)
+        parsed2 = parse_full_text(text2 or "", cnp_optional=True)
+        if parsed2:
+            name2_ok = (parsed2.nume or "").strip().lower() != "necunoscut"
+            count2 = len(parsed2.rezultate)
+            if (name2_ok and unknown_name) or (count2 > count_now) or (zero_analize_pdf_mic and count2 > 0):
+                return (
+                    text2,
+                    tip2,
+                    ocr_err2 or ocr_err,
+                    ct2 or colored_tokens,
+                    f"{ext2}+dpi{dpi_retry}",
+                    om2 or ocr_metrics,
+                )
+    except Exception:
+        pass
+    return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
 
 
 def _process_upload_sync_job(
@@ -657,15 +720,19 @@ def _process_upload_sync_job(
 
         # OCR complet sincron in thread
         text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = extract_text_with_metrics(tmp_path, dpi_first)
+        # Același retry DPI ca la salvare — altfel „Verificare” și „Procesează” vedeau texte diferite.
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = _maybe_retry_ocr_higher_dpi_for_upload(
+            tmp_path, file_mb, text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
+        )
 
         if debug:
             from backend.lab_detect import resolve_laborator_id_for_text
-            from backend.parser import _linie_este_exclusa
+            from backend.parser import _linie_este_exclusa, audit_linii_text
             tdbg = text or ""
             parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
             lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
-            _lab_id_dbg, _ = resolve_laborator_id_for_text(
+            _lab_id_dbg, _lab_nume_dbg = resolve_laborator_id_for_text(
                 tdbg,
                 filename,
                 laborator_id_override=laborator_id_override,
@@ -692,6 +759,8 @@ def _process_upload_sync_job(
                 "ocr_metrics": ocr_metrics,
                 "lungime_text": len(tdbg),
                 "numar_linii": len(lines_raw),
+                "audit_linii_text": audit_linii_text(tdbg),
+                "laborator_rezolvat": {"id": _lab_id_dbg, "nume": _lab_nume_dbg},
                 "text_primele_3000": tdbg[:6000] + ("..." if len(tdbg) > 6000 else ""),
                 "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
                 "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
@@ -702,27 +771,42 @@ def _process_upload_sync_job(
                 "analize": analize_list,
                 "triere_ai": triage_dbg,
             }
+            app_rows_dbg = [
+                {
+                    "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
+                    "valoare": r.valoare,
+                    "valoare_text": ((getattr(r, "valoare_text", None) or "").strip() or None),
+                    "unitate": ((getattr(r, "unitate", None) or "").strip() or None),
+                }
+                for r in parsed_dbg.rezultate
+            ]
+            try:
+                from backend.llm_buletin_audit import maybe_run_copilot_audit
+
+                audit_dbg = maybe_run_copilot_audit(tdbg, app_rows_dbg)
+                if audit_dbg is not None:
+                    payload["buletin_audit"] = audit_dbg
+            except Exception as ex_dbg:
+                payload["buletin_audit"] = {
+                    "status": "error",
+                    "message": str(ex_dbg)[:400],
+                    "cross_check": None,
+                }
             print(f"[UPLOAD-ASYNC-DEBUG] OK job={job_id} file={filename!r} analize={len(parsed_dbg.rezultate)} tip={tip}")
         else:
             upload_warnings: list[str] = []
             if not (text or "").strip():
-                w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum."
+                w = (
+                    "Nu s-a extras niciun text din PDF (probabil scan fără strat de text). "
+                    "Pe serverul Docker (Railway) OCR cu Tesseract este inclus; pe Windows local "
+                    "instalează Tesseract (română + engleză) sau setează TESSERACT_CMD. "
+                    "Buletinul se salvează oricum."
+                )
                 if ocr_err:
                     w += " " + str(ocr_err)
                 upload_warnings.append(w)
 
             parsed = parse_full_text(text or "", cnp_optional=True)
-
-            # Retry DPI daca numele e necunoscut
-            if tip == "ocr" and (parsed.nume or "").strip().lower() == "necunoscut":
-                dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380), 400) if file_mb < 3.0 else min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
-                try:
-                    text2, tip2, ocr_err2, ct2, ext2, om2 = extract_text_with_metrics(tmp_path, dpi_retry)
-                    parsed2 = parse_full_text(text2 or "", cnp_optional=True)
-                    if parsed2 and ((parsed2.nume or "").strip().lower() != "necunoscut" or len(parsed2.rezultate) > len(parsed.rezultate)):
-                        parsed, text, tip, colored_tokens, extractor, ocr_metrics = parsed2, text2, tip2, ct2 or colored_tokens, f"{ext2}+dpi{dpi_retry}", om2 or ocr_metrics
-                except Exception:
-                    pass
 
             from backend.lab_detect import resolve_laborator_id_for_text
 
@@ -733,6 +817,11 @@ def _process_upload_sync_job(
                 laborator_name_override=laborator_name_override,
             )
             normalize_rezultate(parsed.rezultate, laborator_id=lab_id)
+            from backend.parser import audit_semnale_multi_buletin_laborator
+
+            _sem_u = audit_semnale_multi_buletin_laborator(text or "")
+            if _sem_u.get("pdf_probabil_compus_multi_buletin") and (_sem_u.get("mesaj_scurt") or "").strip():
+                upload_warnings.append(str(_sem_u["mesaj_scurt"]).strip()[:450])
 
             # Calitate OCR
             ocr_calitate_slaba_salvata = False
@@ -789,12 +878,10 @@ def _process_upload_sync_job(
             if not buletin or buletin.get("id") is None:
                 raise RuntimeError("Eroare la salvarea buletinului.")
 
-            inserted_std_ids: set = set()
+            # Toate rândurile din parse (ca modul Verificare și ca /upload sincron). Fără deduplicare
+            # după analiza_standard_id — aceeași analiză poate apărea în contexte diferite (sumar vs hemogramă).
             nr_inserted = 0
             for idx, r in enumerate(parsed.rezultate):
-                # Deduplicare per buletin: skip daca acelasi analiza_standard_id deja inserat
-                if r.analiza_standard_id is not None and r.analiza_standard_id in inserted_std_ids:
-                    continue
                 insert_rezultat(
                     buletin_id=buletin["id"],
                     analiza_standard_id=r.analiza_standard_id,
@@ -815,10 +902,17 @@ def _process_upload_sync_job(
                         getattr(r, "ocr_confidence", None),
                     ),
                 )
-                if r.analiza_standard_id is not None:
-                    inserted_std_ids.add(r.analiza_standard_id)
                 nr_inserted += 1
 
+            app_rows_copilot = [
+                {
+                    "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
+                    "valoare": r.valoare,
+                    "valoare_text": ((getattr(r, "valoare_text", None) or "").strip() or None),
+                    "unitate": ((getattr(r, "unitate", None) or "").strip() or None),
+                }
+                for r in parsed.rezultate
+            ]
             status_code = 200
             payload = {
                 "message": "PDF procesat cu succes.",
@@ -831,6 +925,18 @@ def _process_upload_sync_job(
                 "triere_ai": triage,
                 "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
             }
+            try:
+                from backend.llm_buletin_audit import maybe_run_copilot_audit
+
+                audit_async = maybe_run_copilot_audit(text or "", app_rows_copilot)
+                if audit_async is not None:
+                    payload["buletin_audit"] = audit_async
+            except Exception as _e_copilot:
+                payload["buletin_audit"] = {
+                    "status": "error",
+                    "message": str(_e_copilot)[:400],
+                    "cross_check": None,
+                }
             print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={nr_inserted} tip={tip}")
     except Exception as ex:
         status_code = 500
@@ -1014,16 +1120,30 @@ async def upload_pdf(
             asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),
             timeout=float(_ocr_pass_timeout),
         )
+        text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
+            asyncio.to_thread(
+                _maybe_retry_ocr_higher_dpi_for_upload,
+                tmp_path,
+                file_mb,
+                text,
+                tip,
+                ocr_err,
+                colored_tokens,
+                extractor,
+                ocr_metrics,
+            ),
+            timeout=float(_ocr_pass_timeout),
+        )
         if debug:
             # Verificare fara salvare: CNP optional ca sa vezi analize chiar fara CNP in PDF
             from backend.lab_detect import resolve_laborator_id_for_text
-            from backend.parser import _linie_este_exclusa
+            from backend.parser import _linie_este_exclusa, audit_linii_text
             tdbg = text or ""
             parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
             lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
             _lab_ov = (laborator or "").strip() or None
-            _lid_dbg, _ = resolve_laborator_id_for_text(
+            _lid_dbg, _lab_nume_sync_dbg = resolve_laborator_id_for_text(
                 tdbg,
                 file.filename,
                 laborator_id_override=laborator_id,
@@ -1041,7 +1161,7 @@ async def upload_pdf(
                 }
                 for r in parsed_dbg.rezultate
             ]
-            return {
+            dbg_out = {
                 "debug": True,
                 "parser_version": _PARSER_VERSION,
                 "tip_extragere": tip,
@@ -1049,6 +1169,8 @@ async def upload_pdf(
                 "ocr_metrics": ocr_metrics,
                 "lungime_text": len(tdbg),
                 "numar_linii": len(lines_raw),
+                "audit_linii_text": audit_linii_text(tdbg),
+                "laborator_rezolvat": {"id": _lid_dbg, "nume": _lab_nume_sync_dbg},
                 "text_primele_3000": tdbg[:6000] + ("..." if len(tdbg) > 6000 else ""),
                 "linii_0_80": [f"{i}: {repr(l)}" for i, l in enumerate(lines_raw)],
                 "linii_excluse": [f"{i}: {repr(l)}" for i, l in excluse[:100]],
@@ -1059,52 +1181,54 @@ async def upload_pdf(
                 "analize": analize_list,
                 "triere_ai": triage_dbg,
             }
+            app_rows_dbg = [
+                {
+                    "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
+                    "valoare": r.valoare,
+                    "valoare_text": ((getattr(r, "valoare_text", None) or "").strip() or None),
+                    "unitate": ((getattr(r, "unitate", None) or "").strip() or None),
+                }
+                for r in parsed_dbg.rezultate
+            ]
+            try:
+                from backend.llm_buletin_audit import copilot_audit_enabled, maybe_run_copilot_audit
+
+                if copilot_audit_enabled():
+                    _cop_dbg_tmo = float(getattr(settings, "llm_buletin_audit_timeout_seconds", 90.0)) + 35.0
+                    try:
+                        audit_dbg = await asyncio.wait_for(
+                            asyncio.to_thread(maybe_run_copilot_audit, tdbg, app_rows_dbg),
+                            timeout=_cop_dbg_tmo,
+                        )
+                    except asyncio.TimeoutError:
+                        audit_dbg = {
+                            "status": "error",
+                            "message": "Timeout AI Copilot (verificare încrucișată).",
+                            "cross_check": None,
+                        }
+                    except Exception as _ex_cdbg:
+                        audit_dbg = {
+                            "status": "error",
+                            "message": str(_ex_cdbg)[:400],
+                            "cross_check": None,
+                        }
+                    if audit_dbg is not None:
+                        dbg_out["buletin_audit"] = audit_dbg
+            except ImportError:
+                pass
+            return dbg_out
         text = text or ""
         upload_warnings: list[str] = []
         if not text.strip():
-            w = "Nu s-a extras niciun text din PDF; buletinul se salvează oricum (fără linii de analize)."
+            w = (
+                "Nu s-a extras niciun text din PDF (probabil scan fără strat de text). "
+                "Pe Railway (Docker) OCR este activ; pe Windows local instalează Tesseract sau TESSERACT_CMD. "
+                "Buletinul se salvează oricum (fără linii de analize)."
+            )
             if ocr_err:
                 w += " " + str(ocr_err)
             upload_warnings.append(w)
         parsed = parse_full_text(text, cnp_optional=True)
-        if tip == "ocr":
-            # Fallback DPI mai mare cand numele nu e detectat SAU cand 0 analize pe PDF mic.
-            count_now = len(parsed.rezultate)
-            unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
-            zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
-            if unknown_name or zero_analize_pdf_mic:
-                if file_mb >= 3.0:
-                    dpi_retry = min(max(int(getattr(settings, "ocr_dpi_hint", 300)) + 40, 320), 360)
-                else:
-                    dpi_retry = max(int(getattr(settings, "ocr_dpi_hint", 300)) + 80, 380)
-                try:
-                    text2, tip2, ocr_err2, colored_tokens2, extractor2, ocr_metrics2 = await asyncio.wait_for(
-                        asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_retry),
-                        timeout=float(_ocr_pass_timeout),
-                    )
-                except Exception:
-                    text2 = ""
-                    tip2 = tip
-                    ocr_err2 = "OCR retry eroare"
-                    colored_tokens2 = []
-                    extractor2 = extractor
-                    ocr_metrics2 = ocr_metrics
-                parsed2 = parse_full_text(text2, cnp_optional=True)
-                if parsed2:
-                    count2 = len(parsed2.rezultate)
-                    name2 = (parsed2.nume or "").strip().lower()
-                    is_better = (name2 != "necunoscut" and unknown_name) or (count2 > count_now)
-                    if is_better:
-                        parsed = parsed2
-                        text = text2
-                        tip = tip2
-                        if ocr_err2:
-                            ocr_err = ocr_err2
-                        if colored_tokens2:
-                            colored_tokens = colored_tokens2
-                        if ocr_metrics2:
-                            ocr_metrics = ocr_metrics2
-                        extractor = f"{extractor2}+dpi{dpi_retry}"
         ocr_calitate_slaba_salvata = False
         if tip == "ocr":
             q = _calc_upload_quality(parsed)
@@ -1138,6 +1262,11 @@ async def upload_pdf(
             laborator_name_override=_lab_ov,
         )
         normalize_rezultate(parsed.rezultate, laborator_id=_lab_id_up)
+        from backend.parser import audit_semnale_multi_buletin_laborator
+
+        _sem_sync = audit_semnale_multi_buletin_laborator(text or "")
+        if _sem_sync.get("pdf_probabil_compus_multi_buletin") and (_sem_sync.get("mesaj_scurt") or "").strip():
+            upload_warnings.append(str(_sem_sync["mesaj_scurt"]).strip()[:450])
         if ocr_calitate_slaba_salvata:
             upload_warnings.append(
                 "Calitate OCR slabă sau date incomplete: buletinul a fost salvat. "
@@ -1235,7 +1364,16 @@ async def upload_pdf(
                     f"Eroare la rezultatul {idx+1}/{len(parsed.rezultate)} "
                     f"(denumire: {getattr(r, 'denumire_raw', '?')[:50]}): {ex}"
                 ) from ex
-        return {
+        app_rows_copilot = [
+            {
+                "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
+                "valoare": r.valoare,
+                "valoare_text": ((getattr(r, "valoare_text", None) or "").strip() or None),
+                "unitate": ((getattr(r, "unitate", None) or "").strip() or None),
+            }
+            for r in parsed.rezultate
+        ]
+        result = {
             "message": "PDF procesat cu succes.",
             "tip_extragere": tip,
             "extractor": extractor,
@@ -1249,6 +1387,34 @@ async def upload_pdf(
             "triere_ai": triage,
             "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
         }
+        try:
+            from backend.llm_buletin_audit import copilot_audit_enabled, maybe_run_copilot_audit
+
+            if copilot_audit_enabled():
+                _cop_tmo = float(getattr(settings, "llm_buletin_audit_timeout_seconds", 90.0)) + 35.0
+                audit = None
+                try:
+                    audit = await asyncio.wait_for(
+                        asyncio.to_thread(maybe_run_copilot_audit, text or "", app_rows_copilot),
+                        timeout=_cop_tmo,
+                    )
+                except asyncio.TimeoutError:
+                    audit = {
+                        "status": "error",
+                        "message": "Timeout AI Copilot (verificare încrucișată).",
+                        "cross_check": None,
+                    }
+                except Exception as _cop_wait_ex:
+                    audit = {
+                        "status": "error",
+                        "message": str(_cop_wait_ex)[:400],
+                        "cross_check": None,
+                    }
+                if audit is not None:
+                    result["buletin_audit"] = audit
+        except ImportError:
+            pass
+        return result
     except Exception as e:
         tb = traceback.format_exc()
         try:
@@ -1779,7 +1945,8 @@ async def index():
             </button>
             <span id="prog" style="font-size:0.85rem;color:var(--gri)"></span>
           </div>
-          <p style="font-size:0.8rem;color:#0a7ea4;margin:0">« Verificare: vezi ce analize s-ar extrage, fără să salvezi în baza de date.</p>
+          <p style="font-size:0.8rem;color:#0a7ea4;margin:0">« Verificare: vezi ce analize s-ar extrage, fără să salvezi în baza de date. Folosește același flux OCR ca „Procesează” (inclusiv a doua trecere la DPI mai mare când e cazul), ca numărul de analize să coincidă.</p>
+          <p style="font-size:0.78rem;color:var(--gri);margin:4px 0 0">AI Copilot (verificare încrucișată cu LLM) este opțional și temporar — se pornește din variabilele de mediu; vezi <code>.env.example</code>.</p>
         </div>
       </div>
       <div id="upload-out"></div>
@@ -2219,9 +2386,17 @@ async function incarcaSetari() {
           const el = document.getElementById('setari-db-type');
           if (el && d.database_type) {
             el.style.display = '';
-            el.innerHTML = d.database_type === 'postgresql'
+            let dbHtml = d.database_type === 'postgresql'
               ? '✅ <strong>PostgreSQL</strong> – datele persistă la redeploy'
               : '⚠️ <strong>SQLite</strong> – datele se pierd la redeploy. Adaugă PostgreSQL în Railway.';
+            if (d.parser_version) {
+              dbHtml += '<br><span style="font-size:0.78rem;opacity:0.9">parser: <code>' + escHtml(String(d.parser_version)) + '</code>';
+              if (d.build_stamp) {
+                dbHtml += ' · build: <code>' + escHtml(String(d.build_stamp)) + '</code>';
+              }
+              dbHtml += '</span>';
+            }
+            el.innerHTML = dbHtml;
           }
         } catch {}
       })();
@@ -2779,6 +2954,56 @@ async function _proceseazaUploadAsync(fd, onStatus, uploadUrl = '/upload-async')
   };
 }
 
+function formatBuletinAuditHtml(b) {
+  if (!b || typeof b !== 'object') return '';
+  const st = String(b.status || '').toLowerCase();
+  if (st === 'ok' && !b.cross_check) {
+    return '<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fff8e6;font-size:0.82rem;color:#664">AI Copilot: <strong>ok</strong> — fără date comparative (cross_check lipsă).</div>';
+  }
+  if (st === 'ok' && b.cross_check) {
+    const c = b.cross_check;
+    const ref = c.reference != null ? String(c.reference) : '—';
+    const m = c.matched_nume_si_valoare != null ? String(c.matched_nume_si_valoare) : '—';
+    let html = '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid #c8e1ff;background:#e8f0fe;font-size:0.84rem;line-height:1.45">';
+    html += '<div style="font-weight:600;margin-bottom:4px">AI Copilot — verificare încrucișată</div>';
+    html += '<span style="color:#444">Model:</span> ' + escHtml(String(b.model || ''))
+      + ' · <span style="color:#444">Rânduri LLM:</span> ' + escHtml(String(b.llm_rows != null ? b.llm_rows : '—'));
+    html += '<br><span style="color:#444">Potriviri (nume + valoare):</span> <strong>' + escHtml(m) + '</strong> / ref. max(app, LLM) = <strong>' + escHtml(ref) + '</strong>';
+    html += '<br><span style="color:#0d652d">Acoperire aplicație vs referință:</span> <strong>' + escHtml(String(c.pct_aplicatie_vs_referinta != null ? c.pct_aplicatie_vs_referinta : '—')) + '%</strong>';
+    html += ' · <span style="color:#b06000">Discrepanțe vs referință:</span> <strong>' + escHtml(String(c.pct_discrepanta_vs_referinta != null ? c.pct_discrepanta_vs_referinta : '—')) + '%</strong>';
+    if (c.note_total) html += '<br><span style="font-size:0.8rem">' + escHtml(c.note_total) + '</span>';
+    if (c.only_llm && c.only_llm.length) {
+      html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.82rem">Doar la LLM (' + c.only_llm.length + ')</summary><ul style="margin:6px 0 0 14px;font-size:0.8rem">';
+      c.only_llm.slice(0, 15).forEach(function(row) {
+        const v = row.valoare != null ? String(row.valoare) : '';
+        html += '<li>' + escHtml(row.denumire || '') + ' = ' + escHtml(v) + '</li>';
+      });
+      html += '</ul></details>';
+    }
+    if (c.only_app && c.only_app.length) {
+      html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.82rem">Doar la aplicație (' + c.only_app.length + ')</summary><ul style="margin:6px 0 0 14px;font-size:0.8rem">';
+      c.only_app.slice(0, 15).forEach(function(row) {
+        const v = (row.valoare != null && row.valoare !== '') ? String(row.valoare) : (row.valoare_text || '');
+        html += '<li>' + escHtml(row.denumire || '') + ' = ' + escHtml(v) + '</li>';
+      });
+      html += '</ul></details>';
+    }
+    if (c.value_mismatch && c.value_mismatch.length) {
+      html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.82rem;color:#a00">Valoare diferită (' + c.value_mismatch.length + ')</summary><ul style="margin:6px 0 0 14px;font-size:0.8rem">';
+      c.value_mismatch.slice(0, 12).forEach(function(row) {
+        html += '<li>' + escHtml(String(row.app_denumire || '')) + ': app <strong>' + escHtml(String(row.app_valoare)) + '</strong> vs LLM <strong>' + escHtml(String(row.llm_valoare)) + '</strong></li>';
+      });
+      html += '</ul></details>';
+    }
+    html += '</div>';
+    return html;
+  }
+  if (st === 'skipped' || st === 'error') {
+    return '<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#f5f5f5;font-size:0.82rem;color:#555">AI Copilot: <strong>' + escHtml(st) + '</strong> — ' + escHtml(b.message || '') + '</div>';
+  }
+  return '';
+}
+
 async function trimite(debugMode) {
   if (!fisierSelectat.length) return;
   const btn = document.getElementById('btn-upload');
@@ -2846,9 +3071,40 @@ async function trimite(debugMode) {
             const reasons = Array.isArray(t.reasons) && t.reasons.length ? (' · motive: ' + t.reasons.join(', ')) : '';
             mesaj += ' · Triage: <strong>' + escHtml(String((t.decision||'').toUpperCase())) + '</strong> (score=' + escHtml(String(t.score ?? 'n/a')) + ')' + escHtml(reasons);
           }
+          if (j.laborator_rezolvat && typeof j.laborator_rezolvat === 'object') {
+            const lr = j.laborator_rezolvat;
+            mesaj += ' · Lab: ' + escHtml(String(lr.nume || '—')) + (lr.id != null ? ' (id ' + escHtml(String(lr.id)) + ')' : '');
+          }
+          if (j.audit_linii_text && typeof j.audit_linii_text === 'object') {
+            const a = j.audit_linii_text;
+            let auditTxt = 'Linii totale: ' + (a.total_linii_non_goale ?? '—')
+              + ' · Excluse administrativ: ' + (a.linii_excluse_administrativ ?? '—')
+              + ' · Acceptate ca parametru: ' + (a.linii_acceptate_ca_parametru ?? '—')
+              + ' · După admin, nu parametru: ' + (a.linii_dupa_admin_nu_sunt_parametru ?? '—')
+              + ' · Estimare gunoi OCR: ' + (a.linii_respinse_cu_estimare_gunoi_ocr ?? '—')
+              + ' · Rezultate extract_rezultate: ' + (a.rezultate_extractate ?? '—');
+            if (a.extragere_eroare) auditTxt += ' · Eroare extragere: ' + a.extragere_eroare;
+            const sm = a.semnale_multi_buletin_laborator;
+            if (sm && typeof sm === 'object') {
+              auditTxt += '\n--- Multi-buletin / laborator ---\n';
+              auditTxt += 'CNP distincte: ' + (sm.numar_cnp_distincte ?? '—')
+                + ' · Match-uri CNP (poz. unice): ' + (sm.matchuri_cnp_valide_pozitii_unice ?? '—')
+                + ' · PDF probabil compus: ' + (sm.pdf_probabil_compus_multi_buletin ? 'DA' : 'nu');
+              if (Array.isArray(sm.laboratoare_mentionate_tot_textul) && sm.laboratoare_mentionate_tot_textul.length) {
+                auditTxt += '\nMărci în tot textul: ' + sm.laboratoare_mentionate_tot_textul.map(function (x) {
+                  return (x.laborator || '') + '×' + (x.aparitii || 0);
+                }).join(', ');
+              }
+              if (sm.mesaj_scurt) auditTxt += '\n' + sm.mesaj_scurt;
+            }
+            mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.82rem">Audit linii text (diagnostic)</summary><pre style="margin:6px 0 0;font-size:0.78rem;max-height:160px;overflow:auto;white-space:pre-wrap;background:#f5f7fa;padding:8px;border-radius:6px;border:1px solid var(--border)">' + escHtml(auditTxt) + '</pre></details>';
+          }
           if (j.analize && j.analize.length) {
             mesaj += '<br><details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.85rem">Lista analize (' + j.analize.length + ')</summary><ul style="margin:8px 0 0 16px;font-size:0.82rem;max-height:200px;overflow-y:auto">'
-              + j.analize.map(a => '<li>' + escHtml(a.denumire||'') + ' = ' + escHtml(String(a.valoare||'')) + ' ' + escHtml(a.unitate||'') + '</li>').join('')
+              + j.analize.map(a => {
+                  const v = (a.valoare != null && a.valoare !== '') ? String(a.valoare) : (a.valoare_text || '');
+                  return '<li>' + escHtml(a.denumire||'') + ' = ' + escHtml(v) + ' ' + escHtml(a.unitate||'') + '</li>';
+                }).join('')
               + '</ul></details>';
           }
           if (j.linii_0_80 && j.linii_0_80.length) {
@@ -2861,6 +3117,7 @@ async function trimite(debugMode) {
             mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Text extras (primele 6000 caractere)</summary><pre style="margin:6px 0 0;font-size:0.75rem;max-height:300px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml(j.text_primele_3000) + '</pre></details>';
           }
           if (j.eroare) mesaj = '[EROARE] ' + escHtml(j.eroare) + (j.linii_0_80 && j.linii_0_80.length ? '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.8rem">Linii text extras (' + j.linii_0_80.length + ')</summary><pre style="margin:6px 0 0;font-size:0.72rem;max-height:300px;overflow:auto;white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:6px">' + escHtml((j.linii_0_80||[]).join('\n')) + '</pre></details>' : '');
+          mesaj += formatBuletinAuditHtml(j.buletin_audit);
         } else {
           pacientInfo = j.pacient || {};
           mesaj = 'Pacient: <strong>' + escHtml(pacientInfo.nume||'') + '</strong>'
@@ -2891,6 +3148,7 @@ async function trimite(debugMode) {
           if (Array.isArray(j.warnings) && j.warnings.length) {
             mesaj += '<br><span style="font-size:0.8rem;color:#a15a00">' + escHtml(j.warnings.join(' | ')) + '</span>';
           }
+          mesaj += formatBuletinAuditHtml(j.buletin_audit);
         }
       } else {
         esuat++;

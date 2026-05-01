@@ -1,0 +1,4 @@
+CNP F2000000000000
+Hematii 4,65 /mm3 (3,7 - 5,2)
+Hemoglobina 13,2 g/dL (11 - 16)
+Creatinina 0,95 mg/dL (0,70 - 1,20)

@@ -77,6 +77,7 @@ def _fara_paranteze(text: str) -> str:
 _URINA_OVERRIDE: dict[str, str] = {
     'leucocite':  'leucocite urinare',
     'eritrocite': 'eritrocite urinare',
+    'hematii':    'eritrocite urinare',
     'glucoza':    'glucoza urinara',
     'proteine':   'proteine urinare',
     'bilirubina': 'bilirubina urinara',
@@ -519,6 +520,19 @@ def _cauta_in_cache(
         return cache_norm[raw_norm]
     if raw_fara_par and raw_fara_par in cache_norm:
         return cache_norm[raw_fara_par]
+
+    # 0b. MedLife: descrieri urocultură pe rând propriu (OCR trunchiat / fără alias dedicat)
+    raw_n2 = _normalizeaza(raw_curat)
+    if "rezultatcantitativ" in raw_n2.replace(" ", "") and "bacteriurie" in raw_n2:
+        for probe in ("urocultură", "urocultura"):
+            pn = _normalizeaza(probe)
+            if pn in cache_norm:
+                return cache_norm[pn]
+    if raw_n2.startswith("organisme absente") or raw_n2.startswith("organismeabsente"):
+        for probe in ("urocultură", "urocultura"):
+            pn = _normalizeaza(probe)
+            if pn in cache_norm:
+                return cache_norm[pn]
 
     lab_subset: Optional[frozenset[int]] = None
     if laborator_id is not None:

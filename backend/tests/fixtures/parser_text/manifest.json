@@ -1,0 +1,40 @@
+{
+  "cases": [
+    {
+      "id": "medlife_like",
+      "file": "medlife_like.txt",
+      "min_count": 3,
+      "must_substrings": ["Hemoglobin", "Creatinin", "nitri"]
+    },
+    {
+      "id": "urina_calitativ",
+      "file": "urina_calitativ.txt",
+      "min_count": 4,
+      "must_substrings": ["pH", "Densitate", "Claritate", "Culoare"]
+    },
+    {
+      "id": "bioclinica_oneline",
+      "file": "bioclinica_oneline.txt",
+      "min_count": 3,
+      "must_substrings": ["Hematii", "Hemoglobin", "Creatinin"]
+    },
+    {
+      "id": "hemogram_compact",
+      "file": "hemogram_compact.txt",
+      "min_count": 2,
+      "must_substrings": ["Leucocit", "Trombocit", "VSH"]
+    },
+    {
+      "id": "ocr_noise_snippet",
+      "file": "ocr_noise_snippet.txt",
+      "min_count": 2,
+      "must_substrings": ["ALT", "AST"]
+    },
+    {
+      "id": "raport_digital_hemogram_x10",
+      "file": "raport_digital_hemogram_x10.txt",
+      "min_count": 39,
+      "must_substrings": ["Eritrocite", "Sideremie", "LH", "Progesteron", "ASLO"]
+    }
+  ]
+}

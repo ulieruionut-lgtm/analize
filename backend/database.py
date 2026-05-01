@@ -902,6 +902,39 @@ def get_laborator_analize(laborator_id: int) -> list:
         return []
 
 
+def get_analiza_standard_ids_for_laborator(laborator_id: int) -> list[int]:
+    """ID-uri `analiza_standard` din catalogul laboratorului (`laborator_analize`). Gol dacă lipsește tabelul."""
+    try:
+        lid = int(laborator_id)
+    except (TypeError, ValueError):
+        return []
+    try:
+        with get_cursor(commit=False) as cur:
+            if _use_sqlite():
+                cur.execute(
+                    "SELECT analiza_standard_id FROM laborator_analize WHERE laborator_id = ?",
+                    (lid,),
+                )
+            else:
+                cur.execute(
+                    "SELECT analiza_standard_id FROM laborator_analize WHERE laborator_id = %s",
+                    (lid,),
+                )
+            out: List[int] = []
+            for row in cur.fetchall():
+                try:
+                    aid = _row_get(row, "analiza_standard_id", None)
+                    if aid is None and not hasattr(row, "keys"):
+                        aid = _row_get(row, 0, None)
+                    if aid is not None:
+                        out.append(int(aid))
+                except (TypeError, ValueError, IndexError, KeyError):
+                    continue
+            return out
+    except Exception:
+        return []
+
+
 # --- Lista analize standard ---
 def get_all_analize_standard() -> list:
     try:
@@ -971,17 +1004,32 @@ def get_analize_necunoscute(doar_neaprobate: bool = True) -> list:
     """Returneaza analizele care nu au fost recunoscute de normalizer."""
     with get_cursor(commit=False) as cur:
         if _use_sqlite():
+            ord_neap = (
+                "ORDER BY CASE WHEN categorie IS NULL OR categorie = '' THEN 1 ELSE 0 END, "
+                "categorie, aparitii DESC, denumire_raw"
+            )
             if doar_neaprobate:
-                cur.execute(
+                q_full = (
+                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, laborator_id, created_at, updated_at "
+                    "FROM analiza_necunoscuta WHERE aprobata = 0 " + ord_neap
+                )
+                q_old = (
                     "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, created_at, updated_at "
-                    "FROM analiza_necunoscuta WHERE aprobata = 0 "
-                    "ORDER BY CASE WHEN categorie IS NULL OR categorie = '' THEN 1 ELSE 0 END, categorie, aparitii DESC, denumire_raw"
+                    "FROM analiza_necunoscuta WHERE aprobata = 0 " + ord_neap
                 )
             else:
-                cur.execute(
+                q_full = (
+                    "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, laborator_id, created_at, updated_at "
+                    "FROM analiza_necunoscuta ORDER BY aprobata, aparitii DESC"
+                )
+                q_old = (
                     "SELECT id, denumire_raw, aparitii, aprobata, analiza_standard_id, categorie, created_at, updated_at "
                     "FROM analiza_necunoscuta ORDER BY aprobata, aparitii DESC"
                 )
+            try:
+                cur.execute(q_full)
+            except Exception:
+                cur.execute(q_old)
         else:
             ord_by = (
                 " ORDER BY CASE WHEN categorie IS NULL OR categorie = '' THEN 1 ELSE 0 END, "

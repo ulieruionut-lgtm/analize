@@ -71,6 +71,10 @@ async def run_migrations():
                     "014_pg_rezultat_meta.sql", "015_pg_alias_clinice_necunoscute.sql",
                     "016_pg_pacienti_perf.sql", "017_pg_upload_async_jobs.sql",
                     "018_pg_indexes.sql", "019_pg_medlife_pdr_aliases.sql",
+                    "020_pg_urina_params.sql", "021_pg_teo_health_aliases.sql",
+                    "022_pg_teo_health_aliases2.sql", "023_pg_sediment_urina.sql",
+                    "024_pg_teo_health_sediment2.sql", "025_pg_necunoscuta_laborator.sql",
+                    "026_pg_medlife_uroculture_text.sql",
                 ]
                 for fname in upgrade_files:
                     path = sql_dir / fname
