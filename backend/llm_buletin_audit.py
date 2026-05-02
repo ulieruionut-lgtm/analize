@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import unicodedata
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.config import settings
+from backend.llm_chat import audit_llm_has_credentials, chat_completion_system_user, resolve_model_name
 
 _log = logging.getLogger(__name__)
 
@@ -21,8 +21,7 @@ _MAX_TEXT_CHARS = 48000
 def copilot_audit_enabled() -> bool:
     if not bool(getattr(settings, "llm_buletin_audit_enabled", False)):
         return False
-    key = (os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_3") or "").strip()
-    return bool(key)
+    return audit_llm_has_credentials()
 
 
 def _truncate_buletin_text(text: str) -> str:
@@ -80,28 +79,7 @@ def _names_similar(a: str, b: str) -> bool:
     return SequenceMatcher(None, na, nb).ratio() >= 0.82
 
 
-def _get_openai_client():
-    from openai import OpenAI
-
-    api_key = (os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY_3") or "").strip()
-    if not api_key:
-        raise EnvironmentError("Lipsește cheie API (LLM_API_KEY sau OPENAI_API_KEY).")
-    timeout = float(getattr(settings, "llm_buletin_audit_timeout_seconds", 90.0))
-    base = (getattr(settings, "llm_base_url", None) or os.getenv("LLM_BASE_URL") or "").strip()
-    kwargs: Dict[str, Any] = {"api_key": api_key, "timeout": timeout}
-    if base:
-        kwargs["base_url"] = base.rstrip("/")
-    return OpenAI(**kwargs)
-
-
-def _model_name() -> str:
-    m = (getattr(settings, "llm_model", None) or os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "").strip()
-    return m or "gpt-4o-mini"
-
-
 def _call_llm_for_analize(truncated_text: str) -> Tuple[List[Dict[str, Any]], Optional[int], str]:
-    client = _get_openai_client()
-    model = _model_name()
     system = (
         "Ești un extractor medical. Primești textul unui buletin de analize de laborator. "
         "Extrage TOATE liniile care sunt rezultate de analiză (denumire + valoare numerică sau text, unitate dacă există). "
@@ -115,16 +93,12 @@ def _call_llm_for_analize(truncated_text: str) -> Tuple[List[Dict[str, Any]], Op
         "--- BULETIN (text) ---\n"
         + truncated_text
     )
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.0,
+    raw = chat_completion_system_user(
+        system,
+        user,
         max_tokens=8000,
+        temperature=0.0,
     )
-    raw = (resp.choices[0].message.content or "").strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
         raw = re.sub(r"\s*```\s*$", "", raw)
@@ -286,7 +260,7 @@ def run_copilot_audit(text: str, app_rows: List[Dict[str, Any]]) -> Dict[str, An
             cross["note_total"] = f"LLM a declarat total_analize={total_decl}, dar lista are {len(llm_rows)} rânduri."
         return {
             "status": "ok",
-            "model": _model_name(),
+            "model": resolve_model_name(),
             "llm_rows": len(llm_rows),
             "cross_check": cross,
         }
@@ -304,3 +278,62 @@ def maybe_run_copilot_audit(text: str, app_rows: List[Dict[str, Any]]) -> Option
     if not copilot_audit_enabled():
         return None
     return run_copilot_audit(text, app_rows)
+
+
+def apply_audit_corrections_to_db(
+    audit_result: Dict[str, Any],
+    buletin_id: int,
+) -> Dict[str, Any]:
+    """
+    Aplică corecții din auditul LLM în DB:
+    - value_mismatch: marchează rândul cu needs_review=True + reason "llm_value_mismatch"
+    - only_llm: adaugă denumirea în analiza_necunoscuta pentru review admin
+
+    Nu modifică valorile — flag informativ. Sigur de rulat chiar dacă audit e parțial.
+    """
+    out: Dict[str, Any] = {"nr_mismatch_marked": 0, "nr_only_llm_added": 0, "erori": []}
+    try:
+        cross = (audit_result.get("cross_check") or {})
+        mismatches: List[Dict[str, Any]] = cross.get("value_mismatch") or []
+        only_llm: List[Dict[str, Any]] = cross.get("only_llm") or []
+    except Exception as e:
+        out["erori"].append(f"parse audit_result: {e}")
+        return out
+
+    # --- value_mismatch → needs_review pe rândul din DB ---
+    if mismatches:
+        try:
+            from backend.database import get_rezultat_id_by_buletin_and_raw, mark_rezultat_needs_review
+        except ImportError as e:
+            out["erori"].append(f"import db: {e}")
+            mismatches = []
+    for item in mismatches:
+        den = (item.get("app_denumire") or item.get("denumire") or "").strip()
+        if not den:
+            continue
+        try:
+            rez_id = get_rezultat_id_by_buletin_and_raw(buletin_id, den)
+            if rez_id is not None:
+                mark_rezultat_needs_review(rez_id, "llm_value_mismatch")
+                out["nr_mismatch_marked"] += 1
+        except Exception as e:
+            out["erori"].append(f"mismatch mark {den!r}: {e}")
+
+    # --- only_llm → log în analiza_necunoscuta ---
+    if only_llm:
+        try:
+            from backend.normalizer import _log_necunoscuta
+        except ImportError as e:
+            out["erori"].append(f"import normalizer: {e}")
+            only_llm = []
+    for item in only_llm:
+        den = (item.get("denumire") or item.get("app_denumire") or "").strip()
+        if not den:
+            continue
+        try:
+            _log_necunoscuta(den, categorie_buletin=None, laborator_id=None)
+            out["nr_only_llm_added"] += 1
+        except Exception as e:
+            out["erori"].append(f"log necunoscuta {den!r}: {e}")
+
+    return out

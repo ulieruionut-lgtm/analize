@@ -31,6 +31,7 @@ from backend.database import (
 )
 from backend.deps import _is_admin, get_current_user, postgresql_connect as _postgresql_connect
 from backend.models import PatientParsed
+from backend.llm_post_parse import apply_llm_learn_after_normalize
 from backend.normalizer import normalize_rezultate
 from backend.utils import extrage_data_buletin as _extrage_data_buletin, raspuns_eroare as _raspuns_eroare
 
@@ -771,6 +772,16 @@ def _process_upload_sync_job(
                 "analize": analize_list,
                 "triere_ai": triage_dbg,
             }
+            if not (tdbg or "").strip():
+                payload["diag_fara_text"] = {
+                    "ocr_err": ocr_err,
+                    "ocr_summary": (ocr_metrics or {}).get("summary") if isinstance(ocr_metrics, dict) else None,
+                    "hint": (
+                        "OCR nu a produs niciun caracter util. Verifică Tesseract (PATH sau TESSERACT_CMD), "
+                        "pachetele de limbă română+engleză în tessdata, și setează în .env OCR_LANG=ron+eng. "
+                        "Dacă PDF-ul e doar imagini foarte slabe sau protejat, re-exportă din laborator."
+                    ),
+                }
             app_rows_dbg = [
                 {
                     "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
@@ -817,6 +828,9 @@ def _process_upload_sync_job(
                 laborator_name_override=laborator_name_override,
             )
             normalize_rezultate(parsed.rezultate, laborator_id=lab_id)
+            llm_learn_report = apply_llm_learn_after_normalize(
+                parsed.rezultate, laborator_id=lab_id
+            )
             from backend.parser import audit_semnale_multi_buletin_laborator
 
             _sem_u = audit_semnale_multi_buletin_laborator(text or "")
@@ -943,6 +957,7 @@ def _process_upload_sync_job(
                 "warnings": upload_warnings,
                 "triere_ai": triage,
                 "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
+                "llm_learn": llm_learn_report,
             }
             try:
                 from backend.llm_buletin_audit import maybe_run_copilot_audit
@@ -950,6 +965,11 @@ def _process_upload_sync_job(
                 audit_async = maybe_run_copilot_audit(text or "", app_rows_copilot)
                 if audit_async is not None:
                     payload["buletin_audit"] = audit_async
+                    if audit_async.get("status") == "ok":
+                        from backend.llm_buletin_audit import apply_audit_corrections_to_db
+                        payload["audit_corrections"] = apply_audit_corrections_to_db(
+                            audit_async, buletin_id=int(buletin["id"])
+                        )
             except Exception as _e_copilot:
                 payload["buletin_audit"] = {
                     "status": "error",
@@ -1199,6 +1219,16 @@ async def upload_pdf(
                 "analize": analize_list,
                 "triere_ai": triage_dbg,
             }
+            if not (tdbg or "").strip():
+                dbg_out["diag_fara_text"] = {
+                    "ocr_err": ocr_err,
+                    "ocr_summary": (ocr_metrics or {}).get("summary") if isinstance(ocr_metrics, dict) else None,
+                    "hint": (
+                        "OCR nu a produs niciun caracter util. Verifică Tesseract (PATH sau TESSERACT_CMD), "
+                        "pachetele de limbă română+engleză în tessdata, și setează în .env OCR_LANG=ron+eng. "
+                        "Dacă PDF-ul e doar imagini foarte slabe sau protejat, re-exportă din laborator."
+                    ),
+                }
             app_rows_dbg = [
                 {
                     "denumire": (getattr(r, "denumire_raw", None) or "").strip(),
@@ -1280,6 +1310,9 @@ async def upload_pdf(
             laborator_name_override=_lab_ov,
         )
         normalize_rezultate(parsed.rezultate, laborator_id=_lab_id_up)
+        llm_learn_report = apply_llm_learn_after_normalize(
+            parsed.rezultate, laborator_id=_lab_id_up
+        )
         from backend.parser import audit_semnale_multi_buletin_laborator
 
         _sem_sync = audit_semnale_multi_buletin_laborator(text or "")
@@ -1422,6 +1455,7 @@ async def upload_pdf(
             "warnings": upload_warnings,
             "triere_ai": triage,
             "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
+            "llm_learn": llm_learn_report,
         }
         try:
             from backend.llm_buletin_audit import copilot_audit_enabled, maybe_run_copilot_audit
@@ -1448,6 +1482,11 @@ async def upload_pdf(
                     }
                 if audit is not None:
                     result["buletin_audit"] = audit
+                    if audit.get("status") == "ok":
+                        from backend.llm_buletin_audit import apply_audit_corrections_to_db
+                        result["audit_corrections"] = apply_audit_corrections_to_db(
+                            audit, buletin_id=int(buletin["id"])
+                        )
         except ImportError:
             pass
         return result
@@ -3136,6 +3175,13 @@ async function trimite(debugMode) {
               if (sm.mesaj_scurt) auditTxt += '\n' + sm.mesaj_scurt;
             }
             mesaj += '<br><details style="margin-top:6px"><summary style="cursor:pointer;font-size:0.82rem">Audit linii text (diagnostic)</summary><pre style="margin:6px 0 0;font-size:0.78rem;max-height:160px;overflow:auto;white-space:pre-wrap;background:#f5f7fa;padding:8px;border-radius:6px;border:1px solid var(--border)">' + escHtml(auditTxt) + '</pre></details>';
+          }
+          if (j.diag_fara_text && typeof j.diag_fara_text === 'object') {
+            const d = j.diag_fara_text;
+            mesaj += '<div style="margin-top:10px;padding:10px 12px;background:#fff8e1;border:1px solid #ffb300;border-radius:8px;font-size:0.84rem;line-height:1.45"><strong>OCR: text gol</strong> — ' + escHtml(d.hint || '') +
+              (d.ocr_err ? '<br><code style="font-size:0.76rem;word-break:break-all">' + escHtml(String(d.ocr_err)) + '</code>' : '') +
+              (d.ocr_summary ? '<br><span style="font-size:0.78rem;opacity:0.9">' + escHtml(JSON.stringify(d.ocr_summary)) + '</span>' : '') +
+              '</div>';
           }
           if (j.analize && j.analize.length) {
             mesaj += '<br><details style="margin-top:8px"><summary style="cursor:pointer;font-size:0.85rem">Lista analize (' + j.analize.length + ')</summary><ul style="margin:8px 0 0 16px;font-size:0.82rem;max-height:200px;overflow-y:auto">'

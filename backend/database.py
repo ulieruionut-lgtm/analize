@@ -134,12 +134,27 @@ def get_connection():
         )
 
     else:  # postgresql — folosim pool
+        import psycopg2
         import psycopg2.extras
         pool = _get_pg_pool()
-        conn = pool.getconn()
-        # Setăm cursor factory RealDictCursor pe conexiunea din pool
-        conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
+        for attempt in range(2):
+            conn = pool.getconn()
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            try:
+                with conn.cursor() as ping:
+                    ping.execute("SELECT 1")
+                return conn
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                try:
+                    pool.putconn(conn, close=True)
+                except Exception:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                if attempt == 0:
+                    continue
+                raise
 
 
 def _return_pg_connection(conn) -> None:
@@ -1589,6 +1604,57 @@ def update_rezultat(rezultat_id: int, body: dict) -> bool:
     except Exception as e:
         import logging
         logging.error(f"update_rezultat error: {e}")
+        return False
+
+
+def get_rezultat_id_by_buletin_and_raw(buletin_id: int, denumire_raw: str) -> Optional[int]:
+    """Returnează id-ul primului rezultat din buletin cu denumire_raw dată, sau None."""
+    try:
+        with get_cursor(commit=False) as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(
+                f"SELECT id FROM rezultate_analize WHERE buletin_id={ph} AND denumire_raw={ph} LIMIT 1",
+                (buletin_id, denumire_raw),
+            )
+            row = cur.fetchone()
+            return int(_row_get(row, 0)) if row else None
+    except Exception:
+        return None
+
+
+def mark_rezultat_needs_review(rezultat_id: int, reason: str) -> bool:
+    """Merge rezultat_meta JSON: setează needs_review=True, adaugă reason în review_reasons."""
+    try:
+        with get_cursor() as cur:
+            ph = "?" if _use_sqlite() else "%s"
+            cur.execute(
+                f"SELECT rezultat_meta FROM rezultate_analize WHERE id={ph}", (rezultat_id,)
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            raw = _row_get(row, 0) or _row_get(row, "rezultat_meta")
+            try:
+                meta = json.loads(raw) if raw else {}
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            meta["needs_review"] = True
+            reasons = meta.get("review_reasons") or []
+            if not isinstance(reasons, list):
+                reasons = []
+            if reason not in reasons:
+                reasons.append(reason)
+            meta["review_reasons"] = reasons
+            cur.execute(
+                f"UPDATE rezultate_analize SET rezultat_meta={ph} WHERE id={ph}",
+                (json.dumps(meta, ensure_ascii=False), rezultat_id),
+            )
+            return cur.rowcount > 0
+    except Exception as e:
+        import logging
+        logging.error("mark_rezultat_needs_review error: %s", e)
         return False
 
 

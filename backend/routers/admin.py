@@ -75,6 +75,7 @@ async def run_migrations():
                     "022_pg_teo_health_aliases2.sql", "023_pg_sediment_urina.sql",
                     "024_pg_teo_health_sediment2.sql", "025_pg_necunoscuta_laborator.sql",
                     "026_pg_medlife_uroculture_text.sql",
+                    "027_pg_ocr_corrections_dynamic.sql",
                 ]
                 for fname in upgrade_files:
                     path = sql_dir / fname
@@ -235,3 +236,138 @@ async def sterge_pacient(pacient_id: int, current_user: dict = Depends(get_curre
     if not ok:
         raise HTTPException(status_code=404, detail="Pacientul nu a fost găsit.")
     return {"message": "Pacient șters complet."}
+
+
+# ─── OCR Corrections dinamice ────────────────────────────────────────────────
+
+class OcrCorrectionBody(BaseModel):
+    tip: str = "direct"          # 'direct' | 'regex'
+    domeniu: Optional[str] = None
+    pattern: str
+    replacement: str
+    activ: bool = True
+    prioritate: int = 100
+
+
+@router.get("/admin/ocr-corrections")
+async def lista_ocr_corrections(
+    current_user: dict = Depends(get_current_user),
+    offset: int = 0,
+    limit: int = 100,
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Acces interzis.")
+    from backend.database import get_cursor, _use_sqlite
+    ph = "?" if _use_sqlite() else "%s"
+    try:
+        with get_cursor(commit=False) as cur:
+            cur.execute(
+                f"SELECT id, tip, domeniu, pattern, replacement, activ, prioritate, sursa, created_at "
+                f"FROM ocr_corrections_db ORDER BY prioritate ASC, id ASC LIMIT {ph} OFFSET {ph}",
+                (limit, offset),
+            )
+            rows = cur.fetchall() or []
+        cols = ["id", "tip", "domeniu", "pattern", "replacement", "activ", "prioritate", "sursa", "created_at"]
+        result = []
+        for r in rows:
+            if hasattr(r, "keys"):
+                result.append(dict(r))
+            else:
+                result.append(dict(zip(cols, r)))
+        return {"items": result, "total": len(result)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/ocr-corrections")
+async def adauga_ocr_correction(
+    body: OcrCorrectionBody,
+    current_user: dict = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Acces interzis.")
+    if len(body.pattern.strip()) < 3:
+        raise HTTPException(status_code=422, detail="Pattern trebuie să aibă minim 3 caractere.")
+    if body.tip not in ("direct", "regex"):
+        raise HTTPException(status_code=422, detail="tip trebuie să fie 'direct' sau 'regex'.")
+    if body.tip == "regex":
+        import re as _re
+        try:
+            _re.compile(body.pattern)
+        except _re.error as e:
+            raise HTTPException(status_code=422, detail=f"Regex invalid: {e}")
+    from backend.database import get_cursor, _use_sqlite
+    ph = "?" if _use_sqlite() else "%s"
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                f"INSERT INTO ocr_corrections_db (tip, domeniu, pattern, replacement, activ, prioritate) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph}) RETURNING id",
+                (body.tip, body.domeniu, body.pattern.strip(), body.replacement, body.activ, body.prioritate),
+            )
+            row = cur.fetchone()
+            new_id = row[0] if row else None
+        from backend.ocr_corrections import invalideaza_cache_db_corrections
+        invalideaza_cache_db_corrections()
+        return {"ok": True, "id": new_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/ocr-corrections/{correction_id}")
+async def actualizeaza_ocr_correction(
+    correction_id: int,
+    body: OcrCorrectionBody,
+    current_user: dict = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Acces interzis.")
+    if len(body.pattern.strip()) < 3:
+        raise HTTPException(status_code=422, detail="Pattern trebuie să aibă minim 3 caractere.")
+    if body.tip == "regex":
+        import re as _re
+        try:
+            _re.compile(body.pattern)
+        except _re.error as e:
+            raise HTTPException(status_code=422, detail=f"Regex invalid: {e}")
+    from backend.database import get_cursor, _use_sqlite
+    ph = "?" if _use_sqlite() else "%s"
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                f"UPDATE ocr_corrections_db SET tip={ph}, domeniu={ph}, pattern={ph}, "
+                f"replacement={ph}, activ={ph}, prioritate={ph} WHERE id={ph}",
+                (body.tip, body.domeniu, body.pattern.strip(), body.replacement, body.activ, body.prioritate, correction_id),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Corecție negăsită.")
+        from backend.ocr_corrections import invalideaza_cache_db_corrections
+        invalideaza_cache_db_corrections()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/admin/ocr-corrections/{correction_id}")
+async def sterge_ocr_correction(
+    correction_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Acces interzis.")
+    from backend.database import get_cursor, _use_sqlite
+    ph = "?" if _use_sqlite() else "%s"
+    try:
+        with get_cursor() as cur:
+            cur.execute(f"DELETE FROM ocr_corrections_db WHERE id={ph}", (correction_id,))
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Corecție negăsită.")
+        from backend.ocr_corrections import invalideaza_cache_db_corrections
+        invalideaza_cache_db_corrections()
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

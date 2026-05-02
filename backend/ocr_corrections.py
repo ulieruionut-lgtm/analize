@@ -10,10 +10,58 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 _log = logging.getLogger(__name__)
+
+# ─── Corecții OCR dinamice din DB ──────────────────────────────────────────
+_DB_CORRECTIONS_CACHE: Optional[List[dict]] = None
+_DB_CORRECTIONS_CACHE_TS: float = 0.0
+_DB_CORRECTIONS_TTL: float = 120.0  # 2 minute
+
+
+def _load_db_corrections() -> List[dict]:
+    """Încarcă corecții active din tabelul ocr_corrections_db cu cache TTL 2 min."""
+    global _DB_CORRECTIONS_CACHE, _DB_CORRECTIONS_CACHE_TS
+    now = time.time()
+    if _DB_CORRECTIONS_CACHE is not None and (now - _DB_CORRECTIONS_CACHE_TS) < _DB_CORRECTIONS_TTL:
+        return _DB_CORRECTIONS_CACHE
+    try:
+        from backend.database import get_cursor, _use_sqlite  # type: ignore
+        with get_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT tip, domeniu, pattern, replacement FROM ocr_corrections_db "
+                "WHERE activ = TRUE ORDER BY prioritate ASC"
+            )
+            rows = cur.fetchall() or []
+        result = []
+        for r in rows:
+            try:
+                tip = r[0] if isinstance(r, (list, tuple)) else r.get("tip", "direct")
+                domeniu = r[1] if isinstance(r, (list, tuple)) else r.get("domeniu")
+                pattern = r[2] if isinstance(r, (list, tuple)) else r.get("pattern", "")
+                replacement = r[3] if isinstance(r, (list, tuple)) else r.get("replacement", "")
+                if pattern:
+                    result.append({"tip": tip, "domeniu": domeniu, "pattern": pattern, "replacement": replacement})
+            except Exception:
+                pass
+        _DB_CORRECTIONS_CACHE = result
+        _DB_CORRECTIONS_CACHE_TS = now
+        return result
+    except Exception:
+        _DB_CORRECTIONS_CACHE = []
+        _DB_CORRECTIONS_CACHE_TS = now
+        return []
+
+
+def invalideaza_cache_db_corrections() -> None:
+    """Apelat după INSERT/UPDATE în ocr_corrections_db pentru refresh imediat."""
+    global _DB_CORRECTIONS_CACHE, _DB_CORRECTIONS_CACHE_TS
+    _DB_CORRECTIONS_CACHE = None
+    _DB_CORRECTIONS_CACHE_TS = 0.0
+
 
 # ─── Mapare categorie PDF (RO) → domeniu pentru DOMAIN_MAP ─────────────────
 
@@ -214,6 +262,23 @@ def aplica_pipeline_ocr_normalizat(
             for wrong, right in sorted(dm.items(), key=lambda x: len(x[0]), reverse=True):
                 if wrong in text:
                     text = text.replace(wrong, right)
+
+    # Pasul 4: corecții dinamice din DB (tabel ocr_corrections_db)
+    for corr in _load_db_corrections():
+        cd = corr.get("domeniu")
+        if cd and cd != domain:
+            continue
+        pat = corr.get("pattern", "")
+        repl = corr.get("replacement", "")
+        if not pat:
+            continue
+        try:
+            if corr.get("tip") == "regex":
+                text = re.sub(pat, repl, text, flags=re.IGNORECASE)
+            else:
+                text = text.replace(pat, repl)
+        except re.error:
+            _log.warning("[OCR_DB_CORR] regex invalid ignorat: %r", pat)
 
     text = re.sub(r"\s+", " ", text).strip()
     if log_changes and text != original:
