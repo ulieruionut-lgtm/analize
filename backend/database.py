@@ -579,6 +579,51 @@ def get_buletine_recente(limit: int = 20) -> list:
         return result
 
 
+def _laboratori_compatible(a: Optional[str], b: Optional[str]) -> bool:
+    xa = (a or "").strip().lower()
+    xb = (b or "").strip().lower()
+    if not xa or not xb:
+        return True
+    return xa == xb or xa in xb or xb in xa
+
+
+def get_prior_buletin_id_same_date(
+    pacient_id: int,
+    exclude_buletin_id: int,
+    data_buletin_iso: str,
+    laborator: Optional[str] = None,
+) -> Optional[int]:
+    """
+    Pentru același pacient și aceeași dată clinică (YYYY-MM-DD), returnează ID-ul buletinului
+    încărcat imediat înaintea lui `exclude_buletin_id` (created_at mai mic, cel mai recent astfel).
+    Folosit la completarea analizelor lipsă din reîncărcare.
+    """
+    from backend.utils import buletin_data_to_iso
+
+    target = (data_buletin_iso or "").strip()[:10]
+    if len(target) < 10:
+        return None
+    ph = "?" if _use_sqlite() else "%s"
+    sql = (
+        f"SELECT id, data_buletin, laborator, created_at FROM buletine "
+        f"WHERE pacient_id = {ph} AND id != {ph} ORDER BY created_at DESC"
+    )
+    with get_cursor(commit=False) as cur:
+        cur.execute(sql, (pacient_id, exclude_buletin_id))
+        rows = cur.fetchall() or []
+    for row in rows:
+        d = _row_to_dict(row) if hasattr(row, "keys") else {}
+        if not d:
+            continue
+        iso = buletin_data_to_iso(d.get("data_buletin"))
+        if iso != target:
+            continue
+        if not _laboratori_compatible(d.get("laborator"), laborator):
+            continue
+        return int(d["id"])
+    return None
+
+
 # Limite aliniate la schema PostgreSQL (evită crash la INSERT)
 _REZ_DEN_MAX = 255
 _REZ_UNIT_MAX = 64
@@ -595,11 +640,12 @@ def rezultat_meta_pentru_insert(
     needs_review: bool = False,
     review_reasons: Optional[List[str]] = None,
     ocr_confidence: Optional[float] = None,
+    prior_buletin_gap_fill: Optional[int] = None,
 ) -> Optional[str]:
     """Construiește JSON pentru coloana rezultat_meta (microbiologie etc.)."""
     import json
 
-    d: Dict[str, str] = {}
+    d: Dict[str, Any] = {}
     if organism_raw and str(organism_raw).strip():
         clipped = _clip_str(str(organism_raw).strip(), 500)
         if clipped:
@@ -621,6 +667,12 @@ def rezultat_meta_pentru_insert(
     if ocr_confidence is not None:
         try:
             d["ocr_confidence"] = round(float(ocr_confidence), 3)
+        except (TypeError, ValueError):
+            pass
+    if prior_buletin_gap_fill is not None:
+        try:
+            d["prior_buletin_id"] = int(prior_buletin_gap_fill)
+            d["completare_acoperire"] = True
         except (TypeError, ValueError):
             pass
     if not d:
