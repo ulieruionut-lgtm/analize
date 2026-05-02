@@ -460,6 +460,11 @@ def este_denumire_gunoi(denumire: str) -> bool:
 _SECTIUNI = [
     (re.compile(r"HEMATOLOGIE|HEMOLEUCOGRAMA|FORMULA\s+LEUCOCITAR|HEMOGRAM", re.IGNORECASE),
      "Hemoleucograma"),
+    # Rapoarte compuse (mai multe buletine într-un PDF): subsecțiuni explicite
+    (re.compile(r"Imunologie\s*[–-]\s*Markeri\s+Anemie", re.IGNORECASE), "Imunologie si Serologie"),
+    (re.compile(r"Imunologie\s*[–-]\s*Markeri\s+Endocrini", re.IGNORECASE), "Hormoni"),
+    (re.compile(r"Markeri\s+endocrini\s+suplimentari", re.IGNORECASE), "Hormoni tiroidieni"),
+    (re.compile(r"Examen\s+citobacteriologic|citobacteriologic\s+secre", re.IGNORECASE), "Microbiologie"),
     # Secțiuni numerotate (rapoarte structurate / copy-paste din laborator)
     (re.compile(r"^\s*\d+\.\s*Bacteriologie", re.IGNORECASE), "Microbiologie"),
     (re.compile(r"^\s*\d+\.\s*Antibiogram", re.IGNORECASE), "Microbiologie"),
@@ -2287,7 +2292,8 @@ _RE_GAMAN_PARAM_VAL_UM = re.compile(
     re.UNICODE,
 )
 _RE_INTERVAL_LABEL_LINIE = re.compile(
-    r"^\s*Interval\s*:\s*(?:[<>≤≥]{1,2}\s*)?([\d.,]+)\s+" + _RE_DASH_UCR + r"\s+([\d.,]+)\s*$",
+    # «Interval menopauză: <37 – 102.76» sau «Interval: 5 – 34»
+    r"^\s*Interval(?:\s+[^:]+:\s*|\s*:\s*)(?:[<>≤≥]{1,2}\s*)?([\d.,]+)\s*" + _RE_DASH_UCR + r"\s+([\d.,]+)\s*$",
     re.IGNORECASE,
 )
 _RE_INTERVAL_LABEL_SINGULAR_TXT = re.compile(
@@ -3145,7 +3151,17 @@ def _desface_rand_biochimie_urina_lipite(lines: list[str]) -> list[str]:
             if not changed:
                 break
         out.extend(parts)
-    return out
+        return out
+
+
+def _normalize_unicode_hyphens_line(s: str) -> str:
+    """Hyphen-uri Unicode înguste (ex. LDL‑colesterol) → ASCII, ca să prindă _RE_GAMAN / liniuțe."""
+    if not s:
+        return s
+    t = s.replace("\ufeff", "")
+    for ch in ("\u2011", "\u2010", "\u2012"):
+        t = t.replace(ch, "-")
+    return t
 
 
 def extract_rezultate(text: str) -> list[RezultatParsat]:
@@ -3167,6 +3183,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                 )
             )
         )
+        cleaned = _normalize_unicode_hyphens_line(cleaned)
         for piece in _expandeaza_rand_tab_diagnostic(cleaned):
             ps = piece.strip()
             if not ps:

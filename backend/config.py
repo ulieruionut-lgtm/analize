@@ -2,7 +2,7 @@
 import secrets
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ROOT = Path(__file__).resolve().parent.parent
 _ENV_FILE = _ROOT / ".env"
@@ -10,6 +10,12 @@ _DEFAULT_DB = _ROOT / "analize.db"
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     app_env: str = "development"
     database_url: str = "sqlite"
 
@@ -45,11 +51,22 @@ class Settings(BaseSettings):
     upload_enable_detailed_errors: bool = False
     jwt_secret_key: str = ""
 
-    # AI Copilot — audit LLM la upload (temporar, implicit oprit). Oprire: false sau fără LLM_API_KEY/OPENAI_API_KEY.
+    # AI Copilot — audit LLM la upload (temporar, implicit oprit). Oprire: false sau fără cheie API.
+    # llm_provider: openai = API compatibil OpenAI (implicit); anthropic = Claude direct (ex. Haiku).
     llm_buletin_audit_enabled: bool = False
     llm_buletin_audit_timeout_seconds: float = 90.0
+    llm_provider: str = "openai"
     llm_base_url: str | None = None
     llm_model: str | None = None
+    # Din ANTHROPIC_API_KEY în .env (llm_chat citește și din os.environ)
+    anthropic_api_key: str | None = None
+
+    # La reîncărcare cu aceeași dată de buletin: completează analize mapate lipsă din ultima încărcare anterioară
+    prior_upload_gap_fill_enabled: bool = True
+
+    # Upload async: dacă OCR+salvare depășește (PDF mare / retry DPI), job marcat error la polling.
+    # Implicit 30 min (12 min e prea scurt pentru 3–5 MB scan + 2 treceri OCR). Env: UPLOAD_ASYNC_STALE_MINUTES
+    upload_async_stale_minutes: int = 30
 
     def get_jwt_secret(self) -> str:
         """Returneaza JWT secret key. Daca nu e setat, genereaza unul random (valabil doar in procesul curent)."""
@@ -71,10 +88,6 @@ class Settings(BaseSettings):
         if self.database_url and not self.database_url.strip().lower().startswith("sqlite"):
             return None
         return _DEFAULT_DB
-
-    class Config:
-        env_file = str(_ENV_FILE)
-        env_file_encoding = "utf-8"
 
 
 settings = Settings()

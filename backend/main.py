@@ -567,7 +567,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260601-llm-necunoscute-haiku-v2-fuzzy-fallback"
+_PARSER_VERSION = "parser-20260801-multi-buletin-interval-menopauza-v1"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -1051,9 +1051,8 @@ async def upload_pdf_async_status(job_id: str, current_user: dict = Depends(get_
         raise HTTPException(status_code=403, detail="Nu ai acces la acest job.")
 
     status = job.get("status", "queued")
-    # Stale job detector: daca procesarea dureaza >12 minute, workerul probabil a murit.
-    # Marcam jobul ca "error" ca sa nu ramana blocat la infinit in polling.
-    _STALE_MINUTES = 12
+    # Stale job detector: OCR+retry pe PDF mare poate depăși 12 min — vezi settings.upload_async_stale_minutes.
+    _STALE_MINUTES = max(5, int(getattr(settings, "upload_async_stale_minutes", 30) or 30))
     if status in {"processing", "queued"}:
         ref_ts = job.get("started_ts") or job.get("created_ts") or 0
         if ref_ts and (datetime.utcnow().timestamp() - float(ref_ts)) > _STALE_MINUTES * 60:
@@ -2951,7 +2950,7 @@ async function _proceseazaUploadAsync(fd, onStatus, uploadUrl = '/upload-async')
   const jobId = String(jStart.job_id || '').trim();
   const t0 = Date.now();
   let lastStatus = 'queued';
-  while ((Date.now() - t0) < 20 * 60 * 1000) {
+  while ((Date.now() - t0) < 45 * 60 * 1000) {
     await new Promise(res => setTimeout(res, lastStatus === 'processing' ? 2500 : 1200));
     let rPoll;
     let txtPoll = '';
