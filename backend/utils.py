@@ -65,3 +65,19 @@ def raspuns_eroare(status: int, mesaj: str) -> JSONResponse:
         content={"detail": mesaj[:500]},
         media_type="application/json",
     )
+
+
+def buletin_data_to_iso(val) -> str:
+    """Normalizează data_buletin din DB sau text la YYYY-MM-DD pentru comparare."""
+    if val is None:
+        return ""
+    s = str(val).strip()
+    if not s:
+        return ""
+    if "T" in s:
+        s = s.split("T")[0]
+    elif " " in s and len(s) > 10 and ":" in s:
+        s = s.split(" ")[0]
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return normalizare_data_text(s)
