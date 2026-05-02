@@ -22,11 +22,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN echo "20260501-parser-verify-build" > /app/BUILD_VERSION
+RUN echo "20260601-llm-necunoscute" > /app/BUILD_VERSION
 
-# Health: CMD-SHELL ca $PORT setat de Railway la runtime să fie expandat corect
+# Health: curl la /health; PORT e setat de Railway la runtime ($$ → $ în imagine)
 HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=4 \
-    CMD-SHELL curl -fsS "http://127.0.0.1:${PORT:-8000}/health" > /dev/null || exit 1
+    CMD /bin/sh -c "curl -fsS http://127.0.0.1:$${PORT:-8000}/health >/dev/null || exit 1"
 
 # start.sh: tessdata + uvicorn fără limit-max-requests (OCR/upload lung nu trebuie întrerupt de restart worker)
 # WEB_CONCURRENCY: implicit 2; pe instanțe mici (512MB) setează 1 în Railway Variables

@@ -82,6 +82,8 @@ class RezultatParsat(BaseModel):
     needs_review: bool = False
     review_reasons: list[str] = Field(default_factory=list)
     ocr_confidence: Optional[float] = None
+    # Completare din buletin anterior (aceeași dată clinică); meta la salvare în rezultat_meta
+    gap_fill_source_buletin_id: Optional[int] = None
 
 
 class PatientParsed(BaseModel):
@@ -117,6 +119,11 @@ class AprobaAliasBody(BaseModel):
 class AprobaAliasBulkBody(BaseModel):
     analiza_standard_id: int
     necunoscuta_ids: Optional[list[int]] = None
+    ids: Optional[list[int]] = None
+
+
+class SugestiiLlmNecunoscuteBody(BaseModel):
+    limit: int = Field(default=25, ge=1, le=80)
     ids: Optional[list[int]] = None
 
 

@@ -1,4 +1,6 @@
 """Router analize: standard, necunoscute, alias-uri, rezultate, historicul."""
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -19,7 +21,15 @@ from backend.database import (
     update_rezultat,
 )
 from backend.deps import get_current_user
-from backend.models import AdaugaAnalizaStdBody, AdaugaRezultatBody, AprobaAliasBody, AprobaAliasBulkBody
+from backend.llm_chat import llm_provider_normalized, suggest_alias_llm_configured
+from backend.llm_helper import sugestii_necunoscuta_cu_catalog
+from backend.models import (
+    AdaugaAnalizaStdBody,
+    AdaugaRezultatBody,
+    AprobaAliasBody,
+    AprobaAliasBulkBody,
+    SugestiiLlmNecunoscuteBody,
+)
 
 router = APIRouter()
 
@@ -118,6 +128,59 @@ async def lista_necunoscute(toate: bool = False, current_user: dict = Depends(ge
     return get_analize_necunoscute(doar_neaprobate=not toate)
 
 
+@router.post("/analize-necunoscute/sugestii-llm")
+async def sugestii_llm_necunoscute(
+    body: SugestiiLlmNecunoscuteBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Sugestii de mapare la analiza_standard (LLM + fuzzy pe catalog).
+    Necesita ANTHROPIC_API_KEY sau chei OpenAI-compat + LLM_PROVIDER.
+    """
+    if not suggest_alias_llm_configured():
+        return {
+            "ok": False,
+            "llm_disponibil": False,
+            "mesaj": "Configurează LLM: ANTHROPIC_API_KEY (recomandat) + LLM_PROVIDER=anthropic, sau chei OpenAI-compat.",
+            "provider": llm_provider_normalized(),
+            "items": [],
+            "procesate": 0,
+        }
+
+    std = get_all_analize_standard()
+    nec = get_analize_necunoscute(doar_neaprobate=True)
+    if body.ids:
+        want = {int(x) for x in body.ids}
+        nec = [n for n in nec if n.get("id") in want]
+    nec = nec[: body.limit]
+
+    loop = asyncio.get_event_loop()
+    items = []
+
+    def _one_row(nrow: dict) -> dict:
+        den = (nrow.get("denumire_raw") or "").strip()
+        cat = (nrow.get("categorie") or "").strip() or None
+        nid = nrow.get("id")
+        try:
+            sug = sugestii_necunoscuta_cu_catalog(den, std, categorie_pdf=cat)
+            return {"id": nid, "denumire_raw": den, "sugestii": sug, "eroare": None}
+        except Exception as exc:
+            return {"id": nid, "denumire_raw": den, "sugestii": [], "eroare": str(exc)[:200]}
+
+    for n in nec:
+        item = await loop.run_in_executor(None, _one_row, n)
+        items.append(item)
+
+    return {
+        "ok": True,
+        "llm_disponibil": True,
+        "mesaj": None,
+        "provider": llm_provider_normalized(),
+        "items": items,
+        "procesate": len(items),
+    }
+
+
 @router.post("/aproba-alias")
 async def aproba_alias(body: AprobaAliasBody, current_user: dict = Depends(get_current_user)):
     """Asociaza o denumire_raw necunoscuta cu o analiza_standard."""
@@ -201,7 +264,6 @@ async def auto_alias_necunoscute(current_user: dict = Depends(get_current_user))
     Salveaza automat alias + actualizare retroactiva pentru match-urile cu scor suficient.
     """
     from backend.normalizer import auto_rezolva_necunoscute
-    import asyncio
     result = await asyncio.get_event_loop().run_in_executor(None, auto_rezolva_necunoscute)
     return result
 

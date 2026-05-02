@@ -567,7 +567,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260501-x10-interval-gaman-lh-sider-ocr-coltab-v1"
+_PARSER_VERSION = "parser-20260601-llm-necunoscute-haiku-v1"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -878,6 +878,21 @@ def _process_upload_sync_job(
             if not buletin or buletin.get("id") is None:
                 raise RuntimeError("Eroare la salvarea buletinului.")
 
+            n_gap_randuri = 0
+            n_gap_valori = 0
+            if getattr(settings, "prior_upload_gap_fill_enabled", True):
+                from backend.gap_fill_prior_upload import apply_gap_fill_from_prior_upload
+
+                n_gap_randuri, n_gap_valori, msg_gap = apply_gap_fill_from_prior_upload(
+                    parsed,
+                    pacient_id=pacient["id"],
+                    new_buletin_id=int(buletin["id"]),
+                    data_buletin_iso=data_buletin,
+                    laborator=lab_nume,
+                )
+                if msg_gap:
+                    upload_warnings.append(msg_gap)
+
             # Toate rândurile din parse (ca modul Verificare și ca /upload sincron). Fără deduplicare
             # după analiza_standard_id — aceeași analiză poate apărea în contexte diferite (sumar vs hemogramă).
             nr_inserted = 0
@@ -900,6 +915,7 @@ def _process_upload_sync_job(
                         getattr(r, "needs_review", False),
                         getattr(r, "review_reasons", []),
                         getattr(r, "ocr_confidence", None),
+                        prior_buletin_gap_fill=getattr(r, "gap_fill_source_buletin_id", None),
                     ),
                 )
                 nr_inserted += 1
@@ -921,6 +937,9 @@ def _process_upload_sync_job(
                 "pacient": {"id": pacient["id"], "cnp": pacient["cnp"], "nume": pacient["nume"], "prenume": pacient.get("prenume")},
                 "buletin_id": buletin["id"],
                 "numar_analize": nr_inserted,
+                "completari_din_incarcare_anterioara": n_gap_randuri + n_gap_valori,
+                "completari_randuri_din_incarcare_anterioara": n_gap_randuri,
+                "completari_valori_din_incarcare_anterioara": n_gap_valori,
                 "warnings": upload_warnings,
                 "triere_ai": triage,
                 "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
@@ -1337,6 +1356,20 @@ async def upload_pdf(
             raise RuntimeError(f"Eroare la insert_buletin: {ex}") from ex
         if not buletin or buletin.get("id") is None:
             raise RuntimeError("Eroare la salvarea buletinului. Verifica conexiunea la baza de date.")
+        n_gap_randuri = 0
+        n_gap_valori = 0
+        if getattr(settings, "prior_upload_gap_fill_enabled", True):
+            from backend.gap_fill_prior_upload import apply_gap_fill_from_prior_upload
+
+            n_gap_randuri, n_gap_valori, msg_gap = apply_gap_fill_from_prior_upload(
+                parsed,
+                pacient_id=pacient["id"],
+                new_buletin_id=int(buletin["id"]),
+                data_buletin_iso=data_buletin,
+                laborator=_lab_nume_up,
+            )
+            if msg_gap:
+                upload_warnings.append(msg_gap)
         for idx, r in enumerate(parsed.rezultate):
             try:
                 insert_rezultat(
@@ -1357,6 +1390,7 @@ async def upload_pdf(
                         getattr(r, "needs_review", False),
                         getattr(r, "review_reasons", []),
                         getattr(r, "ocr_confidence", None),
+                        prior_buletin_gap_fill=getattr(r, "gap_fill_source_buletin_id", None),
                     ),
                 )
             except (IndexError, TypeError) as ex:
@@ -1382,6 +1416,9 @@ async def upload_pdf(
             "buletin_id": buletin["id"],
             "data_buletin": buletin.get("data_buletin"),
             "numar_analize": len(parsed.rezultate),
+            "completari_din_incarcare_anterioara": n_gap_randuri + n_gap_valori,
+            "completari_randuri_din_incarcare_anterioara": n_gap_randuri,
+            "completari_valori_din_incarcare_anterioara": n_gap_valori,
             "numar_de_verificat": sum(1 for r in parsed.rezultate if getattr(r, "needs_review", False)),
             "warnings": upload_warnings,
             "triere_ai": triage,
@@ -2059,9 +2096,11 @@ async def index():
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="incarcaNecunoscute()">🔄 Reîncarcă lista</button>
         <button class="btn btn-primary" id="btn-auto-alias" onclick="autoRezolvaNerecunoscute()" title="Încearcă să mapeze automat analizele necunoscute la analizele standard (fuzzy matching)">⚡ Auto-rezolvă necunoscute</button>
+        <button class="btn btn-secondary" id="btn-llm-nec" onclick="sugestiiLlmNecunoscute()" title="Claude Haiku (sau modelul configurat): sugestii de mapare la catalog">🤖 Sugestii AI (Haiku)</button>
         <button class="btn btn-secondary" onclick="golesteAnalizeAsociate()" style="color:var(--rosu)" title="Șterge toate analizele necunoscute și alias-urile (asocierile)">🗑️ Șterge toate asocierile</button>
       </div>
       <div id="auto-alias-result" style="display:none;margin-bottom:12px"></div>
+      <div id="nec-llm-result" style="display:none;margin-bottom:12px"></div>
       <div id="nec-bulk-bar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--albastru-deschis);border-radius:8px;border:1px solid var(--border)">
         <strong style="font-size:0.85rem">Aprobare în masă</strong>
         <span id="nec-bulk-count" style="font-size:0.82rem;color:var(--gri)">0 selectate</span>
@@ -4117,6 +4156,8 @@ async function adaugaAnalizaStandard() {
 
 // ─── Tab 4: Analize necunoscute ───────────────────────────────────────────────
 let _analize_std_cache = null;
+/** id necunoscuta -> array sugestii de la POST /analize-necunoscute/sugestii-llm */
+let _necLlmCache = {};
 
 /** Aliniat la backend.analiza_categorii.potrivire_categorie_pdf_cu_grup (etichete categorie_grup). */
 function potrivireCategoriePdfCuGrupJs(categoriePdf, categorieGrup) {
@@ -4175,6 +4216,55 @@ async function incarcaStandardeCache() {
   return _analize_std_cache;
 }
 
+function htmlLlmCellNec(nid, arr) {
+  if (!arr || !arr.length) return '<span style="font-size:0.72rem;color:var(--gri)">—</span>';
+  return arr.slice(0, 3).map((s) =>
+    '<button type="button" class="btn btn-secondary" style="padding:2px 6px;font-size:0.72rem;margin:0 4px 4px 0;display:inline-block;max-width:200px;text-align:left;white-space:normal;line-height:1.25" ' +
+    'title="LLM ' + (s.llm_score != null ? s.llm_score : '') + ' · fuzzy ' + (s.fuzzy_score != null ? s.fuzzy_score : '') + ' · comb. ' + (s.combined_score != null ? s.combined_score : '') + '" ' +
+    'onclick="selectStdAndApprove(' + nid + ', ' + s.analiza_standard_id + ')">' + escHtml(s.denumire_standard) + ' <small>(' + escHtml(String(s.combined_score)) + ')</small></button>'
+  ).join('');
+}
+
+async function selectStdAndApprove(nid, aid) {
+  const sel = document.getElementById('sel-std-' + nid);
+  if (sel) sel.value = String(aid);
+  await aprobaAlias(nid);
+}
+
+async function sugestiiLlmNecunoscute() {
+  const btn = document.getElementById('btn-llm-nec');
+  const resEl = document.getElementById('nec-llm-result');
+  if (!btn || !resEl) return;
+  btn.disabled = true;
+  resEl.style.display = 'none';
+  try {
+    const r = await fetch('/analize-necunoscute/sugestii-llm', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 50 })
+    });
+    const j = await r.json();
+    if (!j.llm_disponibil) {
+      resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(j.mesaj || 'LLM indisponibil.') + '</div>';
+      resEl.style.display = 'block';
+      return;
+    }
+    (j.items || []).forEach((it) => {
+      _necLlmCache[it.id] = it.sugestii || [];
+      const cell = document.getElementById('nec-llm-' + it.id);
+      if (cell) cell.innerHTML = htmlLlmCellNec(it.id, it.sugestii || []);
+    });
+    const prov = j.provider ? ' · ' + escHtml(j.provider) : '';
+    resEl.innerHTML = '<div class="mesaj succes"><strong>Sugestii AI</strong> · procesate ' + (j.procesate || 0) + ' rând(uri)' + prov + '</div>';
+    resEl.style.display = 'block';
+  } catch (e) {
+    resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(e.message) + '</div>';
+    resEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function autoRezolvaNerecunoscute() {
   const btn = document.getElementById('btn-auto-alias');
   const resEl = document.getElementById('auto-alias-result');
@@ -4209,6 +4299,7 @@ async function golesteAnalizeAsociate() {
     const j = await r.json();
     if (r.ok && j.ok) {
       document.getElementById('badge-nec').style.display = 'none';
+      _necLlmCache = {};
       incarcaNecunoscute();
       alert(j.mesaj || 'Toate asocierile au fost șterse.');
     } else {
@@ -4248,12 +4339,19 @@ async function incarcaNecunoscute() {
     }
 
     if (!nec.length) {
+      _necLlmCache = {};
       el.innerHTML = '<div class="mesaj succes"><strong>✅ Toate analizele sunt recunoscute!</strong><br>Nicio analiză necunoscută în baza de date.</div>';
       const bulkSel = document.getElementById('sel-std-bulk');
       if (bulkSel) bulkSel.innerHTML = '<option value="">— Analiză standard —</option>';
       updateNecBulkCount();
       return;
     }
+
+    const idsSet = new Set(nec.map((n) => n.id));
+    Object.keys(_necLlmCache).forEach((k) => {
+      const id = parseInt(k, 10);
+      if (!idsSet.has(id)) delete _necLlmCache[k];
+    });
 
     const bulkSel = document.getElementById('sel-std-bulk');
     if (bulkSel) bulkSel.innerHTML = buildStdSelectOptionsHtml(std, null);
@@ -4272,6 +4370,7 @@ async function incarcaNecunoscute() {
         <th>Laborator</th>
         <th>Denumire din PDF</th>
         <th>Apariții</th>
+        <th title="După „Sugestii AI (Haiku)”: click pe o sugestie pentru a seta dropdown-ul și a asocia">Sugestii AI</th>
         <th>Asociază cu analiza standard</th>
         <th>Acțiuni</th>
       </tr></thead>
@@ -4297,6 +4396,7 @@ async function incarcaNecunoscute() {
           <div style="font-size:0.75rem;color:var(--gri);margin-top:2px">Prima apariție: ${(n.created_at||'').substring(0,10)}</div>
         </td>
         <td><span class="badge badge-norm">${n.aparitii}×</span></td>
+        <td id="nec-llm-${n.id}" style="vertical-align:top;max-width:220px">${htmlLlmCellNec(n.id, _necLlmCache[n.id])}</td>
         <td>
           <select id="sel-std-${n.id}" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
             ${opts}
@@ -4347,7 +4447,7 @@ async function aprobaAlias(id) {
     if (r.ok) {
       const row = document.getElementById('nec-row-' + id);
       if (row) {
-        row.innerHTML = `<td colspan="7">
+        row.innerHTML = `<td colspan="8">
           <span style="color:var(--verde)">✅ Asociere reușită. Rezultatele existente au fost actualizate; la următorul upload recunoașterea va fi automată.</span>
         </td>`;
       }
