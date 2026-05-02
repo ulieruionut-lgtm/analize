@@ -123,7 +123,7 @@ class AprobaAliasBulkBody(BaseModel):
 
 
 class SugestiiLlmNecunoscuteBody(BaseModel):
-    limit: int = Field(default=25, ge=1, le=80)
+    limit: int = Field(default=120, ge=1, le=250)
     ids: Optional[list[int]] = None
 
 

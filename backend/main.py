@@ -567,7 +567,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260601-llm-necunoscute-haiku-v1"
+_PARSER_VERSION = "parser-20260601-llm-necunoscute-haiku-v2-fuzzy-fallback"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -4241,7 +4241,7 @@ async function sugestiiLlmNecunoscute() {
     const r = await fetch('/analize-necunoscute/sugestii-llm', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 50 })
+      body: JSON.stringify({ limit: 250 })
     });
     const j = await r.json();
     if (!j.llm_disponibil) {
@@ -4255,7 +4255,14 @@ async function sugestiiLlmNecunoscute() {
       if (cell) cell.innerHTML = htmlLlmCellNec(it.id, it.sugestii || []);
     });
     const prov = j.provider ? ' · ' + escHtml(j.provider) : '';
-    resEl.innerHTML = '<div class="mesaj succes"><strong>Sugestii AI</strong> · procesate ' + (j.procesate || 0) + ' rând(uri)' + prov + '</div>';
+    const cu = typeof j.randuri_cu_sugestii === 'number' ? j.randuri_cu_sugestii : null;
+    const extra = cu !== null
+      ? ' · <strong>' + cu + '</strong> rânduri cu cel puțin o sugestie în catalog'
+      : '';
+    const warnZero = (cu === 0 && (j.procesate || 0) > 0)
+      ? '<br><small style="color:#856404">Nicio potrivire în catalog pentru textele OCR curente — verifică calitatea PDF sau mapează manual.</small>'
+      : '';
+    resEl.innerHTML = '<div class="mesaj succes"><strong>Sugestii AI</strong> · procesate ' + (j.procesate || 0) + ' rând(uri)' + extra + prov + warnZero + '</div>';
     resEl.style.display = 'block';
   } catch (e) {
     resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(e.message) + '</div>';

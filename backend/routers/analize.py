@@ -171,6 +171,8 @@ async def sugestii_llm_necunoscute(
         item = await loop.run_in_executor(None, _one_row, n)
         items.append(item)
 
+    cu_sugestii = sum(1 for it in items if it.get("sugestii"))
+
     return {
         "ok": True,
         "llm_disponibil": True,
@@ -178,6 +180,7 @@ async def sugestii_llm_necunoscute(
         "provider": llm_provider_normalized(),
         "items": items,
         "procesate": len(items),
+        "randuri_cu_sugestii": cu_sugestii,
     }
 
 
