@@ -614,6 +614,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
+        "code_version": "v20260503-llm-bg-ocr-fix",
     }
 
 
@@ -963,23 +964,23 @@ def _process_upload_sync_job(
                 "ocr_calitate_slaba_salvata": ocr_calitate_slaba_salvata,
                 "llm_learn": llm_learn_report,
             }
-            try:
-                from backend.llm_buletin_audit import maybe_run_copilot_audit
-
-                audit_async = maybe_run_copilot_audit(text or "", app_rows_copilot)
-                if audit_async is not None:
-                    payload["buletin_audit"] = audit_async
-                    if audit_async.get("status") == "ok":
-                        from backend.llm_buletin_audit import apply_audit_corrections_to_db
-                        payload["audit_corrections"] = apply_audit_corrections_to_db(
-                            audit_async, buletin_id=int(buletin["id"])
-                        )
-            except Exception as _e_copilot:
-                payload["buletin_audit"] = {
-                    "status": "error",
-                    "message": str(_e_copilot)[:400],
-                    "cross_check": None,
-                }
+            def _run_audit_bg(txt: str, rows: list, b_id: int) -> None:
+                try:
+                    from backend.llm_buletin_audit import (
+                        apply_audit_corrections_to_db,
+                        maybe_run_copilot_audit,
+                    )
+                    res = maybe_run_copilot_audit(txt, rows)
+                    if res is not None and res.get("status") == "ok":
+                        apply_audit_corrections_to_db(res, buletin_id=b_id)
+                except Exception:
+                    pass
+            threading.Thread(
+                target=_run_audit_bg,
+                args=(text or "", app_rows_copilot, int(buletin["id"])),
+                daemon=True,
+            ).start()
+            payload["buletin_audit"] = {"status": "started_background"}
             print(f"[UPLOAD-ASYNC] OK job={job_id} file={filename!r} analize={nr_inserted} tip={tip}")
     except Exception as ex:
         status_code = 500
