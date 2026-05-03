@@ -3151,7 +3151,7 @@ def _desface_rand_biochimie_urina_lipite(lines: list[str]) -> list[str]:
             if not changed:
                 break
         out.extend(parts)
-        return out
+    return out
 
 
 def _normalize_unicode_hyphens_line(s: str) -> str:
@@ -3162,6 +3162,33 @@ def _normalize_unicode_hyphens_line(s: str) -> str:
     for ch in ("\u2011", "\u2010", "\u2012"):
         t = t.replace(ch, "-")
     return t
+
+
+def _fragmenteaza_linii_ocr_fara_newlines(lines: list[str]) -> list[str]:
+    """
+    Dacă OCR întoarce puține linii foarte lungi (fără newline-uri), încearcă separare la tab / spații late.
+    Recuperează structura de tabel când textul e lipit pe un singur rând.
+    """
+    if not lines:
+        return lines
+    if len(lines) > 12:
+        return lines
+    if sum(len(x) for x in lines) < 900:
+        return lines
+    out: list[str] = []
+    for line in lines:
+        if len(line) < 800:
+            out.append(line)
+            continue
+        parts = re.split(r"(?:\t+| {3,})|\u00a0{2,}", line)
+        if len(parts) >= 5:
+            for p in parts:
+                s = p.strip()
+                if len(s) >= 8:
+                    out.append(s)
+        else:
+            out.append(line)
+    return out if out else lines
 
 
 def extract_rezultate(text: str) -> list[RezultatParsat]:
@@ -3191,6 +3218,8 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             ps = _strip_leading_hash_marker_linie(_rewrite_observatii_mucus_capatan(ps))
             if ps:
                 lines_raw.append(ps)
+    if len(lines_raw) <= 8 and sum(len(x) for x in lines_raw) > 1200:
+        lines_raw = _fragmenteaza_linii_ocr_fara_newlines(lines_raw)
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica
     lines = _lipire_valoare_rand_inainte_de_celule_epiteliale_capatan(
         _desface_rand_biochimie_urina_lipite(

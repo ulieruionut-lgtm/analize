@@ -57,6 +57,26 @@ async def lista_pacienti(
     return {"items": items, "total": total}
 
 
+def _buletin_sort_key(b: dict) -> tuple:
+    """Cheie sortare: data buletinului (desc), apoi moment încărcare (desc).
+    La două buletine cu aceeași dată clinică, prima coloană = ultima încărcare pe server."""
+    d_raw = b.get("data_buletin")
+    d = ""
+    if d_raw:
+        ds = str(d_raw)
+        if "T" in ds:
+            d = ds.split("T")[0]
+        elif " " in ds and ":" in ds:
+            d = ds.split(" ")[0]
+        else:
+            d = ds.strip()[:32]
+    c_raw = b.get("created_at")
+    c = str(c_raw) if c_raw is not None else ""
+    # Fără dată pe buletin: ordonăm doar după upload
+    primary = d or c
+    return (primary, c)
+
+
 @router.get("/pacient/{cnp}/evolutie-matrice")
 async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(get_current_user)):
     """
@@ -68,11 +88,7 @@ async def get_pacient_evolutie_matrice(cnp: str, current_user: dict = Depends(ge
         raise HTTPException(status_code=404, detail="Pacient negasit.")
 
     buletine = pacient_data.get("buletine", [])
-    buletine_sorted = sorted(
-        buletine,
-        key=lambda b: (b.get("data_buletin") or b.get("created_at") or ""),
-        reverse=True,
-    )
+    buletine_sorted = sorted(buletine, key=_buletin_sort_key, reverse=True)
 
     date_buletine = []
     for b in buletine_sorted:

@@ -27,6 +27,12 @@ _log = logging.getLogger(__name__)
 _tesseract_cmd_last: str | None = None
 
 
+def _tsv_conf_floor() -> int:
+    """Prag minim confidence Tesseract pentru cuvinte incluse în reconstrucția TSV (rânduri/tabele)."""
+    v = int(getattr(settings, "ocr_word_conf_floor", 12) or 12)
+    return max(0, min(90, v))
+
+
 def _apply_tesseract_executable() -> None:
     """
     Setează pytesseract.pytesseract.tesseract_cmd dacă executabilul nu e în PATH.
@@ -453,7 +459,46 @@ def _best_ocr_for_page(
         t_eng, sc_eng, meta_eng = _run_candidates("eng")
         if len((t_eng or "").strip()) > len_prim:
             best_meta = {**meta_eng, "lang_fallback": "eng"}
-            return t_eng, best_meta, "eng"
+            best_text, len_prim = t_eng, len((t_eng or "").strip())
+
+    # Mix explicit ron+eng (util când OCR_LANG=ron sau eng singur dau prea puțin text)
+    if len_prim < max(45, min_chars // 2) and primary.lower() != "ron+eng":
+        t_mix, _, meta_mix = _run_candidates("ron+eng")
+        if len((t_mix or "").strip()) > len_prim:
+            best_text = t_mix
+            best_meta = {**meta_mix, "lang_fallback": "ron+eng"}
+            len_prim = len((best_text or "").strip())
+
+    # Ultim resort: image_to_string (uneori produce text când image_to_data rămâne fără cuvinte nivel-5)
+    if len_prim < 5:
+        for img_try, prof_tag in ((img_prep, "prep"), (img_alt, "alt")):
+            for lang_fb in ("ron+eng", "eng", "ron"):
+                for psm_fb in (6, 11):
+                    try:
+                        cfg = _tesseract_cfg(oem, psm_fb, dpi)
+                        raw = pytesseract_mod.image_to_string(img_try, lang=lang_fb, config=cfg)
+                        raw = (raw or "").strip()
+                        if len(raw) > len_prim:
+                            best_text = raw
+                            len_prim = len(raw)
+                            best_meta = {
+                                "mean_conf": 0.0,
+                                "weak_ratio": 1.0,
+                                "n_words": len(raw.split()),
+                                "score": -400.0,
+                                "profile": profile,
+                                "psm": psm_fb,
+                                "fallback": "image_to_string",
+                                "lang_fallback": lang_fb,
+                                "img_profile": prof_tag,
+                            }
+                    except Exception:
+                        continue
+                    if len_prim >= 80:
+                        return best_text, best_meta, lang_fb
+            if len_prim >= 5:
+                break
+
     return best_text, best_meta, primary
 
 
@@ -521,7 +566,7 @@ def _layout_lines_tesseract_blocks(df: dict, *, use_column_gaps: bool) -> str:
             conf = int(confs[i] or 0)
         except (ValueError, TypeError):
             conf = 0
-        if conf < 20:
+        if conf < _tsv_conf_floor():
             continue
         try:
             b = int(blocks[i])
@@ -561,7 +606,7 @@ def _count_tsv_words(df: dict) -> int:
         if not (texts[i] or "").strip():
             continue
         try:
-            if int(confs[i] or 0) < 20:
+            if int(confs[i] or 0) < _tsv_conf_floor():
                 continue
         except (ValueError, TypeError):
             continue
@@ -605,7 +650,7 @@ def _recluster_tsv_rows(df: dict, tolerance: int) -> str:
             conf = int(df["conf"][i] or 0)
         except (ValueError, TypeError):
             conf = 0
-        if conf < 20:
+        if conf < _tsv_conf_floor():
             continue
         try:
             x = int(df["left"][i])
@@ -687,8 +732,9 @@ def _ocr_page_full(
             img_light, lang=lang_eff, config=cfg_tsv, output_type=Output.DICT
         )
         # Toleranta = ~40% din inaltimea medie a unui caracter
+        _floor = _tsv_conf_floor()
         heights = [int(df["height"][i]) for i in range(len(df["text"]))
-                   if (df["text"][i] or "").strip() and int(df.get("conf", [0])[i] or 0) >= 20]
+                   if (df["text"][i] or "").strip() and int(df.get("conf", [0])[i] or 0) >= _floor]
         if heights:
             med_h = sorted(heights)[len(heights) // 2]
             tolerance = max(6, int(med_h * 0.40))

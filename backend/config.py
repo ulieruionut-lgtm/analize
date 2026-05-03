@@ -2,6 +2,7 @@
 import secrets
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +20,23 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite"
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _postgres_sslmode_railway(cls, v):
+        """Railway PostgreSQL (proxy.rlwy.net): fără sslmode, conexiunile pot pica intermitent."""
+        if v is None:
+            return v
+        s = str(v).strip()
+        low = s.lower()
+        if not low.startswith("postgres"):
+            return s
+        if "sslmode=" in low:
+            return s
+        if "rlwy.net" in low or "railway.internal" in low:
+            sep = "&" if "?" in s else "?"
+            return f"{s}{sep}sslmode=require"
+        return s
+
     # OCR Tesseract
     # OEM 3 = LSTM pur (mai rapid si precis pe Tesseract 4/5 decat OEM 2 deprecated)
     # PSM 6 = bloc uniform de text (ideal pentru tabele medicale aliniate)
@@ -34,6 +52,8 @@ class Settings(BaseSettings):
     ocr_retry_min_mean_conf: float = 50.0
     ocr_retry_max_weak_ratio: float = 0.40
     ocr_weak_word_conf: int = 55
+    # Prag minim confidence (word-level) la reconstrucția rândurilor din TSV; 20 excludea prea multe cuvinte pe scanuri slabe.
+    ocr_word_conf_floor: int = 12
     ocr_min_digit_ratio: float = 0.0
     # True = alege clean vs hard dupa contrastul imaginii (mai precis decat mereu hard)
     ocr_preprocess_auto: bool = True
@@ -63,6 +83,12 @@ class Settings(BaseSettings):
 
     # La reîncărcare cu aceeași dată de buletin: completează analize mapate lipsă din ultima încărcare anterioară
     prior_upload_gap_fill_enabled: bool = True
+
+    # După normalizare: LLM + catalog pentru rânduri fără mapare; peste prag salvează alias (învățare).
+    # Implicit oprit (cost + risc mapări greșite); pornești explicit în producție dacă vrei auto-alias.
+    llm_learn_from_upload_enabled: bool = False
+    llm_learn_auto_apply_min_score: float = 86.0
+    llm_learn_max_calls_per_upload: int = 40
 
     # Upload async: dacă OCR+salvare depășește (PDF mare / retry DPI), job marcat error la polling.
     # Implicit 30 min (12 min e prea scurt pentru 3–5 MB scan + 2 treceri OCR). Env: UPLOAD_ASYNC_STALE_MINUTES
