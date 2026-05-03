@@ -74,6 +74,10 @@ def _names_similar(a: str, b: str) -> bool:
         return False
     if na == nb:
         return True
+    # Substring: scurt ≥ 3 și lung începe cu scurtul (ex: "VSH" ⊂ "VSH -Sange - Metoda Westergreen")
+    short, long_ = (na, nb) if len(na) <= len(nb) else (nb, na)
+    if len(short) >= 3 and (long_.startswith(short + " ") or long_.startswith(short + "-")):
+        return True
     if len(na) >= 4 and len(nb) >= 4 and (na in nb or nb in na):
         return True
     return SequenceMatcher(None, na, nb).ratio() >= 0.82
