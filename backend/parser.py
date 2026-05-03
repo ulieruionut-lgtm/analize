@@ -1152,11 +1152,17 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
 
     # --- Varianta 0: Regina Maria OCR — «Nume:\n<valoare>» (eticheta pe linie separata) ---
     # Tesseract cu PSM 6 pe formular cu 2 coloane poate separa eticheta de valoare pe linii distincte.
+    # Acceptă TitleCase SAU ALL CAPS (ambele apar din OCR pe scane Regina Maria).
     m_rm = re.search(
-        r"(?:^|\n)\s*Nume\s*:\s*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:[\s\-][A-ZĂÂÎȘȚ][a-zăâîșț]+)+)",
+        r"(?:^|\n)\s*Nume\s*:\s*\n\s*([A-ZĂÂÎȘȚ][a-zA-ZăâîșțĂÂÎȘȚ]+(?:[\s\-][A-ZĂÂÎȘȚ][a-zA-ZăâîșțĂÂÎȘȚ]+)+)",
         text,
-        re.IGNORECASE,
     )
+    if not m_rm:
+        # ALL CAPS pe linie separată: CRETULESCU CORNEL
+        m_rm = re.search(
+            r"(?:^|\n)\s*Nume\s*:\s*\n\s*([A-ZĂÂÎȘȚ]{2,}(?:\s+[A-ZĂÂÎȘȚ]{2,})+)",
+            text,
+        )
     if m_rm:
         raw_rm = _curata_nume(m_rm.group(1))
         n_rm, _ = _valid(raw_rm, None)
@@ -1189,6 +1195,12 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
         raw_n = _curata_nume(m_n.group(1))
         if not raw_n:
             raw_n = m_n.group(1).strip()
+        # ALL CAPS inline: «Nume: CRETULESCU CORNEL» — _curata_nume poate respinge ALL CAPS,
+        # deci dacă raw_n e invalid dar grupul arată ca ALL CAPS, îl preluăm direct.
+        if not raw_n or raw_n == m_n.group(1).strip():
+            grp = m_n.group(1).strip()
+            if re.match(r"^[A-ZĂÂÎȘȚ]{2,}(?:\s+[A-ZĂÂÎȘȚ]{2,})+$", grp):
+                raw_n = grp
         # Fallback: daca valoarea de pe aceeasi linie nu e un nume valid, verifica linia urmatoare
         n_test, _ = _valid(raw_n, None)
         if n_test == "Necunoscut" and m_n_next:

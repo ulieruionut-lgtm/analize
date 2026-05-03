@@ -614,7 +614,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
-        "code_version": "v20260503-ocr-speed-fix",
+        "code_version": "v20260503-name-ai-fix",
     }
 
 
@@ -4290,13 +4290,20 @@ async function sugestiiLlmNecunoscute() {
   const resEl = document.getElementById('nec-llm-result');
   if (!btn || !resEl) return;
   btn.disabled = true;
-  resEl.style.display = 'none';
+  const origText = btn.textContent;
+  btn.textContent = '⏳ Se procesează...';
+  resEl.innerHTML = '<div class="mesaj info">⏳ AI analizează analizele necunoscute (primele 30)... Poate dura 20-40 secunde.</div>';
+  resEl.style.display = 'block';
+  const ctrl = new AbortController();
+  const tId = setTimeout(() => ctrl.abort(), 90000);
   try {
     const r = await fetch('/analize-necunoscute/sugestii-llm', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 250 })
+      body: JSON.stringify({ limit: 30 }),
+      signal: ctrl.signal
     });
+    clearTimeout(tId);
     const j = await r.json();
     if (!j.llm_disponibil) {
       resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(j.mesaj || 'LLM indisponibil.') + '</div>';
@@ -4319,10 +4326,13 @@ async function sugestiiLlmNecunoscute() {
     resEl.innerHTML = '<div class="mesaj succes"><strong>Sugestii AI</strong> · procesate ' + (j.procesate || 0) + ' rând(uri)' + extra + prov + warnZero + '</div>';
     resEl.style.display = 'block';
   } catch (e) {
-    resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(e.message) + '</div>';
+    clearTimeout(tId);
+    const msg = e.name === 'AbortError' ? 'Timeout (90s) — prea multe analize de procesat. Încearcă din nou.' : e.message;
+    resEl.innerHTML = '<div class="mesaj eroare">' + escHtml(msg) + '</div>';
     resEl.style.display = 'block';
   } finally {
     btn.disabled = false;
+    btn.textContent = origText;
   }
 }
 
