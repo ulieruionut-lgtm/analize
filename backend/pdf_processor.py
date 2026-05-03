@@ -461,8 +461,8 @@ def _best_ocr_for_page(
             best_meta = {**meta_eng, "lang_fallback": "eng"}
             best_text, len_prim = t_eng, len((t_eng or "").strip())
 
-    # Mix explicit ron+eng (util când OCR_LANG=ron sau eng singur dau prea puțin text)
-    if len_prim < max(45, min_chars // 2) and primary.lower() != "ron+eng":
+    # Mix explicit ron+eng — doar când atât primary cât și eng dau aproape nimic (< 20 char)
+    if len_prim < 20 and primary.lower() != "ron+eng":
         t_mix, _, meta_mix = _run_candidates("ron+eng")
         if len((t_mix or "").strip()) > len_prim:
             best_text = t_mix

@@ -828,9 +828,13 @@ def _process_upload_sync_job(
                 laborator_name_override=laborator_name_override,
             )
             normalize_rezultate(parsed.rezultate, laborator_id=lab_id)
-            llm_learn_report = apply_llm_learn_after_normalize(
-                parsed.rezultate, laborator_id=lab_id
-            )
+            threading.Thread(
+                target=apply_llm_learn_after_normalize,
+                args=(parsed.rezultate,),
+                kwargs={"laborator_id": lab_id},
+                daemon=True,
+            ).start()
+            llm_learn_report = {"status": "started_background"}
             from backend.parser import audit_semnale_multi_buletin_laborator
 
             _sem_u = audit_semnale_multi_buletin_laborator(text or "")
@@ -1310,9 +1314,13 @@ async def upload_pdf(
             laborator_name_override=_lab_ov,
         )
         normalize_rezultate(parsed.rezultate, laborator_id=_lab_id_up)
-        llm_learn_report = apply_llm_learn_after_normalize(
-            parsed.rezultate, laborator_id=_lab_id_up
-        )
+        threading.Thread(
+            target=apply_llm_learn_after_normalize,
+            args=(parsed.rezultate,),
+            kwargs={"laborator_id": _lab_id_up},
+            daemon=True,
+        ).start()
+        llm_learn_report = {"status": "started_background"}
         from backend.parser import audit_semnale_multi_buletin_laborator
 
         _sem_sync = audit_semnale_multi_buletin_laborator(text or "")
