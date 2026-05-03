@@ -656,7 +656,7 @@ def _maybe_retry_ocr_higher_dpi_for_upload(
     count_now = len(parsed.rezultate)
     unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
     zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
-    suspect_putine_analize = bool(file_mb >= 2.5 and 0 < count_now < 52)
+    suspect_putine_analize = bool(file_mb >= 2.5 and 0 < count_now < 8)
 
     if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
         return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
