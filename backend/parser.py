@@ -1185,10 +1185,14 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
                     return nume_fam, pren
 
     # --- Varianta 1b: "Nume:" (format scurt) ---
-    # Regina Maria OCR: layout cu 2 coloane poate pune eticheta "Nume:" pe o linie
-    # si valoarea "Cretulescu Cornel" pe linia urmatoare (coloana dreapta pe alta linie).
-    # Daca valoarea de pe aceeasi linie nu e un nume valid, incercam linia urmatoare.
-    m_n = re.search(r"(?:^|\n)\s*Nume\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    # Regina Maria OCR: PSM 6 pe layout 2 coloane poate pune «Nume: Cretulescu Cornel CNP: ...»
+    # toate pe aceeași linie (fără newline). Regex-ul nu mai cere start-de-linie.
+    # Capturăm tot până la primul CNP:/Varsta:/Sex: de pe aceeași linie.
+    m_n = re.search(
+        r"\bNume\s*:\s*((?:(?!CNP\s*:|Varsta\s*:|Sex\s*:|Prenume\s*:)[^\n])+)",
+        text,
+        re.IGNORECASE,
+    )
     m_n_next = re.search(r"(?:^|\n)\s*Nume\s*:\s*\S[^\n]*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:\s+[A-ZĂÂÎȘȚ][a-zăâîșț]+)+)", text, re.IGNORECASE)
     m_p = re.search(r"(?:^|\n)\s*Prenume\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if m_n:
