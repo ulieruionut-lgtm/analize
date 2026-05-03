@@ -1238,12 +1238,18 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
             parts_bio = raw_bio.split(None, 1)
             return raw_bio, (parts_bio[1] if len(parts_bio) >= 2 else None)
 
-    # --- Varianta 2: backward de la CNP (format Bioclinica) ---
+    # --- Varianta 2: backward de la CNP (format Bioclinica / Regina Maria 2 coloane) ---
+    # Regina Maria OCR: «CNP:» și numărul pot fi pe linii separate → căutăm fie
+    # «CNP: <număr>» pe aceeași linie, fie direct poziția primului CNP valid în text.
     _LINIE_HEADER_NUME = re.compile(
         r"^(Data\s+inregistrari|Data\s+inregistrare|Varsta|CNP|Nume|Prenume|Adresa)\s*$",
         re.IGNORECASE,
     )
+    cnp_val = extract_cnp(text)
     m_cnp = re.search(r"\bCNP\s*:?\s*[1-8]\d{12}\b", text)
+    if not m_cnp and cnp_val:
+        # CNP-ul e pe o linie separată față de eticheta "CNP:" — găsim poziția numărului
+        m_cnp = re.search(re.escape(cnp_val), text)
     if m_cnp:
         before = text[:m_cnp.start()].strip()
         lines_before = [l.strip() for l in before.split("\n") if l.strip()]

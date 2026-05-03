@@ -568,7 +568,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260503-ocr-name-ai-fix"
+_PARSER_VERSION = "parser-20260503-name-debug"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -614,7 +614,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
-        "code_version": "v20260503-name-ai-fix",
+        "code_version": "v20260503-name-debug",
     }
 
 
@@ -657,6 +657,17 @@ def _maybe_retry_ocr_higher_dpi_for_upload(
     unknown_name = (parsed.nume or "").strip().lower() == "necunoscut"
     zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
     suspect_putine_analize = bool(file_mb >= 2.5 and 0 < count_now < 8)
+
+    if unknown_name:
+        # Log diagnostic: primele 600 char + zona din jurul "Nume:" pentru depanare
+        import re as _re
+        _snip = (text or "")[:600].replace("\n", "↵")
+        _m_n = _re.search(r"(?i)Nume\s*:", text or "")
+        _zone = ""
+        if _m_n:
+            _zone = " | zona Nume: " + repr((text or "")[max(0, _m_n.start()-10):_m_n.start()+80])
+        _log.warning("OCR-NAME-DEBUG: nume=Necunoscut, cnp=%s, file_mb=%.2f | text[:600]=%s%s",
+                     parsed.cnp, file_mb, _snip, _zone)
 
     if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
         return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
