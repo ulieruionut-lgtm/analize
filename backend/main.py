@@ -666,8 +666,7 @@ def _maybe_retry_ocr_higher_dpi_for_upload(
         _zone = ""
         if _m_n:
             _zone = " | zona Nume: " + repr((text or "")[max(0, _m_n.start()-10):_m_n.start()+80])
-        _log.warning("OCR-NAME-DEBUG: nume=Necunoscut, cnp=%s, file_mb=%.2f | text[:600]=%s%s",
-                     parsed.cnp, file_mb, _snip, _zone)
+        print(f"OCR-NAME-DEBUG: nume=Necunoscut cnp={parsed.cnp} file_mb={file_mb:.2f} | text[:600]={_snip}{_zone}", flush=True)
 
     if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
         return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
