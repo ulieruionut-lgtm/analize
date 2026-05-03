@@ -614,7 +614,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
-        "code_version": "v20260503-llm-bg-ocr-fix",
+        "code_version": "v20260503-ocr-speed-fix",
     }
 
 
@@ -717,7 +717,7 @@ def _process_upload_sync_job(
             tmp_path = tmp.name
 
         dpi_first: Optional[int] = None
-        if file_mb >= 3.0:
+        if file_mb >= 1.5:
             dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
 
         # OCR complet sincron in thread
@@ -1157,7 +1157,7 @@ async def upload_pdf(
         # Timeout per-pass: previne blocare permanenta la Tesseract/PyMuPDF pe fisiere corupte.
         _ocr_pass_timeout = max(180, _ocr_timeout_seconds_for_upload(len(content or b"")))
         dpi_first: Optional[int] = None
-        if file_mb >= 3.0:
+        if file_mb >= 1.5:
             dpi_first = min(260, int(getattr(settings, "ocr_dpi_hint", 300)))
         text, tip, ocr_err, colored_tokens, extractor, ocr_metrics = await asyncio.wait_for(
             asyncio.to_thread(extract_text_with_metrics, tmp_path, dpi_first),

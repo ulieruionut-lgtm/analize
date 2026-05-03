@@ -451,11 +451,14 @@ def _best_ocr_for_page(
                     "profile": prof_try,
                     "psm": psm_try,
                 }
+            # Dacă avem text bun deja, nu mai e nevoie de celelalte profile/PSM-uri
+            if best_score_l >= 32.0:
+                break
         return best_text_l, best_score_l, best_meta_l
 
     best_text, best_score, best_meta = _run_candidates(primary)
     len_prim = len((best_text or "").strip())
-    if len_prim < max(45, min_chars // 2) and primary.lower() != "eng":
+    if len_prim < 20 and primary.lower() != "eng":
         t_eng, sc_eng, meta_eng = _run_candidates("eng")
         if len((t_eng or "").strip()) > len_prim:
             best_meta = {**meta_eng, "lang_fallback": "eng"}
