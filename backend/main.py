@@ -142,10 +142,32 @@ def _get_upload_async_job(job_id: str) -> Optional[dict]:
         return dict(job) if job else None
 
 
+# ─── Whitelist analize valide cu nume scurt ─────────────────────────────────────
+# Exemple: Pb (plumb), K (potasiu), Na (sodiu), Ca (calciu), pH, etc.
+# Aceștia ar fi marcați greșit ca "gunoi" de regex dacă nu sunt în whitelist.
+_VALID_SHORT_ANALYSIS_NAMES = {
+    'pb', 'k', 'na', 'ca', 'cl', 'fe', 'zn', 'cu', 'mn', 'se', 'cr',  # Minerale
+    'ph', 'pco2', 'po2', 'hco3', 'be',  # Gaze sânge
+    'vsh', 'vsr', 'vsm',  # Viteza sedimentare
+    'hb', 'hba1c', 'hbf', 'hbs',  # Hemoglobina variante
+    'rbc', 'wbc', 'pct', 'mch', 'mcv',  # Hemoleucogram
+    'tgp', 'tgo', 'got', 'gpt', 'ldh',  # Enzime hepatice
+    'ggt', 'alp', 'ast', 'alt', 'alk',  # Mai multe enzime
+    'bilirubin', 'alt', 'glu',  # Biochimie
+    'inr', 'pt', 'ptt', 'aptt', 'tt',  # Coagulare
+    'tsh', 't3', 't4', 'fsh', 'lh',  # Hormoni
+}
+
+
 def _rezultat_pare_gunoi(denumire: Optional[str], unitate: Optional[str]) -> bool:
     d = (denumire or "").strip()
     if not d:
         return True
+    
+    # Verifică whitelist analize scurte valide
+    if d.lower() in _VALID_SHORT_ANALYSIS_NAMES:
+        return False  # Valid, nu e gunoi
+    
     if len(d) <= 2:
         return True
     letters = sum(1 for ch in d if ch.isalpha())
@@ -658,7 +680,7 @@ def _maybe_retry_ocr_higher_dpi_for_upload(
     zero_analize_pdf_mic = count_now == 0 and file_mb < 3.0
     suspect_putine_analize = bool(file_mb >= 2.5 and 0 < count_now < 8)
 
-if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
+    if not (unknown_name or zero_analize_pdf_mic or suspect_putine_analize):
         return text, tip, ocr_err, colored_tokens, extractor, ocr_metrics
 
     dpi_retry = (
