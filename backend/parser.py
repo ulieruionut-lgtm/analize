@@ -2681,6 +2681,38 @@ def _strip_checkmark_v_prefix(s: str) -> str:
     return s
 
 
+# Detecteaza linia urmatoare care e o valoare (numeric sau dash+numeric) — context pentru V-prefix
+_RE_NEXT_LINE_IS_VALUE = re.compile(
+    r"^(?:"
+    r"[<>≤≥]\s*\d|"              # comparator + cifra
+    r"\d+[.,]?\d*\s*\S|"         # cifra direct (valoare + unitate)
+    + _RE_DASH_UCR + r"\s*\d"    # dash + cifra (Gaman two-line)
+    r")",
+    re.UNICODE,
+)
+
+
+def _strip_v_prefix_before_value_lines(lines: list) -> list:
+    """Elimina prefixul 'V ' (checkmark OCR) cand linia URMATOARE e o valoare numerica.
+
+    Rezolva formatul Gaman multi-linie din PDF-uri Regina Maria scanate:
+      'V Vitamina B12'  +  '456 pg/mL'  +  'Interval: 200 – 900'
+    → 'Vitamina B12'   +  '456 pg/mL'  +  'Interval: 200 – 900'
+
+    Nu atinge linii 'V Param' fara valoare pe urmatoarea linie (antet MedLife PDR real).
+    """
+    _RE_V_HDR = re.compile(r"^[vV]\s+[A-Za-zĂÂÎȘȚăâîșț]{4,}", re.UNICODE)
+    result = list(lines)
+    for i in range(len(result) - 1):
+        li = (result[i] or "").strip()
+        if not _RE_V_HDR.match(li):
+            continue
+        ln = (result[i + 1] or "").strip()
+        if _RE_NEXT_LINE_IS_VALUE.match(ln) or _RE_INTERVAL_LABEL_LINIE.match(ln):
+            result[i] = re.sub(r"^[vV]\s+", "", li, count=1)
+    return result
+
+
 def _strip_trailing_date_recoltare(linie: str) -> str:
     """
     Elimină de la sfârșitul liniei data recoltării / generării (DD.MM.YYYY [HH:MM]),
@@ -3265,6 +3297,8 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
                 lines_raw.append(ps)
     if len(lines_raw) <= 8 and sum(len(x) for x in lines_raw) > 1200:
         lines_raw = _fragmenteaza_linii_ocr_fara_newlines(lines_raw)
+    # Regina Maria scanat: elimina prefixul 'V ' (√ citit de OCR) cand valoarea e pe linia urmatoare
+    lines_raw = _strip_v_prefix_before_value_lines(lines_raw)
     # MedLife: unește denumire + rând(uri) metodă + valoare; apoi perechi Bioclinica
     lines = _lipire_valoare_rand_inainte_de_celule_epiteliale_capatan(
         _desface_rand_biochimie_urina_lipite(
