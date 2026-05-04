@@ -212,6 +212,8 @@ def _preproceseaza_clean(img):
     """
     Profil pentru scanuri cu contrast bun: CLAHE usor + contrast moderat + deskew.
     NU aplica threshold adaptiv agresiv care mananca diacritice si caractere fine.
+    
+    Îmbunătățiri: Denoising + CLAHE mai agressiv + Morphological closing
     """
     try:
         import cv2
@@ -225,13 +227,31 @@ def _preproceseaza_clean(img):
         if deskewed is not None:
             gray_arr = deskewed
 
-        # CLAHE pentru uniformizare iluminare
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        # Denoising non-local means (optional, configurable)
+        if getattr(settings, "ocr_denoise_enabled", False):
+            try:
+                gray_arr = cv2.fastNlMeansDenoising(
+                    gray_arr, 
+                    h=10,  # Filter strength (higher = more denoising, but slower)
+                    templateWindowSize=7,
+                    searchWindowSize=21
+                )
+            except Exception:
+                pass  # Fallback to non-denoised if error
+
+        # CLAHE - Enhanced version with better parameters
+        clipLimit = float(getattr(settings, "ocr_clahe_clip_limit", 3.0))
+        tileSize = int(getattr(settings, "ocr_clahe_tile_size", 8))
+        clahe = cv2.createCLAHE(clipLimit=clipLimit, tileGridSize=(tileSize, tileSize))
         gray_arr = clahe.apply(gray_arr)
 
+        # Morphological closing to connect nearby text parts
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+        gray_arr = cv2.morphologyEx(gray_arr, cv2.MORPH_CLOSE, kernel, iterations=1)
+
         pil = Image.fromarray(gray_arr)
-        pil = ImageEnhance.Contrast(pil).enhance(1.4)
-        pil = ImageEnhance.Sharpness(pil).enhance(1.2)
+        pil = ImageEnhance.Contrast(pil).enhance(1.5)
+        pil = ImageEnhance.Sharpness(pil).enhance(1.3)
         return pil
     except Exception:
         return img.convert("L")
@@ -240,6 +260,8 @@ def _preproceseaza_clean(img):
 def _preproceseaza_hard(img):
     """
     Profil pentru scanuri cu contrast slab / fond gri: threshold adaptiv + stergere borduri.
+    
+    Îmbunătățiri: Multi-scale processing + improved morphological operations
     """
     try:
         import cv2
@@ -253,17 +275,46 @@ def _preproceseaza_hard(img):
         if deskewed is not None:
             gray_arr = deskewed
 
+        # Denoising pentru scanuri slabe (mai agresiv decât "clean")
+        if getattr(settings, "ocr_denoise_enabled", False):
+            try:
+                gray_arr = cv2.fastNlMeansDenoising(
+                    gray_arr,
+                    h=12,  # Stronger denoising for low-quality scans
+                    templateWindowSize=7,
+                    searchWindowSize=21
+                )
+            except Exception:
+                pass
+
         # Contrast + sharpness inainte de threshold
         pil = Image.fromarray(gray_arr)
-        pil = ImageEnhance.Contrast(pil).enhance(1.8)
-        pil = ImageEnhance.Sharpness(pil).enhance(1.4)
+        pil = ImageEnhance.Contrast(pil).enhance(2.0)  # More aggressive
+        pil = ImageEnhance.Sharpness(pil).enhance(1.6)  # More aggressive
         gray_arr = np.array(pil)
 
-        # Threshold adaptiv gaussian
-        blurred = cv2.GaussianBlur(gray_arr, (3, 3), 0)
-        thresh = cv2.adaptiveThreshold(blurred, 255,
-                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                       cv2.THRESH_BINARY, 15, 4)
+        # Bilateral filter - preserves edges while smoothing
+        try:
+            gray_arr = cv2.bilateralFilter(gray_arr, 5, 50, 50)
+        except Exception:
+            pass
+
+        # Threshold adaptiv gaussian cu parametri mai buni
+        blurred = cv2.GaussianBlur(gray_arr, (5, 5), 0)
+        thresh = cv2.adaptiveThreshold(
+            blurred, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 
+            blockSize=int(getattr(settings, "ocr_adaptive_threshold_block", 15)),  # Configurable
+            C=int(getattr(settings, "ocr_adaptive_threshold_C", 4))  # Configurable
+        )
+
+        # Morphological closing to connect text parts + opening to remove noise
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+        
+        kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_open, iterations=1)
 
         # Sterge borduri de tabel cu morfologie
         cleaned = _sterge_borduri_cv(thresh)

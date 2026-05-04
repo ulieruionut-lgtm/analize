@@ -22,7 +22,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN echo "20260504-filename-fallback" > /app/BUILD_VERSION
+RUN echo "20260504-checkmark-gaman-fix" > /app/BUILD_VERSION
 
 # Health: curl la /health; PORT e setat de Railway la runtime ($$ → $ în imagine)
 HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=4 \

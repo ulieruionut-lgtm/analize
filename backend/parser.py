@@ -670,8 +670,9 @@ def _detecteaza_sectiune(linie: str) -> Optional[str]:
 # Ancoră obligatorie la sfârșit ($): fără ea, `uro\s*\d*` potrivea prefixul „Uro” din „Urocultura”
 # și Pasul 1b asocia greșit valori text cu rândul anterior.
 _VALOARE_TEXT_RE = re.compile(
-    r"^(negativ[ae]?|pozitiv[ae]?|absent[ae]?|absen[țt]i|prezent[ae]?|rar[ae]?|normal[ae]?|"
+    r"^(negativ[ae]?|pozitiv[ae]?|absent[ae]?|absen[țt]i|prezent[ae]?|rar(?:[ae]|i)?|frecvente?|normal[ae]?|"
     r"crescut[ae]?|scazut[ae]?|reactiv[ae]?|nedecelabil[ae]?|nedetectabil[ae]?|"
+    r"nu\s+se\s+observ[aă]?|"
     r"galben[ae]?|incolor[ae]?|tulbure|limpede|clar[ae]?|"
     r"urme|trace[s]?|"
     r"\+{1,4}[-+]?\d*|"
@@ -1766,7 +1767,7 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
             return RezultatParsat(denumire_raw=nm, valoare=None, valoare_text=vt, unitate=None)
 
     m_cap_d1 = re.match(
-        r"(?i)^(?P<name>[A-Za-zĂÂÎȘȚăâîșț][\w\s\-/\.\(\)]{0,78}?)\s+" + _RE_DASH_UCR + r"\s+(?P<v>Normal|Negativ|Absente?|Absent[aă]?|Absen[țt]i|Prezent[aă]?|Rar[aă]?|Negative)\s*$",
+        r"(?i)^(?P<name>[A-Za-zĂÂÎȘȚăâîșț][\w\s\-/\.\(\)]{0,78}?)\s+" + _RE_DASH_UCR + r"\s+(?P<v>Normal|Negativ|Absente?|Absent[aă]?|Absen[țt]i|Prezent[aă]?|Rar(?:[aă]|e|i)?|Frecvente?|Nu\s+se\s+observ[aă]?|Negative)\s*$",
         linie,
     )
     if m_cap_d1:
@@ -2028,9 +2029,10 @@ def _parse_oneline(linie: str) -> Optional[RezultatParsat]:
         m_text = re.search(
             r"[\s,\.]+(_VALOARE_TEXT_)$".replace(
                 "_VALOARE_TEXT_",
-                r"(?:negativ[ae]?|pozitiv[ae]?|absent[ae]?|absen[țt]i|prezent[ae]?|rar[ae]?|"
+                r"(?:negativ[ae]?|pozitiv[ae]?|absent[ae]?|absen[țt]i|prezent[ae]?|rar(?:[ae]|i)?|frecvente?|"
                 r"normal[ae]?|crescut[ae]?|scazut[ae]?|reactiv[ae]?|nedecelabil[ae]?|"
-                r"nedetectabil[ae]?|epitelii\s+\w+|leucocite\s+\w+|hematii\s+\w+|"
+                r"nedetectabil[ae]?|nu\s+se\s+observ[aă]?|"
+                r"epitelii\s+\w+|leucocite\s+\w+|hematii\s+\w+|"
                 r"cilindri\s+\w+|cristale\s+\w+|bacterii\s+\w+|mucus\s+\w+|"
                 r"foarte\s+rare|"
                 r"galben[ae]?|incolor[ae]?|tulbure|limpede|clar[ae]?|"
@@ -2324,6 +2326,13 @@ _RE_INTERVAL_LABEL_SINGULAR_TXT = re.compile(
 )
 _RE_INTERVAL_LABEL_GE_NUM = re.compile(
     r"^\s*Interval\s*:\s*(?:≥|>=|⩾)\s*([\d.,]+)\s*$",
+    re.IGNORECASE,
+)
+
+# OCR citeste √ ca "V" — detecteaza linie Gaman cu valoare (numerica sau text) dupa dash
+_RE_GAMAN_DASH_ANY_VALUE = re.compile(
+    _RE_DASH_UCR + r"\s*"
+    r"(?:\d|Normal\b|Negativ\b|Absent\b|Prezent\b|Rar(?:[ae]|i)?\b|Frecvente?\b|Nu\s+se\s+observ)",
     re.IGNORECASE,
 )
 
@@ -2657,6 +2666,19 @@ _RE_LEADING_TYPOGRAPHIC_QUOTES = re.compile(r'^[\u201e\u201c\u201d\u00ab\u00bb]+
 def _strip_leading_typographic_quotes(s: str) -> str:
     """Strip leading OCR typographic quotes (artefact of dot/bullet marks in SCJUB format)."""
     return _RE_LEADING_TYPOGRAPHIC_QUOTES.sub('', s).strip()
+
+
+def _strip_checkmark_v_prefix(s: str) -> str:
+    """OCR citeste √ (checkmark) ca litera V — scoate prefixul 'V ' din linii Gaman cu valoare.
+    Ex: 'V Vitamina B12 – 456 pg/mL' → 'Vitamina B12 – 456 pg/mL'.
+    Nu modifica linii fara valoare (ex: 'V Folat seric' standalone = antet MedLife PDR).
+    """
+    if not s or not re.match(r'^[vV]\s+\S', s):
+        return s
+    rest = re.sub(r'^[vV]\s+', '', s, count=1)
+    if _RE_GAMAN_DASH_ANY_VALUE.search(rest):
+        return rest
+    return s
 
 
 def _strip_trailing_date_recoltare(linie: str) -> str:
@@ -3238,6 +3260,7 @@ def extract_rezultate(text: str) -> list[RezultatParsat]:
             if not ps:
                 continue
             ps = _strip_leading_hash_marker_linie(_rewrite_observatii_mucus_capatan(ps))
+            ps = _strip_checkmark_v_prefix(ps)
             if ps:
                 lines_raw.append(ps)
     if len(lines_raw) <= 8 and sum(len(x) for x in lines_raw) > 1200:

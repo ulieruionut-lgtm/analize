@@ -590,7 +590,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260504-filename-fallback"
+_PARSER_VERSION = "parser-20260504-checkmark-gaman-fix"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -636,7 +636,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
-        "code_version": "v20260504-filename-fallback",
+        "code_version": "v20260503-checkmark-gaman-fix",
     }
 
 
@@ -3128,6 +3128,9 @@ function formatBuletinAuditHtml(b) {
   }
   if (st === 'skipped' || st === 'error') {
     return '<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#f5f5f5;font-size:0.82rem;color:#555">AI Copilot: <strong>' + escHtml(st) + '</strong> — ' + escHtml(b.message || '') + '</div>';
+  }
+  if (st === 'started_background') {
+    return '<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#eef6ff;border:1px solid #b8d4f5;font-size:0.82rem;color:#1a4a7a">AI Copilot: <strong>verificare în fundal</strong> — analiza încrucișată rulează în background; flagurile needs_review sunt aplicate automat în baza de date.</div>';
   }
   return '';
 }
