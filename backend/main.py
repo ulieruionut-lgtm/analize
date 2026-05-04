@@ -590,7 +590,7 @@ async def catch_all_errors(request, call_next):
 
 # Versiune parser (cresc la fiecare fix) - verifici pe /health ca deploy-ul e actual
 # După deploy, verifică /health — trebuie să coincidă cu această valoare (altfel rulează imagine veche).
-_PARSER_VERSION = "parser-20260503-name-inline-fix"
+_PARSER_VERSION = "parser-20260504-filename-fallback"
 
 # BUILD_VERSION e scris la build Docker (vezi Dockerfile); în header apare mereu lângă parser dacă fișierul există.
 _BUILD_STAMP_PATH = Path(__file__).resolve().parent.parent / "BUILD_VERSION"
@@ -636,7 +636,7 @@ async def health():
         "parser_version": _PARSER_VERSION,
         "db_host": db_host,
         "build_stamp": _read_docker_build_stamp(),
-        "code_version": "v20260503-name-inline-fix",
+        "code_version": "v20260504-filename-fallback",
     }
 
 
@@ -903,6 +903,16 @@ def _process_upload_sync_job(
                         val_str = str(r.valoare).rstrip("0").rstrip(".")
                         if val_str in colored_tokens or val_str.replace(".", ",") in colored_tokens:
                             r.flag = "L" if r.interval_min is not None and r.valoare < r.interval_min else "H"
+
+            # Fallback: dacă OCR nu a găsit numele, încearcă din filename (ex: "Trefan Victor.pdf")
+            if (parsed.nume or "").strip().lower() == "necunoscut" and filename:
+                import re as _re2
+                fn_bare = _re2.sub(r"\.pdf$", "", filename, flags=_re2.IGNORECASE).strip()
+                fn_words = fn_bare.split()
+                if (2 <= len(fn_words) <= 4
+                        and all(_re2.match(r"^[A-ZĂÂÎȘȚ\-][a-zA-ZăâîșțĂÂÎȘȚ\-]+$", w) for w in fn_words)):
+                    parsed.nume = fn_words[0]
+                    parsed.prenume = " ".join(fn_words[1:]) if len(fn_words) > 1 else None
 
             # DB sincron (in thread - OK)
             pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
@@ -1401,6 +1411,16 @@ async def upload_pdf(
                             r.flag = "L"
                         else:
                             r.flag = "H"
+        # Fallback: dacă OCR nu a găsit numele, încearcă din filename (ex: "Trefan Victor.pdf")
+        if (parsed.nume or "").strip().lower() == "necunoscut" and file.filename:
+            import re as _re2
+            fn_bare = _re2.sub(r"\.pdf$", "", file.filename, flags=_re2.IGNORECASE).strip()
+            fn_words = fn_bare.split()
+            if (2 <= len(fn_words) <= 4
+                    and all(_re2.match(r"^[A-ZĂÂÎȘȚ\-][a-zA-ZăâîșțĂÂÎȘȚ\-]+$", w) for w in fn_words)):
+                parsed.nume = fn_words[0]
+                parsed.prenume = " ".join(fn_words[1:]) if len(fn_words) > 1 else None
+
         try:
             pacient = upsert_pacient(parsed.cnp, parsed.nume, parsed.prenume)
         except Exception as ex:
