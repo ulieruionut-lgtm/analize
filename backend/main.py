@@ -754,6 +754,17 @@ def _process_upload_sync_job(
             from backend.parser import _linie_este_exclusa, audit_linii_text
             tdbg = text or ""
             parsed_dbg = parse_full_text(tdbg, cnp_optional=True)
+            # Vision fallback în modul Verificare (debug)
+            try:
+                from backend.llm_vision_extract import try_vision_fallback
+                _dbg_warnings: list = []
+                parsed_dbg, _vsfx = try_vision_fallback(
+                    tmp_path, parsed_dbg, tip=tip, upload_warnings=_dbg_warnings
+                )
+                if _vsfx:
+                    extractor = extractor + _vsfx
+            except Exception as _ve_dbg:
+                pass
             lines_raw = [l.strip() for l in tdbg.replace("\r", "\n").split("\n") if l.strip()]
             excluse = [(i, l) for i, l in enumerate(lines_raw) if _linie_este_exclusa(l)]
             _lab_id_dbg, _lab_nume_dbg = resolve_laborator_id_for_text(
@@ -841,6 +852,18 @@ def _process_upload_sync_job(
                 upload_warnings.append(w)
 
             parsed = parse_full_text(text or "", cnp_optional=True)
+
+            # Vision fallback: dacă OCR a produs text degradat, încearcă Claude Vision
+            try:
+                from backend.llm_vision_extract import try_vision_fallback
+
+                parsed, _vsuffix = try_vision_fallback(
+                    tmp_path, parsed, tip=tip, upload_warnings=upload_warnings
+                )
+                if _vsuffix:
+                    extractor = extractor + _vsuffix
+            except Exception as _ve:
+                print(f"[VISION] fallback error: {_ve}", flush=True)
 
             from backend.lab_detect import resolve_laborator_id_for_text
 
