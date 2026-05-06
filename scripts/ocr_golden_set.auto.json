@@ -1,0 +1,895 @@
+{
+  "description": "Auto-seed (hibrid) generat din parser curent; necesita validare manuala pentru acuratete reala.",
+  "generated_from": "current_parser_output",
+  "cases": [
+    {
+      "pdf": "samples/golden_pdfs/Capatan Luminita.pdf",
+      "expected": [
+        {
+          "denumire": "Trombocite                              280 10^3/ul                        150 - 400 / 10^3/ul",
+          "valoare_text": "Leucocite                                   7.47 10^3/ul                         4 - 10 / 10^3/ul"
+        },
+        {
+          "denumire": "Corpi cetonici                                        -                                   - (Negativ)",
+          "valoare_text": "Urobilinogen                         NORMAL                              Normal"
+        },
+        {
+          "denumire": "Bilirubina                                            -                                   - (Negativ)",
+          "valoare_text": "Leucocite                                 25 Leu/ul                                - (Negativ)"
+        },
+        {
+          "denumire": "Celule epiteliale",
+          "valoare_text": "Leucocite                                      Relativ frecvente                      Rare (1-4/camp 40 X)"
+        },
+        {
+          "denumire": "Trombocite 280 10^3/ul 150 - 400 / 10^3/ul",
+          "valoare_text": "Leucocite 7.47 10^3/ul 4 - 10 / 10^3/ul"
+        },
+        {
+          "denumire": "Corpi cetonici - - (Negativ)",
+          "valoare_text": "Urobilinogen NORMAL Normal"
+        },
+        {
+          "denumire": "Bilirubina - - (Negativ)",
+          "valoare_text": "Leucocite 25 Leu/ul - (Negativ)"
+        },
+        {
+          "denumire": "Celule epiteliale",
+          "valoare_text": "Leucocite Relativ frecvente Rare (1-4/camp 40 X)"
+        },
+        {
+          "denumire": "VSH -Sange - Metoda Westergreen",
+          "valoare": 13.0,
+          "unitate": "mm/h"
+        },
+        {
+          "denumire": "Hemoglobina",
+          "valoare": 14.5,
+          "unitate": "g/dl"
+        },
+        {
+          "denumire": "Hematocrit",
+          "valoare": 43.6,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Trombocite",
+          "valoare": 280.0,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Leucocite",
+          "valoare": 7.47,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Neutrofile %",
+          "valoare": 63.8,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Neutrofile",
+          "valoare": 4.76,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Eozinofile %",
+          "valoare": 0.4,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Eozinofile",
+          "valoare": 0.03,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Bazofile %",
+          "valoare": 0.1,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Bazofile",
+          "valoare": 0.01,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Limfocite %",
+          "valoare": 28.9,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Limfocite",
+          "valoare": 2.16,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "Monocite %",
+          "valoare": 6.8,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Monocite",
+          "valoare": 0.51,
+          "unitate": "10^3/ul"
+        },
+        {
+          "denumire": "VEM",
+          "valoare": 97.8,
+          "unitate": "FL"
+        },
+        {
+          "denumire": "HEM",
+          "valoare": 32.5,
+          "unitate": "pg"
+        },
+        {
+          "denumire": "CHEM",
+          "valoare": 33.3,
+          "unitate": "g/dl"
+        },
+        {
+          "denumire": "MPV",
+          "valoare": 11.5,
+          "unitate": "FL"
+        },
+        {
+          "denumire": "RDW",
+          "valoare": 12.3,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Fosfataza alcalina -Ser - Spectrofotometrie (Advia 1800)",
+          "valoare": 51.32,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Glicemie a jeune -Ser - Spectofotometrie (Advia 1800)",
+          "valoare": 94.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800)",
+          "valoare": 0.16,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Sideremie -Ser - Spectrofotometrie (Advia 1800)",
+          "valoare": 127.0,
+          "unitate": "ug/dl"
+        },
+        {
+          "denumire": "TGO / AST -Ser - Spectrofotometrie (Advia 1800)",
+          "valoare": 21.0,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "TGP / ALT -Ser - Spectrofotometrie (Advia 1800)",
+          "valoare": 19.0,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Creatinina serica -Ser -",
+          "valoare": 0.8,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Rata de filtrare glomerulara(RFG)",
+          "valoare": 96.19,
+          "unitate": "ml/min/1.73"
+        },
+        {
+          "denumire": "Urobilinogen",
+          "valoare_text": "NORMAL"
+        },
+        {
+          "denumire": "Leucocite",
+          "valoare": 25.0,
+          "unitate": "Leu/ul"
+        },
+        {
+          "denumire": "Relativ frecvente",
+          "valoare_text": "Rare"
+        },
+        {
+          "denumire": "Femei>45 ani-4.9-232.3 ng/ml Barbati: 18.2-",
+          "valoare": 341.2,
+          "unitate": "ng/ml"
+        },
+        {
+          "denumire": "Feritina -Ser - Chemiluminiscenta",
+          "valoare": 26.91,
+          "unitate": "ng/ml"
+        },
+        {
+          "denumire": "FT4-Tiroxina serica libera -Ser - Chemiluminiscenta",
+          "valoare": 1241.0,
+          "unitate": "ng/dL"
+        },
+        {
+          "denumire": "TSH-Hormonul hipofizar tireostimulator bazal -Ser -",
+          "valoare": 2.36,
+          "unitate": "uUI/mL"
+        },
+        {
+          "denumire": "Chemiluminiscenta #Vitamina B12 -Ser -",
+          "valoare": 190.0,
+          "unitate": "pg/mL"
+        }
+      ]
+    },
+    {
+      "pdf": "samples/golden_pdfs/Chindris Alina.pdf",
+      "expected": [
+        {
+          "denumire": "Ex. microscopic colorat                            Ex. citobacteriologic secretie vaginala:",
+          "valoare_text": "Microscopie                                    Frecvente celule epiteliale superficiale si\ncelule epiteliale intermediare.\nFrecvente PMN.\nFrecventi bacili Doderlein.\nFlora polimorfa : relativ frecventa specifica\nmicrobiotei normale vaginale\nAbsente levuri si pseudofilamente miceliene."
+        },
+        {
+          "denumire": "Examen microbiologic secretie col                    Culturi bacteriene absente la 24/48 ore",
+          "valoare_text": "Cultura                                                           - pe mediile de cultura insamantate aerob si in\nmicroaerofilie nu s-au dezvoltat colonii\napartinand urmatoarelor genuri bacteriene:"
+        },
+        {
+          "denumire": "Staphylococcus, Streptococcus, genurile",
+          "valoare_text": "familiei Enterobacteriaceae,Pseudomonas spp\nsi specii din genul Candida.\n√  Ag Chlamydia Trachomatis                        Negativ                                                  Negativ\nImunocromatografie"
+        },
+        {
+          "denumire": "Cultura fungi (mucoase)                    Nu s-a detectat Candida spp.",
+          "valoare_text": "Cultura\n√ Mycoplasma / Ureaplasma-                     Mycoplasma hominis: absent\nidentificare/antibiograma                        Ureaplasma spp: >= 10.000 CCU/ml\nCultura\n√ Mycoplasma / Ureaplasma-                         Lincomycina: REZISTENT\nidentificare/antibiograma                              Eritromicina: SENSIBIL\nCultura                                        Roxythromycina: SENSIBIL\nAzitromicina: SENSIBIL\nJosamicina: SENSIBIL\nMinocyclina: SENSIBIL\nDoxiciclina: SENSIBIL\nOfloxacin: SENSIBIL\nCiprofloxacin: SENSIBIL"
+        },
+        {
+          "denumire": "Ex. microscopic colorat Ex. citobacteriologic secretie vaginala:",
+          "valoare_text": "Microscopie Frecvente celule epiteliale superficiale si\ncelule epiteliale intermediare.\nFrecvente PMN.\nFrecventi bacili Doderlein.\nFlora polimorfa : relativ frecventa specifica\nmicrobiotei normale vaginale\nAbsente levuri si pseudofilamente miceliene."
+        },
+        {
+          "denumire": "Examen microbiologic secretie col Culturi bacteriene absente la 24/48 ore",
+          "valoare_text": "Cultura - pe mediile de cultura insamantate aerob si in\nmicroaerofilie nu s-au dezvoltat colonii\napartinand urmatoarelor genuri bacteriene:"
+        },
+        {
+          "denumire": "Staphylococcus, Streptococcus, genurile",
+          "valoare_text": "familiei Enterobacteriaceae,Pseudomonas spp\nsi specii din genul Candida.\n√ Ag Chlamydia Trachomatis Negativ Negativ\nImunocromatografie"
+        },
+        {
+          "denumire": "Cultura fungi (mucoase) Nu s-a detectat Candida spp.",
+          "valoare_text": "Cultura\n√ Mycoplasma / Ureaplasma- Mycoplasma hominis: absent\nidentificare/antibiograma Ureaplasma spp: >= 10.000 CCU/ml\nCultura\n√ Mycoplasma / Ureaplasma- Lincomycina: REZISTENT\nidentificare/antibiograma Eritromicina: SENSIBIL\nCultura Roxythromycina: SENSIBIL\nAzitromicina: SENSIBIL\nJosamicina: SENSIBIL\nMinocyclina: SENSIBIL\nDoxiciclina: SENSIBIL\nOfloxacin: SENSIBIL\nCiprofloxacin: SENSIBIL"
+        },
+        {
+          "denumire": "microbiotei normale vaginale",
+          "valoare_text": "Absente levuri si pseudofilamente miceliene."
+        },
+        {
+          "denumire": "Ag Chlamydia Trachomatis",
+          "valoare_text": "Negativ"
+        },
+        {
+          "denumire": "Mycoplasma / Ureaplasma-                     Mycoplasma hominis:",
+          "valoare_text": "absent"
+        },
+        {
+          "denumire": "Mycoplasma / Ureaplasma- Mycoplasma hominis:",
+          "valoare_text": "absent"
+        }
+      ]
+    },
+    {
+      "pdf": "samples/golden_pdfs/Cpatan Luminita 1.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Cretulescu Cornel.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Dragomir Linca.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Gaman Luca.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Georgescu Maria.pdf",
+      "expected": [
+        {
+          "denumire": "Denumire                                     Rezultat     UM          Interval de referinta",
+          "valoare": 23.0,
+          "unitate": "Fosforseric"
+        },
+        {
+          "denumire": "stabili pe baza a cel putin 2 valori",
+          "valoare_text": "crescute ≥ 126 ale glicemiei bazale"
+        },
+        {
+          "denumire": "Imunochimie",
+          "valoare": 23.0,
+          "unitate": "PTH(Parathormonintact)Ser/ECLIA80.5pg/mL"
+        },
+        {
+          "denumire": "Calciu ionic",
+          "valoare": 23.0,
+          "unitate": "Calciuionic"
+        },
+        {
+          "denumire": "Rata filtrarii glomerulare (eGFR)",
+          "valoare": 23.0,
+          "unitate": "Creatininaserica"
+        },
+        {
+          "denumire": "Indice HOMA",
+          "valoare": 23.0,
+          "unitate": "Glucozaserica"
+        },
+        {
+          "denumire": "obtinute in zile diferite.",
+          "valoare": 23.0,
+          "unitate": "Insulina"
+        },
+        {
+          "denumire": "Ser / Test calculat                                         5.13                                  <2: normal",
+          "valoare_text": ">2: posibil rezistenţă la insulină"
+        },
+        {
+          "denumire": ">2: posibil rezistenţă la insulină",
+          "valoare_text": ">2.5: probabilitate crescută de"
+        },
+        {
+          "denumire": "rezistenţă la insulină",
+          "valoare_text": ">5: valoarea medie la persoane"
+        },
+        {
+          "denumire": "Denumire                                     Rezultat     UM          Interval de referinta",
+          "valoare": 23.0,
+          "unitate": "Magneziuseric"
+        },
+        {
+          "denumire": "Denumire                                     Rezultat     UM          Interval de referinta",
+          "valoare": 1.0,
+          "unitate": "-4ani:"
+        },
+        {
+          "denumire": "Denumire                                     Rezultat     UM          Interval de referinta",
+          "valoare": 4.0,
+          "unitate": "-7ani:"
+        },
+        {
+          "denumire": "Denumire                                     Rezultat     UM          Interval de referinta",
+          "valoare": 13.0,
+          "unitate": "-18ani–"
+        },
+        {
+          "denumire": "cardiovasculare (CV):",
+          "valoare_text": "<100 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "cardiovascular scazut/moderat",
+          "valoare_text": "<70 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "cardiovascular crescut",
+          "valoare_text": "<55 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 23.0,
+          "unitate": "Fosfatazaalcalina"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 8.0,
+          "unitate": "-30zile:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 2.0,
+          "unitate": "-6luni:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 7.0,
+          "unitate": "-11luni:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 12.0,
+          "unitate": "luni-18ani:"
+        },
+        {
+          "denumire": "Anti-TPO (Anti - tiroidperoxidaza)",
+          "valoare": 23.0,
+          "unitate": "PTH(Parathormonintact)Ser/ECLIA93.1pg/mL"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 23.0,
+          "unitate": "Fosforseric"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 23.0,
+          "unitate": "Calciuseric"
+        },
+        {
+          "denumire": "≥ 126: Diabet zaharat",
+          "valoare": 23.0,
+          "unitate": "IndiceHOMA"
+        },
+        {
+          "denumire": "Ser / Test calculat 5.13 <2: normal",
+          "valoare_text": ">2: posibil rezistenţă la insulină"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 1.0,
+          "unitate": "-4ani:"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 4.0,
+          "unitate": "-7ani:"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 13.0,
+          "unitate": "-18ani–"
+        },
+        {
+          "denumire": "cardiovasculare (CV):",
+          "valoare_text": "<100 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "cardiovascular scazut/moderat",
+          "valoare_text": "<70 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "cardiovascular crescut",
+          "valoare_text": "<55 mg/dL - pentru persoanele cu risc"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 23.0,
+          "unitate": "Fosfatazaalcalina"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 8.0,
+          "unitate": "-30zile:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 2.0,
+          "unitate": "-6luni:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 7.0,
+          "unitate": "-11luni:"
+        },
+        {
+          "denumire": "Copii și adolescenți ( 12-18 ani):",
+          "valoare": 12.0,
+          "unitate": "luni-18ani:"
+        },
+        {
+          "denumire": "TSH ( Hormon de stimulare tiroidiana )",
+          "valoare": 23.0,
+          "unitate": "Calciuseric"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / spectrofotometrie",
+          "valoare": 3.85,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda enzimatica - colorimetrica /",
+          "valoare": 114.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "stabili pe baza a cel putin",
+          "valoare": 2.0,
+          "unitate": "valori"
+        },
+        {
+          "denumire": "crescute",
+          "valoare": 126.0,
+          "unitate": "ale"
+        },
+        {
+          "denumire": "FT4",
+          "valoare": 13.7,
+          "unitate": "pmol/L"
+        },
+        {
+          "denumire": "TSH",
+          "valoare": 2.46,
+          "unitate": "µUI/mL"
+        },
+        {
+          "denumire": "Ser / test calculat / spectrofotometrie",
+          "valoare": 4.13,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / Spectrofotometrie.",
+          "valoare": 9.63,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / spectrofotometrie",
+          "valoare": 7.39,
+          "unitate": "g/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica Jaffe/spectrofotometrie",
+          "valoare": 0.93,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "eGFR CKD-EPI (ml/min/1.73 m2)",
+          "valoare": 67.0,
+          "unitate": "Categorii"
+        },
+        {
+          "denumire": "Suma analizelor de pe buletinul actual este",
+          "valoare": 124.02,
+          "unitate": "lei"
+        },
+        {
+          "denumire": "Nivel insuficient:     20 -",
+          "valoare": 29.0,
+          "unitate": "ng/mL"
+        },
+        {
+          "denumire": "Nivel optim:         30 -",
+          "valoare": 55.5,
+          "unitate": "ng/mL"
+        },
+        {
+          "denumire": "Ag HBs",
+          "valoare_text": "negativ"
+        },
+        {
+          "denumire": "Ser / electrochemiluminiscenta (ECLIA)",
+          "valoare": 2.0,
+          "unitate": "UI/L"
+        },
+        {
+          "denumire": "Ser / metoda enzimatica - colorimetrica /",
+          "valoare": 92.8,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / electrochemiluminiscenta (ECLIA)",
+          "valoare": 22.4,
+          "unitate": "µU/mL"
+        },
+        {
+          "denumire": "Ser / Metoda: colorimetrica/Spectrofotometrie",
+          "valoare": 2.2,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / electrochemiluminiscenta (ECLIA)",
+          "valoare": 214.0,
+          "unitate": "ng/mL"
+        },
+        {
+          "denumire": "Ser / Metoda kinetica IFCC cu piridoxal fosfat",
+          "valoare": 40.0,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Ser / metoda kinetica IFCC cu piridoxal fosfat",
+          "valoare": 33.0,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Ser / Metoda imunoturbidimetrica",
+          "valoare": 3.3,
+          "unitate": "g/L"
+        },
+        {
+          "denumire": "Ser / metoda imunoturbidimetrica",
+          "valoare": 68.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda imunoturbidimetrica",
+          "valoare": 2.28,
+          "unitate": "g/L"
+        },
+        {
+          "denumire": "Ser / metoda colorimetrica / spectrofotometrie",
+          "valoare": 758.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda enzimatica colorimetrica",
+          "valoare": 97.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda enzimatica colorimetrica",
+          "valoare": 201.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda enzimatica colorimetrica",
+          "valoare": 68.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda enzimatica directa -",
+          "valoare": 103.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Crescut",
+          "valoare": 130.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda colorimetrica / spectrofotometrie",
+          "valoare": 40.7,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / spectrofotometrie",
+          "valoare": 3.95,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda potentiometrica indirecta",
+          "valoare": 4.54,
+          "unitate": "mmol/L"
+        },
+        {
+          "denumire": "Ser / Metoda potentiometrica indirecta",
+          "valoare": 136.2,
+          "unitate": "mmol/L"
+        },
+        {
+          "denumire": "Trigliceride",
+          "valoare": 65.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Colesterol VLDL (calculat)",
+          "valoare": 13.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Numar leucocite",
+          "valoare": 5.81,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Numar eritrocite",
+          "valoare": 4.35,
+          "unitate": "mil./µL"
+        },
+        {
+          "denumire": "Hemoglobina {Hb}",
+          "valoare": 13.8,
+          "unitate": "g/dL"
+        },
+        {
+          "denumire": "Hematocrit",
+          "valoare": 39.8,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Volum eritrocitar mediu {VEM}",
+          "valoare": 91.5,
+          "unitate": "fL"
+        },
+        {
+          "denumire": "Hemoglobina eritrocitara medie {HEM}",
+          "valoare": 31.7,
+          "unitate": "pg/cell"
+        },
+        {
+          "denumire": "Concentratie medie a Hb/eritrocit",
+          "valoare": 34.7,
+          "unitate": "g/dL"
+        },
+        {
+          "denumire": "Largimea distributiei eritrocitare",
+          "valoare": 12.6,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Numar trombocite",
+          "valoare": 276.0,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Volum trombocitar mediu {VTM}",
+          "valoare": 9.2,
+          "unitate": "fL"
+        },
+        {
+          "denumire": "Largimea distributiei trombocitare",
+          "valoare": 10.1,
+          "unitate": "fL"
+        },
+        {
+          "denumire": "Neutrofil",
+          "valoare": 45.8,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Neutrofil",
+          "valoare": 2.66,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Limfocit",
+          "valoare": 42.5,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Limfocit",
+          "valoare": 2.47,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Monocit",
+          "valoare": 9.5,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Monocit",
+          "valoare": 0.55,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Eozinofil",
+          "valoare": 1.5,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Eozinofil",
+          "valoare": 0.09,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "Bazofil",
+          "valoare": 0.7,
+          "unitate": "%"
+        },
+        {
+          "denumire": "Bazofil",
+          "valoare": 0.04,
+          "unitate": "mii/µL"
+        },
+        {
+          "denumire": "FT4",
+          "valoare": 11.6,
+          "unitate": "pmol/L"
+        },
+        {
+          "denumire": "TSH",
+          "valoare": 4.98,
+          "unitate": "µUI/mL"
+        },
+        {
+          "denumire": "Ser / test calculat / spectrofotometrie",
+          "valoare": 4.21,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / Spectrofotometrie.",
+          "valoare": 9.51,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / spectrofotometrie",
+          "valoare": 6.99,
+          "unitate": "g/dL"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica Jaffe/spectrofotometrie",
+          "valoare": 0.96,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "eGFR CKD-EPI (ml/min/1.73 m2)",
+          "valoare": 65.0,
+          "unitate": "Categorii"
+        },
+        {
+          "denumire": "Suma analizelor de pe buletinul actual este",
+          "valoare": 220.94,
+          "unitate": "lei"
+        },
+        {
+          "denumire": "Ser / Electrochemiluminiscenta FT4",
+          "valoare": 13.7,
+          "unitate": "pmol/L"
+        },
+        {
+          "denumire": "Ser / ECLIA - electrochemiluminiscenta TSH",
+          "valoare": 2.46,
+          "unitate": "µUI/mL"
+        },
+        {
+          "denumire": "Nivel insuficient: 20 -",
+          "valoare": 29.0,
+          "unitate": "ng/mL"
+        },
+        {
+          "denumire": "Nivel optim: 30 -",
+          "valoare": 55.5,
+          "unitate": "ng/mL"
+        },
+        {
+          "denumire": "Crescut",
+          "valoare": 130.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / metoda colorimetrica / spectrofotometrie",
+          "valoare": 40.7,
+          "unitate": "U/L"
+        },
+        {
+          "denumire": "Ser / Metoda colorimetrica / spectrofotometrie",
+          "valoare": 3.95,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Metoda potentiometrica indirecta",
+          "valoare": 4.54,
+          "unitate": "mmol/L"
+        },
+        {
+          "denumire": "Adulti: 3.5 - 5.1",
+          "valoare": 23.0,
+          "unitate": "Sodiu"
+        },
+        {
+          "denumire": "Ser / Metoda potentiometrica indirecta",
+          "valoare": 136.2,
+          "unitate": "mmol/L"
+        },
+        {
+          "denumire": "Denumire Rezultat UM Interval de referinta",
+          "valoare": 23.0,
+          "unitate": "Trigliceride"
+        },
+        {
+          "denumire": "Trigliceride",
+          "valoare": 65.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Colesterol VLDL (calculat)",
+          "valoare": 13.0,
+          "unitate": "mg/dL"
+        },
+        {
+          "denumire": "Ser / Electrochemiluminiscenta FT4",
+          "valoare": 11.6,
+          "unitate": "pmol/L"
+        },
+        {
+          "denumire": "Ser / ECLIA - electrochemiluminiscenta TSH",
+          "valoare": 4.98,
+          "unitate": "µUI/mL"
+        }
+      ]
+    },
+    {
+      "pdf": "samples/golden_pdfs/Pivets Nicile.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Trefan Victor.pdf",
+      "expected": []
+    },
+    {
+      "pdf": "samples/golden_pdfs/Tutungiu Gabriela.pdf",
+      "expected": []
+    }
+  ]
+}

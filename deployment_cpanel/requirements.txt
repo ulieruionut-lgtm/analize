@@ -19,3 +19,7 @@ pydantic>=2.6
 pydantic-settings>=2.1
 python-dotenv>=1.0
 requests>=2.31
+
+# LLM (Copilot audit, sugestii alias — OpenAI-compat sau Claude)
+openai>=1.0,<2.0
+anthropic>=0.34,<1.0

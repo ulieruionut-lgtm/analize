@@ -437,6 +437,19 @@ def este_denumire_gunoi(denumire: str) -> bool:
     s = denumire.strip()
     if not s:
         return True
+    
+    # WHITELIST: Acceptă analize medicale cunoscute de scurtă notație
+    # (ex: K, Na, pH, Hb, VSH, Ca, Fe, Cl, CO2, etc.)
+    # Aceasta previne marcarea pe nedrept ca "gunoi" a codurilor standard medicale
+    _VALID_SHORT_NAMES = {
+        "K", "Na", "pH", "Hb", "VSH", "Ca", "Fe", "Cl", "CO2", "Mg", "P", "Cr", 
+        "BUN", "ALT", "AST", "GGT", "ALP", "CK", "LDH", "Alb", "Glu", "FT3", "FT4",
+        "TSH", "PTH", "PSA", "HCG", "AFP", "CEA", "CA19", "INR", "PT", "aPTT",
+        "PLT", "WBC", "RBC", "MCV", "MCH", "MCHC", "Hct", "CRP", "ESR", "Eos",
+    }
+    if s in _VALID_SHORT_NAMES:
+        return False
+    
     if _linie_este_exclusa(s):
         return True
     if _RE_NUME_PACIENT_ALL_CAPS.match(s):
@@ -925,14 +938,20 @@ def _curata_nume(raw: str) -> str:
     if not raw or not raw.strip():
         return raw or ""
     s = raw.strip()
+    
+    # ─── CURATENIE AGRESIVA LA INCEPUT ───
+    # Elimina garbage OCR la inceput: "rii i ", "pl ", "ll ", "ti ", "it ", etc.
+    s = re.sub(r"^[a-z]{1,3}\s+[a-z]?\s*", "", s).strip()
     # Elimina apostrof/ghilimele parazite la inceput
     s = re.sub(r"^['\u2018\u2019\u201c\u201d\"]+", "", s).strip()
+    
     # Elimina duplicari "Nume pacient: " / "pacient: " la inceput (format Regina Maria)
     while True:
         s2 = re.sub(r"^(?:Nume\s+pacient|pacient)\s*:\s*", "", s, count=1, flags=re.IGNORECASE).strip()
         if s2 == s:
             break
         s = s2
+    
     # Taie tot ce incepe cu "Varsta:" (si duplicatul) - ex: "IANCU Gheorghe 'Varsta: 83 ani, 1 luna Gheorghe 'Varsta: 83 ani, 1 luna"
     s = re.split(r"\s*['\"]?\s*Varsta\s*:", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
     # OCR: «Medicitrimitator» (fără spațiu) — taie înainte de medic trimitător
@@ -944,11 +963,21 @@ def _curata_nume(raw: str) -> str:
     # Taie si la alte cuvinte-cheie (Data inregistrari, Varsta etc.)
     parts = _NUME_TAIERE.split(s, maxsplit=1)
     s = parts[0].strip()
+    
+    # ─── CURATENIE AGRESIVA LA SFARSIT ───
+    # Elimina pattern "7.) ST on ete, srs" - numerotare + garbage
+    s = re.sub(r"\s+\d+\.\s*\)\s+[A-Z]{1,3}\s+on\s+\w+[,\s].*$", "", s, flags=re.IGNORECASE).strip()
+    # Elimina "7.) ST" pattern - numar cu paranteaza + litere
+    s = re.sub(r"\s+\d+\.\s*\)\s+\w+\s*$", "", s).strip()
+    # Elimina secvente ciudate la sfarsit: "ST on ete, srs"
+    s = re.sub(r"\s+(?:ST|on|ete|srs|TT|ll|ii)[\s,]*$", "", s, flags=re.IGNORECASE).strip()
+    
     # Elimina fragment "M, 1" / "M. 1" / "F, X ani" si repetitiile
     s = re.sub(r"\s+[MF]\s*[.,]\s*\d+\s*(?:ani?|luni?)(?:\s+\w+\s+[MF]\s*[.,]\s*\d+)*\s*$", "", s, flags=re.IGNORECASE).strip()
     # Repetitie "MATEI M, 1" / "M. 1" (punct sau virgula) la sfarsit
     s = re.sub(r"\s+[MF]\s*[.,]\s*\d+\s*(?:\s+\w+\s+[MF]\s*[.,]\s*\d+)*\s*$", "", s, flags=re.IGNORECASE).strip()
     s = re.sub(r"\s+(MATEI|GHEORGHE|ALEXANDRA)\s+[MF]\s*,\s*\d+\s*$", r" \1", s, flags=re.IGNORECASE).strip()
+    
     # Elimina secvente duplicate (ex: "OANA ALEXANDRA CANA ALEXANDRA" - CANA e OCR pentru OANA)
     words = s.split()
     if len(words) >= 4:
@@ -959,16 +988,20 @@ def _curata_nume(raw: str) -> str:
             if mid_two == last_two or _similar_ocr(mid_two, last_two):
                 s = " ".join(words[: i + 2])
                 break
+    
     # Curata artefacte OCR de la sfarsit (apostrof, ghilimele, etc.)
     s = re.sub(r"['\u2018\u2019\u201c\u201d\"]+\s*$", "", s).strip()
     s = re.sub(r"\s+[a-z]{1,2}\s*$", "", s).strip()
     s = re.sub(r"\s+[FM]\s*[|]\s*$", "", s, flags=re.IGNORECASE).strip()
     s = re.sub(r"\s*\|\s*$", "", s).strip()
+    
     # Corecteaza erori OCR frecvente la inceput de cuvant
     s = re.sub(r"\blancu\b", "IANCU", s)
     s = re.sub(r"\bvladasel\b", "VLADASEL", s, flags=re.IGNORECASE)
+    
     # MedLife: specialitate / proceduri lipite de Nume/Prenume
     s = _taie_suffix_medlife_proceduri(s)
+    
     # OCR: dublare prenume după tăiere sufix (ex: "TUTUNGIU GABRIELA CRISTINA GABRIELA CRISTINA")
     toks = s.split()
     if len(toks) >= 5:
@@ -1189,12 +1222,13 @@ def extract_nume(text: str) -> tuple[str, Optional[str]]:
     # Regina Maria OCR: PSM 6 pe layout 2 coloane poate pune «Nume: Cretulescu Cornel CNP: ...»
     # toate pe aceeași linie (fără newline). Regex-ul nu mai cere start-de-linie.
     # Capturăm tot până la primul CNP:/Varsta:/Sex: de pe aceeași linie.
+    # IMPROVED: Only capture valid name patterns (capitalized words) instead of all garbage
     m_n = re.search(
-        r"\bNume\s*:\s*((?:(?!CNP\s*:|Varsta\s*:|Sex\s*:|Prenume\s*:)[^\n])+)",
+        r"\bNume\s*:\s*([A-ZĂÂÎȘȚ][A-Za-zăâîșțĂÂÎȘȚ\s\-]*?)(?:\s+\d+\.\s*\)|CNP\s*:|Varsta\s*:|Sex\s*:|Prenume\s*:|$)",
         text,
         re.IGNORECASE,
     )
-    m_n_next = re.search(r"(?:^|\n)\s*Nume\s*:\s*\S[^\n]*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:\s+[A-ZĂÂÎȘȚ][a-zăâîșț]+)+)", text, re.IGNORECASE)
+    m_n_next = re.search(r"(?:^|\n)\s*Nume\s*:\s*\S[^\n]*\n\s*([A-ZĂÂÎȘȚ][a-zăâîșț]+(?:\s+[A-ZĂÂÎșț][a-zăâîșț]+)+)", text, re.IGNORECASE)
     m_p = re.search(r"(?:^|\n)\s*Prenume\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if m_n:
         raw_n = _curata_nume(m_n.group(1))

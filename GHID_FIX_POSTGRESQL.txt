@@ -73,7 +73,7 @@ PAS 6: TEST
 ───────────
 
 Accesează în browser:
-  https://analize-xxx.railway.app/health
+  Vezi RAILWAY_PRODUCTION.md — rândul „Health check”.
 
 Ar trebui să vezi:
   {

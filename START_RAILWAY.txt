@@ -80,15 +80,15 @@ railway up
 
 # 6. Obține URL
 railway domain
-→ Notează URL-ul: https://analize-xxx.railway.app
+→ Notează URL-ul: vezi RAILWAY_PRODUCTION.md (sau `railway domain`)
 
 PARTEA 3: Test
 ──────────────
 
-1. Health check: https://analize-xxx.railway.app/health
+1. Health check: vezi RAILWAY_PRODUCTION.md — link „Health check”
    Răspuns așteptat: {"status":"ok","database":"connected"}
 
-2. Interfață: https://analize-xxx.railway.app
+2. Interfață: vezi RAILWAY_PRODUCTION.md — link „Aplicație (panou medic)”
    → Upload un PDF de test
 
 3. Verifică în cPanel → phpMyAdmin:
@@ -166,7 +166,7 @@ După 500h:
 ═══════════════════════════════════════════════════════════════════════════
 
 Aplicația ta este LIVE:
-  🌐 URL: https://analize-xxx.railway.app
+  🌐 URL: vezi RAILWAY_PRODUCTION.md
   💾 Database: MySQL pe Romarg
   🔒 HTTPS: Automat
   💰 Cost: Gratuit (500h/lună)

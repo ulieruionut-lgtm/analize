@@ -1,0 +1,35 @@
+{
+  "description": "Golden set validat manual v1 (hibrid): 2 cazuri pentru benchmark clinic initial.",
+  "cases": [
+    {
+      "pdf": "samples/golden_pdfs/Capatan Luminita.pdf",
+      "expected": [
+        { "denumire": "VSH -Sange - Metoda Westergreen", "valoare": 13.0, "unitate": "mm/h" },
+        { "denumire": "Hemoglobina", "valoare": 14.5, "unitate": "g/dl" },
+        { "denumire": "Hematocrit", "valoare": 43.6, "unitate": "%" },
+        { "denumire": "Trombocite", "valoare": 280.0, "unitate": "10^3/ul" },
+        { "denumire": "Leucocite", "valoare": 7.47, "unitate": "10^3/ul" },
+        { "denumire": "Neutrofile %", "valoare": 63.8, "unitate": "%" },
+        { "denumire": "Limfocite %", "valoare": 28.9, "unitate": "%" },
+        { "denumire": "Monocite %", "valoare": 6.8, "unitate": "%" },
+        { "denumire": "RDW", "valoare": 12.3, "unitate": "%" },
+        { "denumire": "Glicemie a jeune -Ser - Spectofotometrie (Advia 1800)", "valoare": 94.0, "unitate": "mg/dL" },
+        { "denumire": "Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800)", "valoare": 0.16, "unitate": "mg/dL" },
+        { "denumire": "TGO / AST -Ser - Spectrofotometrie (Advia 1800)", "valoare": 21.0, "unitate": "U/L" },
+        { "denumire": "TGP / ALT -Ser - Spectrofotometrie (Advia 1800)", "valoare": 19.0, "unitate": "U/L" },
+        { "denumire": "Creatinina serica -Ser -", "valoare": 0.8, "unitate": "mg/dL" },
+        { "denumire": "Rata de filtrare glomerulara(RFG)", "valoare": 96.19, "unitate": "ml/min/1.73" },
+        { "denumire": "Urobilinogen", "valoare_text": "NORMAL" }
+      ]
+    },
+    {
+      "pdf": "samples/golden_pdfs/Chindris Alina.pdf",
+      "expected": [
+        { "denumire": "Ag Chlamydia Trachomatis", "valoare_text": "Negativ" },
+        { "denumire": "Mycoplasma / Ureaplasma-                     Mycoplasma hominis:", "valoare_text": "absent" },
+        { "denumire": "Examen microbiologic secretie col                    Culturi bacteriene absente la 24/48 ore" },
+        { "denumire": "Cultura fungi (mucoase)                    Nu s-a detectat Candida spp." }
+      ]
+    }
+  ]
+}

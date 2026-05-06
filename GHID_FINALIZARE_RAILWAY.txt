@@ -2,11 +2,14 @@
 ║                      GHID FINALIZARE RAILWAY                            ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-✅ CE AI FACUT DEJA:
+NOTĂ: Textul de mai jos e istoric (proiect „zestful-truth”, ID vechi). URL și proiect
+      curent pe Railway: vezi RAILWAY_PRODUCTION.md și dashboard-ul tău.
+
+✅ CE AI FACUT DEJA (istoric):
   - Railway logat
-  - Proiect creat: zestful-truth
+  - Proiect creat (exemplu vechi): zestful-truth
   - Aplicatie deployed
-  - URL: https://zestful-truth-production-ae3e.up.railway.app
+  - URL vechi (nu mai folosi domeniul zestful-truth-...); vezi RAILWAY_PRODUCTION.md
 
 ⏳ CE MAI TREBUIE FACUT:
 
@@ -14,7 +17,8 @@
 
 PASUL 1: Deschide Dashboard Railway
 
-  Link: https://railway.com/project/8a6b04fc-a7b8-4584-bcfc-5a47a83595a1
+  Link proiect (poate fi vechi): https://railway.com/project/8a6b04fc-a7b8-4584-bcfc-5a47a83595a1
+  Dacă nu e proiectul tău: https://railway.com/dashboard → deschide „soothing-fascination” (vezi RAILWAY_PRODUCTION.md).
 
 ══════════════════════════════════════════════════════════════════════════
 
@@ -50,7 +54,7 @@ PASUL 4: Ruleaza migratiile
 
 PASUL 5: Testeaza aplicatia
 
-  Acceseaza: https://zestful-truth-production-ae3e.up.railway.app/health
+  Acceseaza Health: vezi RAILWAY_PRODUCTION.md — coloana „Health check”.
 
   Ar trebui sa vezi:
   {
@@ -62,7 +66,7 @@ PASUL 5: Testeaza aplicatia
 
 🎉 GATA! Aplicatia ta e LIVE!
 
-URL final: https://zestful-truth-production-ae3e.up.railway.app
+URL final: vezi RAILWAY_PRODUCTION.md (sau `railway domain`).
 
 ══════════════════════════════════════════════════════════════════════════
 

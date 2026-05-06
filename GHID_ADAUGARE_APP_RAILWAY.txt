@@ -2,6 +2,8 @@
 ║         GHID RAPID - ADAUGARE APLICATIE IN RAILWAY DASHBOARD           ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
+NOTĂ: Proiect / link Railway de mai jos pot fi vechi. URL live: RAILWAY_PRODUCTION.md.
+
 SITUATIE CURENTA:
   ✅ Logat: scanari.cabinet@gmail.com
   ✅ Proiect: ionut-analize-medicale

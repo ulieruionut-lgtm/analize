@@ -1,0 +1,4942 @@
+{
+  "exported_at": "2026-03-15T18:08:56.524002Z",
+  "schema_version": 1,
+  "pacienti": [
+    {
+      "id": 1,
+      "cnp": "1234567890123",
+      "nume": "Test",
+      "prenume": "Nume",
+      "created_at": "2026-02-22 14:34:08"
+    },
+    {
+      "id": 2,
+      "cnp": "6250529700895",
+      "nume": "MANDACHE FRANCESCA",
+      "prenume": "FRANCESCA",
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 4,
+      "cnp": "0000000000000",
+      "nume": "TestDB",
+      "prenume": "Ok",
+      "created_at": "2026-02-22 19:46:02"
+    },
+    {
+      "id": 8,
+      "cnp": "1530310364210",
+      "nume": "ANDREI CRISTACHE",
+      "prenume": "CRISTACHE",
+      "created_at": "2026-02-22 20:10:02"
+    },
+    {
+      "id": 11,
+      "cnp": "2570521080021",
+      "nume": "CIMPUREANU DOINA ELENA s oerftiîa“ă_cafdm'OgÎe Dragusel Simona Claudia",
+      "prenume": "DOINA ELENA s oerftiîa“ă_cafdm'OgÎe Dragusel Simona Claudia",
+      "created_at": "2026-02-22 20:52:41"
+    },
+    {
+      "id": 12,
+      "cnp": "2510402080045",
+      "nume": "Cod FO1-PG-15 v2.0",
+      "prenume": "FO1-PG-15 v2.0",
+      "created_at": "2026-02-22 21:15:48"
+    }
+  ],
+  "analiza_standard": [
+    {
+      "id": 1,
+      "cod_standard": "GLUCOZA_FASTING",
+      "denumire_standard": "Glicemie"
+    },
+    {
+      "id": 2,
+      "cod_standard": "HB",
+      "denumire_standard": "Hemoglobină"
+    },
+    {
+      "id": 3,
+      "cod_standard": "WBC",
+      "denumire_standard": "Leucocite"
+    },
+    {
+      "id": 4,
+      "cod_standard": "RBC",
+      "denumire_standard": "Eritrocite"
+    },
+    {
+      "id": 5,
+      "cod_standard": "PLT",
+      "denumire_standard": "Trombocite"
+    },
+    {
+      "id": 6,
+      "cod_standard": "HBA1C",
+      "denumire_standard": "Hemoglobină glicată"
+    },
+    {
+      "id": 7,
+      "cod_standard": "CREATININA",
+      "denumire_standard": "Creatinină"
+    },
+    {
+      "id": 8,
+      "cod_standard": "ALT",
+      "denumire_standard": "ALAT"
+    },
+    {
+      "id": 9,
+      "cod_standard": "AST",
+      "denumire_standard": "ASAT"
+    },
+    {
+      "id": 10,
+      "cod_standard": "COLESTEROL_TOTAL",
+      "denumire_standard": "Colesterol total"
+    },
+    {
+      "id": 11,
+      "cod_standard": "HDL",
+      "denumire_standard": "HDL colesterol"
+    },
+    {
+      "id": 12,
+      "cod_standard": "LDL",
+      "denumire_standard": "LDL colesterol"
+    },
+    {
+      "id": 13,
+      "cod_standard": "TSH",
+      "denumire_standard": "TSH"
+    },
+    {
+      "id": 108,
+      "cod_standard": "HCT",
+      "denumire_standard": "Hematocrit"
+    },
+    {
+      "id": 109,
+      "cod_standard": "MCV",
+      "denumire_standard": "VEM – Volum eritrocitar mediu"
+    },
+    {
+      "id": 110,
+      "cod_standard": "MCH",
+      "denumire_standard": "HEM – Hemoglobina eritrocitara medie"
+    },
+    {
+      "id": 111,
+      "cod_standard": "MCHC",
+      "denumire_standard": "CHEM – Concentratia Hb eritrocitare medii"
+    },
+    {
+      "id": 112,
+      "cod_standard": "RDW",
+      "denumire_standard": "RDW – Indice distributie eritrocite"
+    },
+    {
+      "id": 114,
+      "cod_standard": "MPV",
+      "denumire_standard": "VTM – Volum trombocitar mediu"
+    },
+    {
+      "id": 115,
+      "cod_standard": "PDW",
+      "denumire_standard": "PDW – Indice distributie trombocite"
+    },
+    {
+      "id": 116,
+      "cod_standard": "PCT",
+      "denumire_standard": "PCT – Trombocrit"
+    },
+    {
+      "id": 117,
+      "cod_standard": "NEUTROFILE_PCT",
+      "denumire_standard": "Neutrofile (%)"
+    },
+    {
+      "id": 118,
+      "cod_standard": "NEUTROFILE_NR",
+      "denumire_standard": "Neutrofile (numar absolut)"
+    },
+    {
+      "id": 119,
+      "cod_standard": "LIMFOCITE_PCT",
+      "denumire_standard": "Limfocite (%)"
+    },
+    {
+      "id": 120,
+      "cod_standard": "LIMFOCITE_NR",
+      "denumire_standard": "Limfocite (numar absolut)"
+    },
+    {
+      "id": 121,
+      "cod_standard": "MONOCITE_PCT",
+      "denumire_standard": "Monocite (%)"
+    },
+    {
+      "id": 122,
+      "cod_standard": "MONOCITE_NR",
+      "denumire_standard": "Monocite (numar absolut)"
+    },
+    {
+      "id": 123,
+      "cod_standard": "EOZINOFILE_PCT",
+      "denumire_standard": "Eozinofile (%)"
+    },
+    {
+      "id": 124,
+      "cod_standard": "EOZINOFILE_NR",
+      "denumire_standard": "Eozinofile (numar absolut)"
+    },
+    {
+      "id": 125,
+      "cod_standard": "BAZOFILE_PCT",
+      "denumire_standard": "Bazofile (%)"
+    },
+    {
+      "id": 126,
+      "cod_standard": "BAZOFILE_NR",
+      "denumire_standard": "Bazofile (numar absolut)"
+    },
+    {
+      "id": 128,
+      "cod_standard": "UREE",
+      "denumire_standard": "Uree serica"
+    },
+    {
+      "id": 130,
+      "cod_standard": "ACID_URIC",
+      "denumire_standard": "Acid uric"
+    },
+    {
+      "id": 131,
+      "cod_standard": "PROTEINE_TOT",
+      "denumire_standard": "Proteine totale serice"
+    },
+    {
+      "id": 132,
+      "cod_standard": "ALBUMINA",
+      "denumire_standard": "Albumina serica"
+    },
+    {
+      "id": 133,
+      "cod_standard": "GLOBULINE",
+      "denumire_standard": "Globuline"
+    },
+    {
+      "id": 134,
+      "cod_standard": "RAPORT_AG",
+      "denumire_standard": "Raport albumina/globuline"
+    },
+    {
+      "id": 135,
+      "cod_standard": "BILIRUBIN_TOT",
+      "denumire_standard": "Bilirubina totala"
+    },
+    {
+      "id": 136,
+      "cod_standard": "BILIRUBIN_DIR",
+      "denumire_standard": "Bilirubina directa (conjugata)"
+    },
+    {
+      "id": 137,
+      "cod_standard": "BILIRUBIN_IND",
+      "denumire_standard": "Bilirubina indirecta"
+    },
+    {
+      "id": 138,
+      "cod_standard": "AMILAZA",
+      "denumire_standard": "Amilaza serica"
+    },
+    {
+      "id": 139,
+      "cod_standard": "LIPAZA",
+      "denumire_standard": "Lipaza serica"
+    },
+    {
+      "id": 140,
+      "cod_standard": "LDH",
+      "denumire_standard": "LDH – Lactat dehidrogenaza"
+    },
+    {
+      "id": 141,
+      "cod_standard": "EGFR",
+      "denumire_standard": "RFG estimat (eGFR)"
+    },
+    {
+      "id": 144,
+      "cod_standard": "GGT",
+      "denumire_standard": "GGT – Gama glutamil transferaza"
+    },
+    {
+      "id": 145,
+      "cod_standard": "ALP",
+      "denumire_standard": "Fosfataza alcalina"
+    },
+    {
+      "id": 150,
+      "cod_standard": "TRIGLICERIDE",
+      "denumire_standard": "Trigliceride"
+    },
+    {
+      "id": 151,
+      "cod_standard": "NON_HDL",
+      "denumire_standard": "Non-HDL colesterol"
+    },
+    {
+      "id": 152,
+      "cod_standard": "LPDL",
+      "denumire_standard": "Lp(a) – Lipoproteina a"
+    },
+    {
+      "id": 153,
+      "cod_standard": "SODIU",
+      "denumire_standard": "Sodiu seric (Na)"
+    },
+    {
+      "id": 154,
+      "cod_standard": "POTASIU",
+      "denumire_standard": "Potasiu seric (K)"
+    },
+    {
+      "id": 155,
+      "cod_standard": "CALCIU",
+      "denumire_standard": "Calciu seric (Ca)"
+    },
+    {
+      "id": 156,
+      "cod_standard": "MAGNEZIU",
+      "denumire_standard": "Magneziu seric"
+    },
+    {
+      "id": 157,
+      "cod_standard": "FOSFOR",
+      "denumire_standard": "Fosfor seric"
+    },
+    {
+      "id": 158,
+      "cod_standard": "CLOR",
+      "denumire_standard": "Clor seric (Cl)"
+    },
+    {
+      "id": 159,
+      "cod_standard": "FIER",
+      "denumire_standard": "Fier seric"
+    },
+    {
+      "id": 160,
+      "cod_standard": "FERITINA",
+      "denumire_standard": "Feritina"
+    },
+    {
+      "id": 161,
+      "cod_standard": "TRANSFERINA",
+      "denumire_standard": "Transferina"
+    },
+    {
+      "id": 162,
+      "cod_standard": "TIBC",
+      "denumire_standard": "TIBC – Capacitate totala de legare a fierului"
+    },
+    {
+      "id": 163,
+      "cod_standard": "VIT_D",
+      "denumire_standard": "Vitamina D (25-OH)"
+    },
+    {
+      "id": 164,
+      "cod_standard": "VIT_B12",
+      "denumire_standard": "Vitamina B12 (Cobalamina)"
+    },
+    {
+      "id": 165,
+      "cod_standard": "ACID_FOLIC",
+      "denumire_standard": "Acid folic (Vitamina B9)"
+    },
+    {
+      "id": 166,
+      "cod_standard": "VIT_B1",
+      "denumire_standard": "Vitamina B1 (Tiamina)"
+    },
+    {
+      "id": 167,
+      "cod_standard": "ZINC",
+      "denumire_standard": "Zinc seric"
+    },
+    {
+      "id": 169,
+      "cod_standard": "FT4",
+      "denumire_standard": "T4 liber (FT4)"
+    },
+    {
+      "id": 170,
+      "cod_standard": "FT3",
+      "denumire_standard": "T3 liber (FT3)"
+    },
+    {
+      "id": 171,
+      "cod_standard": "T4",
+      "denumire_standard": "T4 total"
+    },
+    {
+      "id": 172,
+      "cod_standard": "T3",
+      "denumire_standard": "T3 total"
+    },
+    {
+      "id": 173,
+      "cod_standard": "ANTI_TPO",
+      "denumire_standard": "Anticorpi anti-TPO"
+    },
+    {
+      "id": 174,
+      "cod_standard": "ANTI_TG",
+      "denumire_standard": "Anticorpi anti-tiroglobulina"
+    },
+    {
+      "id": 175,
+      "cod_standard": "TG",
+      "denumire_standard": "Tiroglobulina"
+    },
+    {
+      "id": 176,
+      "cod_standard": "CORTIZOL",
+      "denumire_standard": "Cortizol"
+    },
+    {
+      "id": 177,
+      "cod_standard": "INSULINA",
+      "denumire_standard": "Insulina bazala"
+    },
+    {
+      "id": 178,
+      "cod_standard": "HOMA_IR",
+      "denumire_standard": "HOMA-IR"
+    },
+    {
+      "id": 179,
+      "cod_standard": "FSH",
+      "denumire_standard": "FSH"
+    },
+    {
+      "id": 180,
+      "cod_standard": "LH",
+      "denumire_standard": "LH"
+    },
+    {
+      "id": 181,
+      "cod_standard": "ESTRADIOL",
+      "denumire_standard": "Estradiol (E2)"
+    },
+    {
+      "id": 182,
+      "cod_standard": "PROGESTERON",
+      "denumire_standard": "Progesteron"
+    },
+    {
+      "id": 183,
+      "cod_standard": "TESTOSTERON",
+      "denumire_standard": "Testosteron total"
+    },
+    {
+      "id": 184,
+      "cod_standard": "TESTOST_L",
+      "denumire_standard": "Testosteron liber"
+    },
+    {
+      "id": 185,
+      "cod_standard": "DHEA_S",
+      "denumire_standard": "DHEA-S"
+    },
+    {
+      "id": 186,
+      "cod_standard": "PROLACTINA",
+      "denumire_standard": "Prolactina"
+    },
+    {
+      "id": 187,
+      "cod_standard": "AMH",
+      "denumire_standard": "AMH – Hormon anti-Mullerian"
+    },
+    {
+      "id": 188,
+      "cod_standard": "PSA_TOTAL",
+      "denumire_standard": "PSA total"
+    },
+    {
+      "id": 189,
+      "cod_standard": "PSA_LIBER",
+      "denumire_standard": "PSA liber"
+    },
+    {
+      "id": 190,
+      "cod_standard": "BETA_HCG",
+      "denumire_standard": "Beta-hCG"
+    },
+    {
+      "id": 191,
+      "cod_standard": "CRP",
+      "denumire_standard": "CRP – Proteina C reactiva"
+    },
+    {
+      "id": 192,
+      "cod_standard": "CRP_HS",
+      "denumire_standard": "CRP ultrasensibil (hs-CRP)"
+    },
+    {
+      "id": 193,
+      "cod_standard": "VSH",
+      "denumire_standard": "VSH – Viteza de sedimentare a hematiilor"
+    },
+    {
+      "id": 194,
+      "cod_standard": "FIBRINOGEN",
+      "denumire_standard": "Fibrinogen"
+    },
+    {
+      "id": 195,
+      "cod_standard": "IL6",
+      "denumire_standard": "Interleukina 6 (IL-6)"
+    },
+    {
+      "id": 196,
+      "cod_standard": "IGA",
+      "denumire_standard": "Imunoglobulina A (IgA)"
+    },
+    {
+      "id": 197,
+      "cod_standard": "IGG",
+      "denumire_standard": "Imunoglobulina G (IgG)"
+    },
+    {
+      "id": 198,
+      "cod_standard": "IGM",
+      "denumire_standard": "Imunoglobulina M (IgM)"
+    },
+    {
+      "id": 199,
+      "cod_standard": "IGE_TOTAL",
+      "denumire_standard": "IgE totala"
+    },
+    {
+      "id": 200,
+      "cod_standard": "COMPLEMENT_C3",
+      "denumire_standard": "Complement C3"
+    },
+    {
+      "id": 201,
+      "cod_standard": "COMPLEMENT_C4",
+      "denumire_standard": "Complement C4"
+    },
+    {
+      "id": 202,
+      "cod_standard": "ANA",
+      "denumire_standard": "Anticorpi antinucleari (ANA)"
+    },
+    {
+      "id": 203,
+      "cod_standard": "ANTI_DS_DNA",
+      "denumire_standard": "Anticorpi anti-dsDNA"
+    },
+    {
+      "id": 204,
+      "cod_standard": "FR",
+      "denumire_standard": "Factor reumatoid (FR)"
+    },
+    {
+      "id": 205,
+      "cod_standard": "ANCA",
+      "denumire_standard": "ANCA"
+    },
+    {
+      "id": 206,
+      "cod_standard": "ANTI_CCP",
+      "denumire_standard": "Anticorpi anti-CCP"
+    },
+    {
+      "id": 207,
+      "cod_standard": "PT",
+      "denumire_standard": "Timp de protrombina (PT)"
+    },
+    {
+      "id": 208,
+      "cod_standard": "INR",
+      "denumire_standard": "INR"
+    },
+    {
+      "id": 209,
+      "cod_standard": "APTT",
+      "denumire_standard": "aPTT – Timp partial de tromboplastina activata"
+    },
+    {
+      "id": 210,
+      "cod_standard": "TT",
+      "denumire_standard": "Timp de trombina"
+    },
+    {
+      "id": 211,
+      "cod_standard": "D_DIMERI",
+      "denumire_standard": "D-dimeri"
+    },
+    {
+      "id": 212,
+      "cod_standard": "CEA",
+      "denumire_standard": "CEA – Antigen carcino-embrionar"
+    },
+    {
+      "id": 213,
+      "cod_standard": "CA_125",
+      "denumire_standard": "CA 125"
+    },
+    {
+      "id": 214,
+      "cod_standard": "CA_19_9",
+      "denumire_standard": "CA 19-9"
+    },
+    {
+      "id": 215,
+      "cod_standard": "CA_15_3",
+      "denumire_standard": "CA 15-3"
+    },
+    {
+      "id": 216,
+      "cod_standard": "AFP",
+      "denumire_standard": "Alfa-fetoproteina (AFP)"
+    },
+    {
+      "id": 217,
+      "cod_standard": "CA_72_4",
+      "denumire_standard": "CA 72-4"
+    },
+    {
+      "id": 218,
+      "cod_standard": "HBSAG",
+      "denumire_standard": "AgHBs – Antigen hepatita B"
+    },
+    {
+      "id": 219,
+      "cod_standard": "ANTI_HBS",
+      "denumire_standard": "Ac anti-HBs"
+    },
+    {
+      "id": 220,
+      "cod_standard": "ANTI_HCV",
+      "denumire_standard": "Ac anti-HCV"
+    },
+    {
+      "id": 221,
+      "cod_standard": "ANTI_HIV",
+      "denumire_standard": "Ac anti-HIV 1+2"
+    },
+    {
+      "id": 222,
+      "cod_standard": "VDRL",
+      "denumire_standard": "VDRL / Sifilis"
+    },
+    {
+      "id": 223,
+      "cod_standard": "TOXOPLASMA_IGA",
+      "denumire_standard": "Toxoplasma IgA"
+    },
+    {
+      "id": 224,
+      "cod_standard": "TOXOPLASMA_IGG",
+      "denumire_standard": "Toxoplasma IgG"
+    },
+    {
+      "id": 225,
+      "cod_standard": "TOXOPLASMA_IGM",
+      "denumire_standard": "Toxoplasma IgM"
+    },
+    {
+      "id": 226,
+      "cod_standard": "CMV_IGG",
+      "denumire_standard": "CMV IgG"
+    },
+    {
+      "id": 227,
+      "cod_standard": "CMV_IGM",
+      "denumire_standard": "CMV IgM"
+    },
+    {
+      "id": 228,
+      "cod_standard": "EBV_IGG",
+      "denumire_standard": "EBV – VCA IgG"
+    },
+    {
+      "id": 229,
+      "cod_standard": "EBV_IGM",
+      "denumire_standard": "EBV – VCA IgM"
+    },
+    {
+      "id": 230,
+      "cod_standard": "RUBELLA_IGG",
+      "denumire_standard": "Rubeola IgG"
+    },
+    {
+      "id": 231,
+      "cod_standard": "RUBELLA_IGM",
+      "denumire_standard": "Rubeola IgM"
+    },
+    {
+      "id": 232,
+      "cod_standard": "URINA_SUMAR",
+      "denumire_standard": "Sumar urina (examen complet)"
+    },
+    {
+      "id": 233,
+      "cod_standard": "MICROALBUMIN",
+      "denumire_standard": "Microalbuminurie"
+    },
+    {
+      "id": 234,
+      "cod_standard": "CREAT_URINA",
+      "denumire_standard": "Creatinina urinara"
+    },
+    {
+      "id": 235,
+      "cod_standard": "ELECTRO_ALB",
+      "denumire_standard": "Electroforeza – Albumina"
+    },
+    {
+      "id": 236,
+      "cod_standard": "ELECTRO_ALFA1",
+      "denumire_standard": "Electroforeza – Alfa 1 globulina"
+    },
+    {
+      "id": 237,
+      "cod_standard": "ELECTRO_ALFA2",
+      "denumire_standard": "Electroforeza – Alfa 2 globulina"
+    },
+    {
+      "id": 238,
+      "cod_standard": "ELECTRO_BETA1",
+      "denumire_standard": "Electroforeza – Beta 1 globulina"
+    },
+    {
+      "id": 239,
+      "cod_standard": "ELECTRO_BETA2",
+      "denumire_standard": "Electroforeza – Beta 2 globulina"
+    },
+    {
+      "id": 240,
+      "cod_standard": "ELECTRO_GAMA",
+      "denumire_standard": "Electroforeza – Gama globulina"
+    },
+    {
+      "id": 241,
+      "cod_standard": "ELECTRO_RAPORT",
+      "denumire_standard": "Raport A/G (electroforeza)"
+    }
+  ],
+  "analiza_alias": [
+    {
+      "id": 1,
+      "analiza_standard_id": 1,
+      "alias": "GLU"
+    },
+    {
+      "id": 2,
+      "analiza_standard_id": 1,
+      "alias": "Glicemie"
+    },
+    {
+      "id": 3,
+      "analiza_standard_id": 1,
+      "alias": "Glicemie la nemâncat"
+    },
+    {
+      "id": 4,
+      "analiza_standard_id": 1,
+      "alias": "Glucose"
+    },
+    {
+      "id": 5,
+      "analiza_standard_id": 1,
+      "alias": "Glucoză"
+    },
+    {
+      "id": 6,
+      "analiza_standard_id": 1,
+      "alias": "Glucoză serică"
+    },
+    {
+      "id": 7,
+      "analiza_standard_id": 2,
+      "alias": "Hemoglobină"
+    },
+    {
+      "id": 8,
+      "analiza_standard_id": 2,
+      "alias": "Hb"
+    },
+    {
+      "id": 9,
+      "analiza_standard_id": 2,
+      "alias": "HGB"
+    },
+    {
+      "id": 10,
+      "analiza_standard_id": 2,
+      "alias": "Hemoglobina"
+    },
+    {
+      "id": 11,
+      "analiza_standard_id": 3,
+      "alias": "Leucocite"
+    },
+    {
+      "id": 12,
+      "analiza_standard_id": 3,
+      "alias": "WBC"
+    },
+    {
+      "id": 13,
+      "analiza_standard_id": 3,
+      "alias": "Globule albe"
+    },
+    {
+      "id": 14,
+      "analiza_standard_id": 3,
+      "alias": "LEU"
+    },
+    {
+      "id": 15,
+      "analiza_standard_id": 4,
+      "alias": "Eritrocite"
+    },
+    {
+      "id": 16,
+      "analiza_standard_id": 4,
+      "alias": "RBC"
+    },
+    {
+      "id": 17,
+      "analiza_standard_id": 4,
+      "alias": "Globule roșii"
+    },
+    {
+      "id": 18,
+      "analiza_standard_id": 5,
+      "alias": "Trombocite"
+    },
+    {
+      "id": 19,
+      "analiza_standard_id": 5,
+      "alias": "PLT"
+    },
+    {
+      "id": 20,
+      "analiza_standard_id": 5,
+      "alias": "Plaquettes"
+    },
+    {
+      "id": 21,
+      "analiza_standard_id": 6,
+      "alias": "Hemoglobină glicată"
+    },
+    {
+      "id": 22,
+      "analiza_standard_id": 6,
+      "alias": "HbA1c"
+    },
+    {
+      "id": 23,
+      "analiza_standard_id": 6,
+      "alias": "HBA1C"
+    },
+    {
+      "id": 24,
+      "analiza_standard_id": 6,
+      "alias": "Glycated hemoglobin"
+    },
+    {
+      "id": 25,
+      "analiza_standard_id": 7,
+      "alias": "Creatinină"
+    },
+    {
+      "id": 26,
+      "analiza_standard_id": 7,
+      "alias": "Creatinine"
+    },
+    {
+      "id": 27,
+      "analiza_standard_id": 7,
+      "alias": "CREAT"
+    },
+    {
+      "id": 28,
+      "analiza_standard_id": 7,
+      "alias": "Creatinină serică"
+    },
+    {
+      "id": 29,
+      "analiza_standard_id": 8,
+      "alias": "ALAT"
+    },
+    {
+      "id": 30,
+      "analiza_standard_id": 8,
+      "alias": "ALT"
+    },
+    {
+      "id": 31,
+      "analiza_standard_id": 8,
+      "alias": "TGP (ALAT)"
+    },
+    {
+      "id": 32,
+      "analiza_standard_id": 8,
+      "alias": "TGP"
+    },
+    {
+      "id": 33,
+      "analiza_standard_id": 9,
+      "alias": "ASAT"
+    },
+    {
+      "id": 34,
+      "analiza_standard_id": 9,
+      "alias": "AST"
+    },
+    {
+      "id": 35,
+      "analiza_standard_id": 9,
+      "alias": "TGO (ASAT)"
+    },
+    {
+      "id": 36,
+      "analiza_standard_id": 9,
+      "alias": "TGO"
+    },
+    {
+      "id": 37,
+      "analiza_standard_id": 10,
+      "alias": "Colesterol total"
+    },
+    {
+      "id": 38,
+      "analiza_standard_id": 10,
+      "alias": "Cholesterol total"
+    },
+    {
+      "id": 39,
+      "analiza_standard_id": 11,
+      "alias": "HDL"
+    },
+    {
+      "id": 40,
+      "analiza_standard_id": 11,
+      "alias": "HDL colesterol"
+    },
+    {
+      "id": 41,
+      "analiza_standard_id": 12,
+      "alias": "LDL"
+    },
+    {
+      "id": 42,
+      "analiza_standard_id": 12,
+      "alias": "LDL colesterol"
+    },
+    {
+      "id": 43,
+      "analiza_standard_id": 13,
+      "alias": "TSH"
+    },
+    {
+      "id": 44,
+      "analiza_standard_id": 13,
+      "alias": "TSH (hormon hipofizar tireostimulator bazal)"
+    },
+    {
+      "id": 355,
+      "analiza_standard_id": 3,
+      "alias": "Nr. leucocite"
+    },
+    {
+      "id": 356,
+      "analiza_standard_id": 3,
+      "alias": "Numar leucocite"
+    },
+    {
+      "id": 359,
+      "analiza_standard_id": 3,
+      "alias": "White Blood Cells"
+    },
+    {
+      "id": 362,
+      "analiza_standard_id": 4,
+      "alias": "Nr. eritrocite"
+    },
+    {
+      "id": 363,
+      "analiza_standard_id": 4,
+      "alias": "Numar eritrocite"
+    },
+    {
+      "id": 364,
+      "analiza_standard_id": 4,
+      "alias": "Globule rosii"
+    },
+    {
+      "id": 365,
+      "analiza_standard_id": 4,
+      "alias": "Red Blood Cells"
+    },
+    {
+      "id": 370,
+      "analiza_standard_id": 2,
+      "alias": "Haemoglobin"
+    },
+    {
+      "id": 371,
+      "analiza_standard_id": 2,
+      "alias": "Hemoglobin"
+    },
+    {
+      "id": 372,
+      "analiza_standard_id": 108,
+      "alias": "Hematocrit"
+    },
+    {
+      "id": 373,
+      "analiza_standard_id": 108,
+      "alias": "HCT"
+    },
+    {
+      "id": 374,
+      "analiza_standard_id": 108,
+      "alias": "Ht"
+    },
+    {
+      "id": 375,
+      "analiza_standard_id": 108,
+      "alias": "Haematocrit"
+    },
+    {
+      "id": 376,
+      "analiza_standard_id": 109,
+      "alias": "VEM"
+    },
+    {
+      "id": 377,
+      "analiza_standard_id": 109,
+      "alias": "MCV"
+    },
+    {
+      "id": 378,
+      "analiza_standard_id": 109,
+      "alias": "Volum eritrocitar mediu"
+    },
+    {
+      "id": 379,
+      "analiza_standard_id": 109,
+      "alias": "Mean Corpuscular Volume"
+    },
+    {
+      "id": 380,
+      "analiza_standard_id": 110,
+      "alias": "MCH"
+    },
+    {
+      "id": 381,
+      "analiza_standard_id": 110,
+      "alias": "HEM"
+    },
+    {
+      "id": 382,
+      "analiza_standard_id": 110,
+      "alias": "Hemoglobina eritrocitara medie"
+    },
+    {
+      "id": 383,
+      "analiza_standard_id": 111,
+      "alias": "MCHC"
+    },
+    {
+      "id": 384,
+      "analiza_standard_id": 111,
+      "alias": "CHEM"
+    },
+    {
+      "id": 385,
+      "analiza_standard_id": 111,
+      "alias": "Concentratia Hb eritrocitare"
+    },
+    {
+      "id": 386,
+      "analiza_standard_id": 112,
+      "alias": "RDW"
+    },
+    {
+      "id": 387,
+      "analiza_standard_id": 112,
+      "alias": "RDW-CV"
+    },
+    {
+      "id": 388,
+      "analiza_standard_id": 112,
+      "alias": "RDW-SD"
+    },
+    {
+      "id": 389,
+      "analiza_standard_id": 112,
+      "alias": "Indice distributie eritrocite"
+    },
+    {
+      "id": 392,
+      "analiza_standard_id": 5,
+      "alias": "Nr. trombocite"
+    },
+    {
+      "id": 393,
+      "analiza_standard_id": 5,
+      "alias": "Numar trombocite"
+    },
+    {
+      "id": 394,
+      "analiza_standard_id": 5,
+      "alias": "Platelets"
+    },
+    {
+      "id": 396,
+      "analiza_standard_id": 5,
+      "alias": "Plachete"
+    },
+    {
+      "id": 397,
+      "analiza_standard_id": 114,
+      "alias": "MPV"
+    },
+    {
+      "id": 398,
+      "analiza_standard_id": 114,
+      "alias": "VTM"
+    },
+    {
+      "id": 399,
+      "analiza_standard_id": 114,
+      "alias": "Volum trombocitar mediu"
+    },
+    {
+      "id": 400,
+      "analiza_standard_id": 114,
+      "alias": "Mean Platelet Volume"
+    },
+    {
+      "id": 401,
+      "analiza_standard_id": 115,
+      "alias": "PDW"
+    },
+    {
+      "id": 402,
+      "analiza_standard_id": 115,
+      "alias": "Platelet Distribution Width"
+    },
+    {
+      "id": 403,
+      "analiza_standard_id": 116,
+      "alias": "PCT"
+    },
+    {
+      "id": 404,
+      "analiza_standard_id": 116,
+      "alias": "Trombocrit"
+    },
+    {
+      "id": 405,
+      "analiza_standard_id": 116,
+      "alias": "Plateletcrit"
+    },
+    {
+      "id": 406,
+      "analiza_standard_id": 117,
+      "alias": "% Neutrofile"
+    },
+    {
+      "id": 407,
+      "analiza_standard_id": 117,
+      "alias": "Neutrofile %"
+    },
+    {
+      "id": 408,
+      "analiza_standard_id": 117,
+      "alias": "NEUT%"
+    },
+    {
+      "id": 409,
+      "analiza_standard_id": 117,
+      "alias": "Neutrophils %"
+    },
+    {
+      "id": 410,
+      "analiza_standard_id": 118,
+      "alias": "Nr. neutrofile"
+    },
+    {
+      "id": 411,
+      "analiza_standard_id": 118,
+      "alias": "Neutrofile"
+    },
+    {
+      "id": 412,
+      "analiza_standard_id": 118,
+      "alias": "NEUT#"
+    },
+    {
+      "id": 413,
+      "analiza_standard_id": 118,
+      "alias": "Neutrophils"
+    },
+    {
+      "id": 414,
+      "analiza_standard_id": 119,
+      "alias": "% Limfocite"
+    },
+    {
+      "id": 415,
+      "analiza_standard_id": 119,
+      "alias": "Limfocite %"
+    },
+    {
+      "id": 416,
+      "analiza_standard_id": 119,
+      "alias": "LYM%"
+    },
+    {
+      "id": 417,
+      "analiza_standard_id": 119,
+      "alias": "Lymphocytes %"
+    },
+    {
+      "id": 418,
+      "analiza_standard_id": 120,
+      "alias": "Nr. limfocite"
+    },
+    {
+      "id": 419,
+      "analiza_standard_id": 120,
+      "alias": "Limfocite"
+    },
+    {
+      "id": 420,
+      "analiza_standard_id": 120,
+      "alias": "LYM#"
+    },
+    {
+      "id": 421,
+      "analiza_standard_id": 120,
+      "alias": "Lymphocytes"
+    },
+    {
+      "id": 422,
+      "analiza_standard_id": 121,
+      "alias": "% Monocite"
+    },
+    {
+      "id": 423,
+      "analiza_standard_id": 121,
+      "alias": "Monocite %"
+    },
+    {
+      "id": 424,
+      "analiza_standard_id": 121,
+      "alias": "MON%"
+    },
+    {
+      "id": 425,
+      "analiza_standard_id": 122,
+      "alias": "Nr. monocite"
+    },
+    {
+      "id": 426,
+      "analiza_standard_id": 122,
+      "alias": "Monocite"
+    },
+    {
+      "id": 427,
+      "analiza_standard_id": 122,
+      "alias": "MON#"
+    },
+    {
+      "id": 428,
+      "analiza_standard_id": 123,
+      "alias": "% Eozinofile"
+    },
+    {
+      "id": 429,
+      "analiza_standard_id": 123,
+      "alias": "Eozinofile %"
+    },
+    {
+      "id": 430,
+      "analiza_standard_id": 123,
+      "alias": "EOS%"
+    },
+    {
+      "id": 431,
+      "analiza_standard_id": 123,
+      "alias": "Eosinofile %"
+    },
+    {
+      "id": 432,
+      "analiza_standard_id": 124,
+      "alias": "Nr. eozinofile"
+    },
+    {
+      "id": 433,
+      "analiza_standard_id": 124,
+      "alias": "Eozinofile"
+    },
+    {
+      "id": 434,
+      "analiza_standard_id": 124,
+      "alias": "EOS#"
+    },
+    {
+      "id": 435,
+      "analiza_standard_id": 124,
+      "alias": "Eosinofile"
+    },
+    {
+      "id": 436,
+      "analiza_standard_id": 125,
+      "alias": "% Basofile"
+    },
+    {
+      "id": 437,
+      "analiza_standard_id": 125,
+      "alias": "Bazofile %"
+    },
+    {
+      "id": 438,
+      "analiza_standard_id": 125,
+      "alias": "Basofile %"
+    },
+    {
+      "id": 439,
+      "analiza_standard_id": 125,
+      "alias": "BAS%"
+    },
+    {
+      "id": 440,
+      "analiza_standard_id": 126,
+      "alias": "Nr. basofile"
+    },
+    {
+      "id": 441,
+      "analiza_standard_id": 126,
+      "alias": "Nr. bazofile"
+    },
+    {
+      "id": 442,
+      "analiza_standard_id": 126,
+      "alias": "Bazofile"
+    },
+    {
+      "id": 443,
+      "analiza_standard_id": 126,
+      "alias": "Basofile"
+    },
+    {
+      "id": 444,
+      "analiza_standard_id": 126,
+      "alias": "BAS#"
+    },
+    {
+      "id": 446,
+      "analiza_standard_id": 1,
+      "alias": "Glucoza"
+    },
+    {
+      "id": 450,
+      "analiza_standard_id": 1,
+      "alias": "Glucoza serica"
+    },
+    {
+      "id": 451,
+      "analiza_standard_id": 1,
+      "alias": "Glucoza serică"
+    },
+    {
+      "id": 452,
+      "analiza_standard_id": 1,
+      "alias": "Glicemie a jeun"
+    },
+    {
+      "id": 454,
+      "analiza_standard_id": 128,
+      "alias": "Uree"
+    },
+    {
+      "id": 455,
+      "analiza_standard_id": 128,
+      "alias": "Uree serica"
+    },
+    {
+      "id": 456,
+      "analiza_standard_id": 128,
+      "alias": "Uree serică"
+    },
+    {
+      "id": 457,
+      "analiza_standard_id": 128,
+      "alias": "Urea"
+    },
+    {
+      "id": 458,
+      "analiza_standard_id": 128,
+      "alias": "BUN"
+    },
+    {
+      "id": 459,
+      "analiza_standard_id": 7,
+      "alias": "Creatinina"
+    },
+    {
+      "id": 463,
+      "analiza_standard_id": 7,
+      "alias": "Creatinina serica"
+    },
+    {
+      "id": 464,
+      "analiza_standard_id": 7,
+      "alias": "Creatinina serică"
+    },
+    {
+      "id": 465,
+      "analiza_standard_id": 130,
+      "alias": "Acid uric"
+    },
+    {
+      "id": 466,
+      "analiza_standard_id": 130,
+      "alias": "Uric acid"
+    },
+    {
+      "id": 467,
+      "analiza_standard_id": 130,
+      "alias": "AU"
+    },
+    {
+      "id": 468,
+      "analiza_standard_id": 130,
+      "alias": "Guta - acid uric"
+    },
+    {
+      "id": 469,
+      "analiza_standard_id": 131,
+      "alias": "Proteine totale"
+    },
+    {
+      "id": 470,
+      "analiza_standard_id": 131,
+      "alias": "Proteine totale serice"
+    },
+    {
+      "id": 471,
+      "analiza_standard_id": 131,
+      "alias": "Total Protein"
+    },
+    {
+      "id": 472,
+      "analiza_standard_id": 131,
+      "alias": "TP"
+    },
+    {
+      "id": 473,
+      "analiza_standard_id": 131,
+      "alias": "Proteine"
+    },
+    {
+      "id": 474,
+      "analiza_standard_id": 132,
+      "alias": "Albumina"
+    },
+    {
+      "id": 475,
+      "analiza_standard_id": 132,
+      "alias": "Albumină"
+    },
+    {
+      "id": 476,
+      "analiza_standard_id": 132,
+      "alias": "Albumin"
+    },
+    {
+      "id": 477,
+      "analiza_standard_id": 132,
+      "alias": "ALB"
+    },
+    {
+      "id": 478,
+      "analiza_standard_id": 132,
+      "alias": "Albumina serica"
+    },
+    {
+      "id": 479,
+      "analiza_standard_id": 135,
+      "alias": "Bilirubina totala"
+    },
+    {
+      "id": 480,
+      "analiza_standard_id": 135,
+      "alias": "Bilirubina totală"
+    },
+    {
+      "id": 481,
+      "analiza_standard_id": 135,
+      "alias": "Bilirubin total"
+    },
+    {
+      "id": 482,
+      "analiza_standard_id": 135,
+      "alias": "BIL-T"
+    },
+    {
+      "id": 483,
+      "analiza_standard_id": 135,
+      "alias": "TBIL"
+    },
+    {
+      "id": 484,
+      "analiza_standard_id": 136,
+      "alias": "Bilirubina directa"
+    },
+    {
+      "id": 485,
+      "analiza_standard_id": 136,
+      "alias": "Bilirubina directă"
+    },
+    {
+      "id": 486,
+      "analiza_standard_id": 136,
+      "alias": "Bilirubin direct"
+    },
+    {
+      "id": 487,
+      "analiza_standard_id": 136,
+      "alias": "DBIL"
+    },
+    {
+      "id": 488,
+      "analiza_standard_id": 136,
+      "alias": "BIL-D"
+    },
+    {
+      "id": 489,
+      "analiza_standard_id": 137,
+      "alias": "Bilirubina indirecta"
+    },
+    {
+      "id": 490,
+      "analiza_standard_id": 137,
+      "alias": "Bilirubina indirectă"
+    },
+    {
+      "id": 491,
+      "analiza_standard_id": 137,
+      "alias": "IBIL"
+    },
+    {
+      "id": 496,
+      "analiza_standard_id": 8,
+      "alias": "ALT (ALAT)"
+    },
+    {
+      "id": 497,
+      "analiza_standard_id": 8,
+      "alias": "Alanin aminotransferaza"
+    },
+    {
+      "id": 498,
+      "analiza_standard_id": 8,
+      "alias": "Alanine Aminotransferase"
+    },
+    {
+      "id": 499,
+      "analiza_standard_id": 8,
+      "alias": "GPT"
+    },
+    {
+      "id": 504,
+      "analiza_standard_id": 9,
+      "alias": "AST (ASAT)"
+    },
+    {
+      "id": 505,
+      "analiza_standard_id": 9,
+      "alias": "Aspartat aminotransferaza"
+    },
+    {
+      "id": 506,
+      "analiza_standard_id": 9,
+      "alias": "Aspartate Aminotransferase"
+    },
+    {
+      "id": 507,
+      "analiza_standard_id": 9,
+      "alias": "GOT"
+    },
+    {
+      "id": 508,
+      "analiza_standard_id": 144,
+      "alias": "GGT"
+    },
+    {
+      "id": 509,
+      "analiza_standard_id": 144,
+      "alias": "Gama GT"
+    },
+    {
+      "id": 510,
+      "analiza_standard_id": 144,
+      "alias": "Gamma GT"
+    },
+    {
+      "id": 511,
+      "analiza_standard_id": 144,
+      "alias": "Gamma-GT"
+    },
+    {
+      "id": 512,
+      "analiza_standard_id": 144,
+      "alias": "GGT (Gama glutamil transferaza)"
+    },
+    {
+      "id": 513,
+      "analiza_standard_id": 144,
+      "alias": "Gama-glutamil transferaza"
+    },
+    {
+      "id": 514,
+      "analiza_standard_id": 145,
+      "alias": "Fosfataza alcalina"
+    },
+    {
+      "id": 515,
+      "analiza_standard_id": 145,
+      "alias": "Fosfataza alcalină"
+    },
+    {
+      "id": 516,
+      "analiza_standard_id": 145,
+      "alias": "ALP"
+    },
+    {
+      "id": 517,
+      "analiza_standard_id": 145,
+      "alias": "FA"
+    },
+    {
+      "id": 518,
+      "analiza_standard_id": 145,
+      "alias": "Alkaline Phosphatase"
+    },
+    {
+      "id": 519,
+      "analiza_standard_id": 6,
+      "alias": "Hemoglobina glicata"
+    },
+    {
+      "id": 520,
+      "analiza_standard_id": 6,
+      "alias": "Hemoglobina glicată"
+    },
+    {
+      "id": 523,
+      "analiza_standard_id": 6,
+      "alias": "A1C"
+    },
+    {
+      "id": 525,
+      "analiza_standard_id": 6,
+      "alias": "Hemoglobina A1c"
+    },
+    {
+      "id": 527,
+      "analiza_standard_id": 10,
+      "alias": "Colesterol"
+    },
+    {
+      "id": 528,
+      "analiza_standard_id": 10,
+      "alias": "Cholesterol"
+    },
+    {
+      "id": 530,
+      "analiza_standard_id": 10,
+      "alias": "CHOL"
+    },
+    {
+      "id": 531,
+      "analiza_standard_id": 10,
+      "alias": "CT"
+    },
+    {
+      "id": 534,
+      "analiza_standard_id": 11,
+      "alias": "HDL-C"
+    },
+    {
+      "id": 535,
+      "analiza_standard_id": 11,
+      "alias": "Colesterol HDL"
+    },
+    {
+      "id": 536,
+      "analiza_standard_id": 11,
+      "alias": "HDL Cholesterol"
+    },
+    {
+      "id": 537,
+      "analiza_standard_id": 11,
+      "alias": "Colesterol HDL (col. bun)"
+    },
+    {
+      "id": 540,
+      "analiza_standard_id": 12,
+      "alias": "LDL-C"
+    },
+    {
+      "id": 541,
+      "analiza_standard_id": 12,
+      "alias": "Colesterol LDL"
+    },
+    {
+      "id": 542,
+      "analiza_standard_id": 12,
+      "alias": "LDL Cholesterol"
+    },
+    {
+      "id": 543,
+      "analiza_standard_id": 12,
+      "alias": "LDL-colesterol"
+    },
+    {
+      "id": 544,
+      "analiza_standard_id": 12,
+      "alias": "Colesterol LDL calculat"
+    },
+    {
+      "id": 545,
+      "analiza_standard_id": 12,
+      "alias": "LDL col. calculat"
+    },
+    {
+      "id": 546,
+      "analiza_standard_id": 150,
+      "alias": "Trigliceride"
+    },
+    {
+      "id": 547,
+      "analiza_standard_id": 150,
+      "alias": "Triglycerides"
+    },
+    {
+      "id": 548,
+      "analiza_standard_id": 150,
+      "alias": "TG"
+    },
+    {
+      "id": 549,
+      "analiza_standard_id": 150,
+      "alias": "TRIG"
+    },
+    {
+      "id": 550,
+      "analiza_standard_id": 150,
+      "alias": "Trigliceridele serice"
+    },
+    {
+      "id": 552,
+      "analiza_standard_id": 13,
+      "alias": "TSH bazal"
+    },
+    {
+      "id": 554,
+      "analiza_standard_id": 13,
+      "alias": "Thyroid Stimulating Hormone"
+    },
+    {
+      "id": 555,
+      "analiza_standard_id": 13,
+      "alias": "Tireotropina"
+    },
+    {
+      "id": 556,
+      "analiza_standard_id": 169,
+      "alias": "FT4"
+    },
+    {
+      "id": 557,
+      "analiza_standard_id": 169,
+      "alias": "T4 liber"
+    },
+    {
+      "id": 558,
+      "analiza_standard_id": 169,
+      "alias": "T4 Liber"
+    },
+    {
+      "id": 559,
+      "analiza_standard_id": 169,
+      "alias": "Tiroxina libera"
+    },
+    {
+      "id": 560,
+      "analiza_standard_id": 169,
+      "alias": "Free T4"
+    },
+    {
+      "id": 561,
+      "analiza_standard_id": 170,
+      "alias": "FT3"
+    },
+    {
+      "id": 562,
+      "analiza_standard_id": 170,
+      "alias": "T3 liber"
+    },
+    {
+      "id": 563,
+      "analiza_standard_id": 170,
+      "alias": "T3 Liber"
+    },
+    {
+      "id": 564,
+      "analiza_standard_id": 170,
+      "alias": "Free T3"
+    },
+    {
+      "id": 565,
+      "analiza_standard_id": 173,
+      "alias": "Anti-TPO"
+    },
+    {
+      "id": 566,
+      "analiza_standard_id": 173,
+      "alias": "AntiTPO"
+    },
+    {
+      "id": 567,
+      "analiza_standard_id": 173,
+      "alias": "Ac anti-TPO"
+    },
+    {
+      "id": 568,
+      "analiza_standard_id": 173,
+      "alias": "Anticorpi anti-peroxidaza tiroidiana"
+    },
+    {
+      "id": 569,
+      "analiza_standard_id": 191,
+      "alias": "CRP"
+    },
+    {
+      "id": 570,
+      "analiza_standard_id": 191,
+      "alias": "CRP cantitativ"
+    },
+    {
+      "id": 571,
+      "analiza_standard_id": 191,
+      "alias": "Proteina C reactiva"
+    },
+    {
+      "id": 572,
+      "analiza_standard_id": 191,
+      "alias": "Proteina C reactiva (PCR)"
+    },
+    {
+      "id": 573,
+      "analiza_standard_id": 191,
+      "alias": "C-Reactive Protein"
+    },
+    {
+      "id": 574,
+      "analiza_standard_id": 191,
+      "alias": "PCR cantitativ"
+    },
+    {
+      "id": 575,
+      "analiza_standard_id": 191,
+      "alias": "CRP (Proteina C Reactiva)"
+    },
+    {
+      "id": 576,
+      "analiza_standard_id": 192,
+      "alias": "hs-CRP"
+    },
+    {
+      "id": 577,
+      "analiza_standard_id": 192,
+      "alias": "hsCRP"
+    },
+    {
+      "id": 578,
+      "analiza_standard_id": 192,
+      "alias": "CRP ultrasensibil"
+    },
+    {
+      "id": 579,
+      "analiza_standard_id": 192,
+      "alias": "CRP high sensitivity"
+    },
+    {
+      "id": 580,
+      "analiza_standard_id": 192,
+      "alias": "Proteina C reactiva ultrasensibila"
+    },
+    {
+      "id": 581,
+      "analiza_standard_id": 193,
+      "alias": "VSH"
+    },
+    {
+      "id": 582,
+      "analiza_standard_id": 193,
+      "alias": "Viteza de sedimentare"
+    },
+    {
+      "id": 583,
+      "analiza_standard_id": 193,
+      "alias": "Viteza sedimentare hematii"
+    },
+    {
+      "id": 584,
+      "analiza_standard_id": 193,
+      "alias": "ESR"
+    },
+    {
+      "id": 585,
+      "analiza_standard_id": 194,
+      "alias": "Fibrinogen"
+    },
+    {
+      "id": 586,
+      "analiza_standard_id": 194,
+      "alias": "Fibrinogen plasmatic"
+    },
+    {
+      "id": 587,
+      "analiza_standard_id": 208,
+      "alias": "INR"
+    },
+    {
+      "id": 588,
+      "analiza_standard_id": 208,
+      "alias": "International Normalized Ratio"
+    },
+    {
+      "id": 589,
+      "analiza_standard_id": 207,
+      "alias": "PT"
+    },
+    {
+      "id": 590,
+      "analiza_standard_id": 207,
+      "alias": "Timp de protrombina"
+    },
+    {
+      "id": 591,
+      "analiza_standard_id": 207,
+      "alias": "Timp de protrombina (TP)"
+    },
+    {
+      "id": 592,
+      "analiza_standard_id": 207,
+      "alias": "Prothrombin Time"
+    },
+    {
+      "id": 594,
+      "analiza_standard_id": 209,
+      "alias": "aPTT"
+    },
+    {
+      "id": 595,
+      "analiza_standard_id": 209,
+      "alias": "APTT"
+    },
+    {
+      "id": 596,
+      "analiza_standard_id": 209,
+      "alias": "PTT activat"
+    },
+    {
+      "id": 597,
+      "analiza_standard_id": 209,
+      "alias": "Activated Partial Thromboplastin Time"
+    },
+    {
+      "id": 598,
+      "analiza_standard_id": 211,
+      "alias": "D-dimeri"
+    },
+    {
+      "id": 599,
+      "analiza_standard_id": 211,
+      "alias": "D-Dimers"
+    },
+    {
+      "id": 600,
+      "analiza_standard_id": 211,
+      "alias": "D dimeri"
+    },
+    {
+      "id": 601,
+      "analiza_standard_id": 159,
+      "alias": "Fier seric"
+    },
+    {
+      "id": 602,
+      "analiza_standard_id": 159,
+      "alias": "Fier"
+    },
+    {
+      "id": 603,
+      "analiza_standard_id": 159,
+      "alias": "Iron"
+    },
+    {
+      "id": 604,
+      "analiza_standard_id": 159,
+      "alias": "Fe"
+    },
+    {
+      "id": 605,
+      "analiza_standard_id": 159,
+      "alias": "Sideremie"
+    },
+    {
+      "id": 606,
+      "analiza_standard_id": 160,
+      "alias": "Feritina"
+    },
+    {
+      "id": 607,
+      "analiza_standard_id": 160,
+      "alias": "Ferritin"
+    },
+    {
+      "id": 608,
+      "analiza_standard_id": 160,
+      "alias": "Ferritina"
+    },
+    {
+      "id": 609,
+      "analiza_standard_id": 163,
+      "alias": "Vitamina D"
+    },
+    {
+      "id": 610,
+      "analiza_standard_id": 163,
+      "alias": "Vitamina D3"
+    },
+    {
+      "id": 611,
+      "analiza_standard_id": 163,
+      "alias": "25-OH Vitamina D"
+    },
+    {
+      "id": 612,
+      "analiza_standard_id": 163,
+      "alias": "25-OH-D3"
+    },
+    {
+      "id": 613,
+      "analiza_standard_id": 163,
+      "alias": "25(OH)D"
+    },
+    {
+      "id": 614,
+      "analiza_standard_id": 163,
+      "alias": "Vitamin D"
+    },
+    {
+      "id": 615,
+      "analiza_standard_id": 163,
+      "alias": "Vitamina D (25-hidroxicolecalciferol)"
+    },
+    {
+      "id": 616,
+      "analiza_standard_id": 164,
+      "alias": "Vitamina B12"
+    },
+    {
+      "id": 617,
+      "analiza_standard_id": 164,
+      "alias": "B12"
+    },
+    {
+      "id": 618,
+      "analiza_standard_id": 164,
+      "alias": "Cobalamina"
+    },
+    {
+      "id": 619,
+      "analiza_standard_id": 164,
+      "alias": "Vitamin B12"
+    },
+    {
+      "id": 620,
+      "analiza_standard_id": 165,
+      "alias": "Acid folic"
+    },
+    {
+      "id": 621,
+      "analiza_standard_id": 165,
+      "alias": "Folat"
+    },
+    {
+      "id": 622,
+      "analiza_standard_id": 165,
+      "alias": "Folic acid"
+    },
+    {
+      "id": 623,
+      "analiza_standard_id": 165,
+      "alias": "Vitamina B9"
+    },
+    {
+      "id": 624,
+      "analiza_standard_id": 153,
+      "alias": "Sodiu"
+    },
+    {
+      "id": 625,
+      "analiza_standard_id": 153,
+      "alias": "Sodium"
+    },
+    {
+      "id": 626,
+      "analiza_standard_id": 153,
+      "alias": "Na"
+    },
+    {
+      "id": 627,
+      "analiza_standard_id": 154,
+      "alias": "Potasiu"
+    },
+    {
+      "id": 628,
+      "analiza_standard_id": 154,
+      "alias": "Potassium"
+    },
+    {
+      "id": 629,
+      "analiza_standard_id": 154,
+      "alias": "Kaliu"
+    },
+    {
+      "id": 630,
+      "analiza_standard_id": 154,
+      "alias": "K"
+    },
+    {
+      "id": 631,
+      "analiza_standard_id": 155,
+      "alias": "Calciu"
+    },
+    {
+      "id": 632,
+      "analiza_standard_id": 155,
+      "alias": "Calcium"
+    },
+    {
+      "id": 633,
+      "analiza_standard_id": 155,
+      "alias": "Ca"
+    },
+    {
+      "id": 634,
+      "analiza_standard_id": 155,
+      "alias": "Calciu seric"
+    },
+    {
+      "id": 635,
+      "analiza_standard_id": 156,
+      "alias": "Magneziu"
+    },
+    {
+      "id": 636,
+      "analiza_standard_id": 156,
+      "alias": "Magnesium"
+    },
+    {
+      "id": 637,
+      "analiza_standard_id": 156,
+      "alias": "Mg"
+    },
+    {
+      "id": 638,
+      "analiza_standard_id": 157,
+      "alias": "Fosfor"
+    },
+    {
+      "id": 639,
+      "analiza_standard_id": 157,
+      "alias": "Phosphorus"
+    },
+    {
+      "id": 640,
+      "analiza_standard_id": 157,
+      "alias": "Phosphate"
+    },
+    {
+      "id": 641,
+      "analiza_standard_id": 188,
+      "alias": "PSA total"
+    },
+    {
+      "id": 642,
+      "analiza_standard_id": 188,
+      "alias": "PSA"
+    },
+    {
+      "id": 643,
+      "analiza_standard_id": 188,
+      "alias": "Antigen specific prostatic"
+    },
+    {
+      "id": 644,
+      "analiza_standard_id": 189,
+      "alias": "PSA liber"
+    },
+    {
+      "id": 645,
+      "analiza_standard_id": 189,
+      "alias": "Free PSA"
+    },
+    {
+      "id": 646,
+      "analiza_standard_id": 235,
+      "alias": "Albumina%"
+    },
+    {
+      "id": 647,
+      "analiza_standard_id": 235,
+      "alias": "Albumina %"
+    },
+    {
+      "id": 648,
+      "analiza_standard_id": 236,
+      "alias": "Alfa 1 globulina %"
+    },
+    {
+      "id": 649,
+      "analiza_standard_id": 236,
+      "alias": "Alfa 1"
+    },
+    {
+      "id": 650,
+      "analiza_standard_id": 236,
+      "alias": "Alpha 1"
+    },
+    {
+      "id": 651,
+      "analiza_standard_id": 237,
+      "alias": "Alfa 2 globulina %"
+    },
+    {
+      "id": 652,
+      "analiza_standard_id": 237,
+      "alias": "Alfa 2"
+    },
+    {
+      "id": 653,
+      "analiza_standard_id": 237,
+      "alias": "Alpha 2"
+    },
+    {
+      "id": 654,
+      "analiza_standard_id": 238,
+      "alias": "Beta 1 globulina %"
+    },
+    {
+      "id": 655,
+      "analiza_standard_id": 238,
+      "alias": "Beta 1"
+    },
+    {
+      "id": 656,
+      "analiza_standard_id": 239,
+      "alias": "Beta 2 globulina"
+    },
+    {
+      "id": 657,
+      "analiza_standard_id": 239,
+      "alias": "Beta 2"
+    },
+    {
+      "id": 658,
+      "analiza_standard_id": 240,
+      "alias": "Gamma globulina"
+    },
+    {
+      "id": 659,
+      "analiza_standard_id": 240,
+      "alias": "Gama globulina"
+    },
+    {
+      "id": 660,
+      "analiza_standard_id": 240,
+      "alias": "Gamma globulina %"
+    },
+    {
+      "id": 661,
+      "analiza_standard_id": 241,
+      "alias": "Raport A/G"
+    },
+    {
+      "id": 662,
+      "analiza_standard_id": 236,
+      "alias": "Aipha 1"
+    }
+  ],
+  "buletine": [
+    {
+      "id": 1,
+      "pacient_id": 2,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "analize bioclinica.pdf",
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 2,
+      "pacient_id": 2,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "analize bioclinica.pdf",
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 3,
+      "pacient_id": 2,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "analize bioclinica.pdf",
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 4,
+      "pacient_id": 2,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "analize bioclinica.pdf",
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 5,
+      "pacient_id": 2,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "analize bioclinica.pdf",
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 6,
+      "pacient_id": 8,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "Scan2025.pdf",
+      "created_at": "2026-02-22 20:10:02"
+    },
+    {
+      "id": 7,
+      "pacient_id": 8,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "Scan2025.pdf",
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 8,
+      "pacient_id": 8,
+      "data_buletin": "17.12.2025",
+      "laborator": null,
+      "fisier_original": "Scan2025-12-19_100509.pdf",
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 9,
+      "pacient_id": 11,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "Scan2025-12-19_104732.pdf",
+      "created_at": "2026-02-22 20:52:41"
+    },
+    {
+      "id": 10,
+      "pacient_id": 12,
+      "data_buletin": null,
+      "laborator": null,
+      "fisier_original": "Scan2026-02-20_091714.pdf",
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 11,
+      "pacient_id": 8,
+      "data_buletin": "17.12.2025",
+      "laborator": null,
+      "fisier_original": "scan.pdf",
+      "created_at": "2026-02-23 08:59:54"
+    }
+  ],
+  "rezultate_analize": [
+    {
+      "id": 1,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 2,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 3,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 4,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 5,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 80.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 6,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "13 -",
+      "valoare": 45.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 7,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "8 -",
+      "valoare": 11.4,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 8,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "20 -",
+      "valoare": 2.85,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 9,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "CKD-EPI",
+      "valoare": 2009.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 10,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 0.35,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 11,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 31.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 12,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 404.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 13,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "15 -",
+      "valoare": 119.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 14,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "7 -",
+      "valoare": 21.3,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 15,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 291.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 16,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 17,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 18,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 19,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 20,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 21,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 640.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 22,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 23,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 24,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "94 -",
+      "valoare": 1.44,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 25,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 18.53,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 26,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "60 -",
+      "valoare": 100.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 27,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "33 -",
+      "valoare": 5.55,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 28,
+      "buletin_id": 1,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 16:48:39"
+    },
+    {
+      "id": 29,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 30,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 31,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 32,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 33,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 80.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 34,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "13 -",
+      "valoare": 45.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:24"
+    },
+    {
+      "id": 35,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "8 -",
+      "valoare": 11.4,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 36,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "20 -",
+      "valoare": 2.85,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 37,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "CKD-EPI",
+      "valoare": 2009.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 38,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 0.35,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 39,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 31.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 40,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 404.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 41,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "15 -",
+      "valoare": 119.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 42,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "7 -",
+      "valoare": 21.3,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 43,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 291.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 44,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 45,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 46,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 47,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 48,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 49,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 640.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 50,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 51,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 52,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "94 -",
+      "valoare": 1.44,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 53,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 18.53,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 54,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "60 -",
+      "valoare": 100.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 55,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "33 -",
+      "valoare": 5.55,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 56,
+      "buletin_id": 2,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:45:25"
+    },
+    {
+      "id": 57,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 58,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 59,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 60,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 61,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 80.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 62,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "13 -",
+      "valoare": 45.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 63,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "8 -",
+      "valoare": 11.4,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 64,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "20 -",
+      "valoare": 2.85,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 65,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "CKD-EPI",
+      "valoare": 2009.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 66,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 0.35,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 67,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "9 -",
+      "valoare": 31.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 68,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 404.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 69,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "15 -",
+      "valoare": 119.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 70,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "7 -",
+      "valoare": 21.3,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 71,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 291.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 72,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 73,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "Buletin de analize",
+      "valoare": 26218.0,
+      "valoare_text": null,
+      "unitate": "B",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 74,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "CNP",
+      "valoare": 6250529700895.0,
+      "valoare_text": null,
+      "unitate": "DATA",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 75,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "ADRESA STR Celulozei",
+      "valoare": 15.0,
+      "valoare_text": null,
+      "unitate": "Z",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 76,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "STR Ștefan Luchian Pictor",
+      "valoare": 5.0,
+      "valoare_text": null,
+      "unitate": "Bra",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 77,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "0 -",
+      "valoare": 640.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 78,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 79,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "870 -",
+      "valoare": 6.15,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 80,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "94 -",
+      "valoare": 1.44,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 81,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "10 -",
+      "valoare": 18.53,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 82,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "60 -",
+      "valoare": 100.0,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 83,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "33 -",
+      "valoare": 5.55,
+      "valoare_text": null,
+      "unitate": null,
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 84,
+      "buletin_id": 3,
+      "analiza_standard_id": null,
+      "denumire_raw": "F01 - PG22 Pagina",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "/",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:09"
+    },
+    {
+      "id": 85,
+      "buletin_id": 4,
+      "analiza_standard_id": 9,
+      "denumire_raw": "TGO (ASAT)",
+      "valoare": 40.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 9.0,
+      "interval_max": 80.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 86,
+      "buletin_id": 4,
+      "analiza_standard_id": 8,
+      "denumire_raw": "TGP (ALAT)",
+      "valoare": 45.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 13.0,
+      "interval_max": 45.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 87,
+      "buletin_id": 4,
+      "analiza_standard_id": null,
+      "denumire_raw": "Calciu total seric",
+      "valoare": 11.2,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 8.8,
+      "interval_max": 11.4,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 88,
+      "buletin_id": 4,
+      "analiza_standard_id": 7,
+      "denumire_raw": "Creatinină serică",
+      "valoare": 0.19,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 0.1,
+      "interval_max": 0.35,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 89,
+      "buletin_id": 4,
+      "analiza_standard_id": null,
+      "denumire_raw": "Fosfataza alcalină totală",
+      "valoare": 166.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 155.0,
+      "interval_max": 404.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 90,
+      "buletin_id": 4,
+      "analiza_standard_id": null,
+      "denumire_raw": "Fier seric (sideremie)",
+      "valoare": 62.0,
+      "valoare_text": null,
+      "unitate": "µg/dL",
+      "interval_min": 15.0,
+      "interval_max": 119.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 91,
+      "buletin_id": 4,
+      "analiza_standard_id": null,
+      "denumire_raw": "Feritină",
+      "valoare": 19.4,
+      "valoare_text": null,
+      "unitate": "ng/mL",
+      "interval_min": 10.0,
+      "interval_max": 291.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 92,
+      "buletin_id": 4,
+      "analiza_standard_id": 13,
+      "denumire_raw": "TSH (hormon hipofizar tireostimulator bazal)",
+      "valoare": 1.931,
+      "valoare_text": null,
+      "unitate": "µUI/mL",
+      "interval_min": 0.87,
+      "interval_max": 6.15,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 93,
+      "buletin_id": 4,
+      "analiza_standard_id": null,
+      "denumire_raw": "FT4 (tiroxina liberă)",
+      "valoare": 1.57,
+      "valoare_text": null,
+      "unitate": "ng/dL",
+      "interval_min": 0.94,
+      "interval_max": 1.44,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 94,
+      "buletin_id": 4,
+      "analiza_standard_id": 1,
+      "denumire_raw": "Glucoză",
+      "valoare": 83.0,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 60.0,
+      "interval_max": 100.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:50:49"
+    },
+    {
+      "id": 95,
+      "buletin_id": 5,
+      "analiza_standard_id": 9,
+      "denumire_raw": "TGO (ASAT)",
+      "valoare": 40.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 9.0,
+      "interval_max": 80.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 96,
+      "buletin_id": 5,
+      "analiza_standard_id": 8,
+      "denumire_raw": "TGP (ALAT)",
+      "valoare": 45.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 13.0,
+      "interval_max": 45.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 97,
+      "buletin_id": 5,
+      "analiza_standard_id": null,
+      "denumire_raw": "Calciu total seric",
+      "valoare": 11.2,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 8.8,
+      "interval_max": 11.4,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 98,
+      "buletin_id": 5,
+      "analiza_standard_id": 7,
+      "denumire_raw": "Creatinină serică",
+      "valoare": 0.19,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 0.1,
+      "interval_max": 0.35,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 99,
+      "buletin_id": 5,
+      "analiza_standard_id": null,
+      "denumire_raw": "Fosfataza alcalină totală",
+      "valoare": 166.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": 155.0,
+      "interval_max": 404.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 100,
+      "buletin_id": 5,
+      "analiza_standard_id": null,
+      "denumire_raw": "Fier seric (sideremie)",
+      "valoare": 62.0,
+      "valoare_text": null,
+      "unitate": "µg/dL",
+      "interval_min": 15.0,
+      "interval_max": 119.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 101,
+      "buletin_id": 5,
+      "analiza_standard_id": null,
+      "denumire_raw": "Feritină",
+      "valoare": 19.4,
+      "valoare_text": null,
+      "unitate": "ng/mL",
+      "interval_min": 10.0,
+      "interval_max": 291.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 102,
+      "buletin_id": 5,
+      "analiza_standard_id": 13,
+      "denumire_raw": "TSH (hormon hipofizar tireostimulator bazal)",
+      "valoare": 1.931,
+      "valoare_text": null,
+      "unitate": "µUI/mL",
+      "interval_min": 0.87,
+      "interval_max": 6.15,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 103,
+      "buletin_id": 5,
+      "analiza_standard_id": null,
+      "denumire_raw": "FT4 (tiroxina liberă)",
+      "valoare": 1.57,
+      "valoare_text": null,
+      "unitate": "ng/dL",
+      "interval_min": 0.94,
+      "interval_max": 1.44,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 104,
+      "buletin_id": 5,
+      "analiza_standard_id": 1,
+      "denumire_raw": "Glucoză",
+      "valoare": 83.0,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": 60.0,
+      "interval_max": 100.0,
+      "flag": null,
+      "created_at": "2026-02-22 19:54:09"
+    },
+    {
+      "id": 105,
+      "buletin_id": 7,
+      "analiza_standard_id": 2,
+      "denumire_raw": "Hemoglobina",
+      "valoare": 16.4,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 13.0,
+      "interval_max": 17.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 106,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Hematocrit",
+      "valoare": 49.1,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 40.0,
+      "interval_max": 50.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 107,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "VEM",
+      "valoare": 88.8,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 80.0,
+      "interval_max": 110.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 108,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "MCH",
+      "valoare": 298.7,
+      "valoare_text": null,
+      "unitate": "P9",
+      "interval_min": 28.0,
+      "interval_max": 34.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 109,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "CHEM",
+      "valoare": 33.4,
+      "valoare_text": null,
+      "unitate": "gdL",
+      "interval_min": 32.0,
+      "interval_max": 36.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 110,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "RDW-CV",
+      "valoare": 144.0,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.5,
+      "interval_max": 145.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 111,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Eozinofile",
+      "valoare": 3.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 112,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Basofile",
+      "valoare": 0.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 20.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 113,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Limfocite",
+      "valoare": 37.3,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 25.0,
+      "interval_max": 45.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 114,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "“% Monocite",
+      "valoare": 10.2,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 15.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 115,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "VTM",
+      "valoare": 94.0,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 74.0,
+      "interval_max": 104.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 116,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "PCT",
+      "valoare": 0.29,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.16,
+      "interval_max": 0.48,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 117,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "PDW",
+      "valoare": 10.3,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 120.0,
+      "interval_max": 16.5,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 118,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Proteine totale",
+      "valoare": 6.9,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 5.8,
+      "interval_max": 7.6,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 119,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "CRP cantitativ",
+      "valoare": 187.0,
+      "valoare_text": null,
+      "unitate": "mg/L",
+      "interval_min": 0.0,
+      "interval_max": 5.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 120,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Albumina",
+      "valoare": 3.82,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 121,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Aipha 1",
+      "valoare": 0.39,
+      "valoare_text": null,
+      "unitate": "gldl",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 122,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alfa",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 2.9,
+      "interval_max": 4.9,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 123,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alpha 2",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:23"
+    },
+    {
+      "id": 124,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alfa",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 7.1,
+      "interval_max": 11.8,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 125,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta 1",
+      "valoare": 0.52,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 126,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 47.0,
+      "interval_max": 7.2,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 127,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 3.2,
+      "interval_max": 6.5,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 128,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Gama",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/d",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 129,
+      "buletin_id": 7,
+      "analiza_standard_id": null,
+      "denumire_raw": "Gamma globulina",
+      "valoare": 13.4,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.1,
+      "interval_max": 18.8,
+      "flag": null,
+      "created_at": "2026-02-22 20:23:24"
+    },
+    {
+      "id": 130,
+      "buletin_id": 8,
+      "analiza_standard_id": 2,
+      "denumire_raw": "Hemoglobina",
+      "valoare": 16.4,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 13.0,
+      "interval_max": 17.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 131,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Hematocrit",
+      "valoare": 49.1,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 40.0,
+      "interval_max": 50.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 132,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "VEM",
+      "valoare": 88.8,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 80.0,
+      "interval_max": 110.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 133,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "MCH",
+      "valoare": 298.7,
+      "valoare_text": null,
+      "unitate": "P9",
+      "interval_min": 28.0,
+      "interval_max": 34.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 134,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "CHEM",
+      "valoare": 33.4,
+      "valoare_text": null,
+      "unitate": "gdL",
+      "interval_min": 32.0,
+      "interval_max": 36.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 135,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "RDW-CV",
+      "valoare": 144.0,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.5,
+      "interval_max": 145.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 136,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Eozinofile",
+      "valoare": 3.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 137,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Basofile",
+      "valoare": 0.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 20.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 138,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Limfocite",
+      "valoare": 37.3,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 25.0,
+      "interval_max": 45.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 139,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "“% Monocite",
+      "valoare": 10.2,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 15.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 140,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "VTM",
+      "valoare": 94.0,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 74.0,
+      "interval_max": 104.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 141,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "PCT",
+      "valoare": 0.29,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.16,
+      "interval_max": 0.48,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 142,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "PDW",
+      "valoare": 10.3,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 120.0,
+      "interval_max": 16.5,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 143,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Proteine totale",
+      "valoare": 6.9,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 5.8,
+      "interval_max": 7.6,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 144,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "CRP cantitativ",
+      "valoare": 187.0,
+      "valoare_text": null,
+      "unitate": "mg/L",
+      "interval_min": 0.0,
+      "interval_max": 5.0,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 145,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Albumina",
+      "valoare": 3.82,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 146,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Aipha 1",
+      "valoare": 0.39,
+      "valoare_text": null,
+      "unitate": "gldl",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 147,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alfa",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 2.9,
+      "interval_max": 4.9,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 148,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alpha 2",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 149,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Alfa",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 7.1,
+      "interval_max": 11.8,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 150,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta 1",
+      "valoare": 0.52,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 151,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 47.0,
+      "interval_max": 7.2,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 152,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Beta",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 3.2,
+      "interval_max": 6.5,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 153,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Gama",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/d",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:20"
+    },
+    {
+      "id": 154,
+      "buletin_id": 8,
+      "analiza_standard_id": null,
+      "denumire_raw": "Gamma globulina",
+      "valoare": 13.4,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.1,
+      "interval_max": 18.8,
+      "flag": null,
+      "created_at": "2026-02-22 20:28:21"
+    },
+    {
+      "id": 155,
+      "buletin_id": 9,
+      "analiza_standard_id": null,
+      "denumire_raw": "v Hemoragii oculte ( FIT - imunoturbidimetrie)",
+      "valoare": 455.0,
+      "valoare_text": null,
+      "unitate": "ng/ml",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:52:41"
+    },
+    {
+      "id": 156,
+      "buletin_id": 9,
+      "analiza_standard_id": null,
+      "denumire_raw": "Pozitiv: >",
+      "valoare": 220.0,
+      "valoare_text": null,
+      "unitate": "ng/ml",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:52:41"
+    },
+    {
+      "id": 157,
+      "buletin_id": 9,
+      "analiza_standard_id": null,
+      "denumire_raw": "pozitiv: >",
+      "valoare": 100.0,
+      "valoare_text": null,
+      "unitate": "ug/g",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 20:52:41"
+    },
+    {
+      "id": 158,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Bridge, et.1 Bucuresti Sector",
+      "valoare": 6.0,
+      "valoare_text": null,
+      "unitate": ".",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 159,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Site: lesezla l A S Syn evo Etaj",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "SR",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 160,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Ser / Metoda enzimatica -",
+      "valoare": 3.34,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 161,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Ser / metoda kinetica IFCC cu piridoxal",
+      "valoare": 11.0,
+      "valoare_text": null,
+      "unitate": "U/L",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 162,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Ser / metoda kinetica IFCC cu piridoxal fosfat",
+      "valoare": 171.0,
+      "valoare_text": null,
+      "unitate": "UL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 163,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Ser/ Metoda enzimatica directa -",
+      "valoare": 170.0,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 164,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Ser/ Metoda colorimetrica Jaffe/spectrofotometrie",
+      "valoare": 0.94,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 165,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Crescut 2",
+      "valoare": 130.0,
+      "valoare_text": null,
+      "unitate": "mg/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 166,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "SIte: —synevo'ro; Syn evo Etaj",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "SR",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:48"
+    },
+    {
+      "id": 167,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Trigliceride",
+      "valoare": 267.0,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:49"
+    },
+    {
+      "id": 168,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Urea",
+      "valoare": 34.5,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:49"
+    },
+    {
+      "id": 169,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Urea nitrogen (BUN)",
+      "valoare": 16.12,
+      "valoare_text": null,
+      "unitate": "mg/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:49"
+    },
+    {
+      "id": 170,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Site: WWW.Synevo.ro; Sy n evo Etaj",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "SR",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:49"
+    },
+    {
+      "id": 171,
+      "buletin_id": 10,
+      "analiza_standard_id": null,
+      "denumire_raw": "Paqina",
+      "valoare": 3.0,
+      "valoare_text": null,
+      "unitate": "din",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-22 21:15:49"
+    },
+    {
+      "id": 172,
+      "buletin_id": 11,
+      "analiza_standard_id": 2,
+      "denumire_raw": "Hemoglobina",
+      "valoare": 16.4,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 13.0,
+      "interval_max": 17.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:54"
+    },
+    {
+      "id": 173,
+      "buletin_id": 11,
+      "analiza_standard_id": 108,
+      "denumire_raw": "Hematocrit",
+      "valoare": 49.1,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 40.0,
+      "interval_max": 50.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:54"
+    },
+    {
+      "id": 174,
+      "buletin_id": 11,
+      "analiza_standard_id": 109,
+      "denumire_raw": "VEM",
+      "valoare": 88.8,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 80.0,
+      "interval_max": 110.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:54"
+    },
+    {
+      "id": 175,
+      "buletin_id": 11,
+      "analiza_standard_id": 110,
+      "denumire_raw": "MCH",
+      "valoare": 298.7,
+      "valoare_text": null,
+      "unitate": "P9",
+      "interval_min": 28.0,
+      "interval_max": 34.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:54"
+    },
+    {
+      "id": 176,
+      "buletin_id": 11,
+      "analiza_standard_id": 111,
+      "denumire_raw": "CHEM",
+      "valoare": 33.4,
+      "valoare_text": null,
+      "unitate": "gdL",
+      "interval_min": 32.0,
+      "interval_max": 36.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 177,
+      "buletin_id": 11,
+      "analiza_standard_id": 112,
+      "denumire_raw": "RDW-CV",
+      "valoare": 144.0,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.5,
+      "interval_max": 145.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 178,
+      "buletin_id": 11,
+      "analiza_standard_id": 124,
+      "denumire_raw": "Eozinofile",
+      "valoare": 3.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 179,
+      "buletin_id": 11,
+      "analiza_standard_id": 126,
+      "denumire_raw": "Basofile",
+      "valoare": 0.6,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 20.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 180,
+      "buletin_id": 11,
+      "analiza_standard_id": 120,
+      "denumire_raw": "Limfocite",
+      "valoare": 37.3,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 25.0,
+      "interval_max": 45.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 181,
+      "buletin_id": 11,
+      "analiza_standard_id": 121,
+      "denumire_raw": "“% Monocite",
+      "valoare": 10.2,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.0,
+      "interval_max": 15.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 182,
+      "buletin_id": 11,
+      "analiza_standard_id": 114,
+      "denumire_raw": "VTM",
+      "valoare": 94.0,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 74.0,
+      "interval_max": 104.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 183,
+      "buletin_id": 11,
+      "analiza_standard_id": 116,
+      "denumire_raw": "PCT",
+      "valoare": 0.29,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 0.16,
+      "interval_max": 0.48,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 184,
+      "buletin_id": 11,
+      "analiza_standard_id": 115,
+      "denumire_raw": "PDW",
+      "valoare": 10.3,
+      "valoare_text": null,
+      "unitate": "fL",
+      "interval_min": 120.0,
+      "interval_max": 16.5,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 185,
+      "buletin_id": 11,
+      "analiza_standard_id": 131,
+      "denumire_raw": "Proteine totale",
+      "valoare": 6.9,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": 5.8,
+      "interval_max": 7.6,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 186,
+      "buletin_id": 11,
+      "analiza_standard_id": 191,
+      "denumire_raw": "CRP cantitativ",
+      "valoare": 187.0,
+      "valoare_text": null,
+      "unitate": "mg/L",
+      "interval_min": 0.0,
+      "interval_max": 5.0,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 187,
+      "buletin_id": 11,
+      "analiza_standard_id": 132,
+      "denumire_raw": "Albumina",
+      "valoare": 3.82,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 188,
+      "buletin_id": 11,
+      "analiza_standard_id": null,
+      "denumire_raw": "Aipha 1",
+      "valoare": 0.39,
+      "valoare_text": null,
+      "unitate": "gldl",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 189,
+      "buletin_id": 11,
+      "analiza_standard_id": 236,
+      "denumire_raw": "Alfa",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 2.9,
+      "interval_max": 4.9,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 190,
+      "buletin_id": 11,
+      "analiza_standard_id": 237,
+      "denumire_raw": "Alpha 2",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/di",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 191,
+      "buletin_id": 11,
+      "analiza_standard_id": 236,
+      "denumire_raw": "Alfa",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 7.1,
+      "interval_max": 11.8,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 192,
+      "buletin_id": 11,
+      "analiza_standard_id": 238,
+      "denumire_raw": "Beta 1",
+      "valoare": 0.52,
+      "valoare_text": null,
+      "unitate": "g/dL",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 193,
+      "buletin_id": 11,
+      "analiza_standard_id": 238,
+      "denumire_raw": "Beta",
+      "valoare": 1.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 47.0,
+      "interval_max": 7.2,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 194,
+      "buletin_id": 11,
+      "analiza_standard_id": 238,
+      "denumire_raw": "Beta",
+      "valoare": 2.0,
+      "valoare_text": null,
+      "unitate": "globulina",
+      "interval_min": 3.2,
+      "interval_max": 6.5,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 195,
+      "buletin_id": 11,
+      "analiza_standard_id": 144,
+      "denumire_raw": "Gama",
+      "valoare": 0.92,
+      "valoare_text": null,
+      "unitate": "g/d",
+      "interval_min": null,
+      "interval_max": null,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    },
+    {
+      "id": 196,
+      "buletin_id": 11,
+      "analiza_standard_id": 240,
+      "denumire_raw": "Gamma globulina",
+      "valoare": 13.4,
+      "valoare_text": null,
+      "unitate": "%",
+      "interval_min": 11.1,
+      "interval_max": 18.8,
+      "flag": null,
+      "created_at": "2026-02-23 08:59:55"
+    }
+  ]
+}

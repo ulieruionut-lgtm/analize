@@ -87,7 +87,7 @@ Așteaptă 1-2 minute ca aplicația să pornească.
 
 După 1-2 minute, accesează în browser:
 
-  https://analize-xxx.railway.app/health
+  Vezi RAILWAY_PRODUCTION.md — rândul „Health check” (nu folosi domenii vechi din ghiduri).
 
   (înlocuiește xxx cu URL-ul tău - vezi cu: railway domain)
 

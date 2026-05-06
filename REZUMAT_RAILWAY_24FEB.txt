@@ -2,6 +2,8 @@
 ║              REZUMAT DEPLOYMENT RAILWAY - 24 FEB 2026                   ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
+>>> URL LIVE: vezi RAILWAY_PRODUCTION.md (rădăcina repo-ului) <<<
+
 DATA: 24 Februarie 2026, ora 20:00+
 CONT RAILWAY: scanari.cabinet@gmail.com
 
@@ -18,7 +20,7 @@ CONT RAILWAY: scanari.cabinet@gmail.com
 6. ✅ Serviciu aplicatie creat: "ionut-analize-app"
 7. ✅ GitHub conectat la Railway
 8. ✅ Cod uploaded de 6 ori
-9. ✅ Domain generat: https://ionut-analize-app-production.up.railway.app
+9. ✅ Domain generat (istoric feb. 2026; URL curent): vezi RAILWAY_PRODUCTION.md
 
 ══════════════════════════════════════════════════════════════════════════
 

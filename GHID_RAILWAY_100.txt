@@ -69,7 +69,7 @@ railway run python run_migrations.py
 
 # 7. Obține URL
 railway domain
-→ https://analize-xxx.railway.app
+→ URL-ul public curent: vezi RAILWAY_PRODUCTION.md (sau output-ul comenzii de mai sus).
 
 GATA! 🎉
 
@@ -84,7 +84,7 @@ GATA! 🎉
 ✓ Logs & Monitoring → Railway Dashboard (GRATUIT)
 ✓ 500 ore/lună → GRATUIT (suficient pentru ~17h/zi)
 
-URL PUBLIC: https://analize-xxx.railway.app
+URL PUBLIC: vezi RAILWAY_PRODUCTION.md (sau `railway domain`)
 Status: 24/7 online
 Uptime: 99.9%
 
@@ -231,7 +231,7 @@ POST-DEPLOYMENT:
 
 După finalizare, vei avea:
 
-🌐 URL PUBLIC: https://analize-xxx.railway.app
+🌐 URL PUBLIC: vezi RAILWAY_PRODUCTION.md (sau `railway domain`)
   → Accesibil de oriunde, 24/7
   → HTTPS securizat automat
   → Certificat SSL gratuit

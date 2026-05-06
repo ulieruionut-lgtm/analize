@@ -160,7 +160,7 @@ railway up
 ```bash
 railway domain
 ```
-→ Notează URL-ul (ex: `https://analize-medicale-xxx.railway.app`)
+→ Notează URL-ul (vezi [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md) sau `railway domain`)
 
 ✅ Aplicația este LIVE!
 
@@ -169,7 +169,7 @@ railway domain
 ### PAS 3: Test Final (2 minute)
 
 #### 3.1 Test Health Check
-Accesează: `https://analize-medicale-xxx.railway.app/health`
+Accesează linkul **Health check** din [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md).
 
 Răspuns așteptat:
 ```json
@@ -180,7 +180,7 @@ Răspuns așteptat:
 ```
 
 #### 3.2 Test Interfață
-Accesează: `https://analize-medicale-xxx.railway.app`
+Accesează linkul **Aplicație (panou medic)** din [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md).
 
 Ar trebui să vezi:
 - ✓ Interfața aplicației
@@ -308,7 +308,7 @@ După 500h/lună pe Railway:
 - Status: https://status.railway.app
 
 **Aplicația**:
-- Health check: `https://your-app.railway.app/health`
+- Health check: vezi [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)
 - Logs: `railway logs --follow`
 - Restart: `railway up`
 
@@ -323,6 +323,6 @@ Aplicația ta rulează acum:
 - ✅ OCR funcțional
 - ✅ Toate features active
 
-**URL PUBLIC**: `https://analize-medicale-xxx.railway.app`
+**URL PUBLIC**: vezi [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)
 
 🚀 **Aplicația este LIVE!**

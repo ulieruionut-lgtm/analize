@@ -118,7 +118,7 @@ PDF_TEXT_MIN_CHARS = 200
 
 ### Pas 7: Accesare aplicație
 
-Railway îți dă URL-ul: `https://your-app.railway.app`
+URL-ul public îl vezi în **[RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)** (sau în Railway: `railway domain`).
 
 ---
 
@@ -439,7 +439,7 @@ pg_dump DATABASE_URL > backup.sql
 ## 🎉 Finalizare
 
 După deployment, aplicația este accesibilă online la:
-- **Railway**: `https://your-app.railway.app`
+- **Railway**: vezi [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)
 - **Render**: `https://your-app.onrender.com`
 - **VPS**: `https://your-domain.com`
 

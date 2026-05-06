@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
 from backend.database import (
@@ -640,6 +641,81 @@ async def health():
     }
 
 
+# ─── LEARNING MONITORING ENDPOINTS ───
+
+# WebSocket connection manager for learning events
+class LearningWebSocketManager:
+    def __init__(self):
+        self.active_connections = set()
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+    
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients."""
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.append(connection)
+        
+        for connection in disconnected:
+            self.disconnect(connection)
+
+
+learning_ws_manager = LearningWebSocketManager()
+
+
+@app.websocket("/ws/learning")
+async def websocket_learning_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time learning events."""
+    await learning_ws_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "stats":
+                from backend.learning_events import get_event_bus
+                bus = get_event_bus()
+                stats = bus.get_statistics()
+                await websocket.send_json({"type": "stats", "data": stats})
+    except WebSocketDisconnect:
+        learning_ws_manager.disconnect(websocket)
+
+
+@app.get("/api/learning/events")
+def get_learning_events(limit: int = 50):
+    """Get recent learning events via REST."""
+    from backend.learning_events import get_event_bus
+    bus = get_event_bus()
+    return {"events": bus.get_recent_events(limit)}
+
+
+@app.get("/api/learning/stats")
+def get_learning_stats():
+    """Get learning statistics via REST."""
+    from backend.learning_events import get_event_bus
+    bus = get_event_bus()
+    return bus.get_statistics()
+
+
+@app.get("/dashboard/learning", response_class=HTMLResponse)
+def get_learning_dashboard():
+    """Serve the learning dashboard."""
+    try:
+        dashboard_path = Path(__file__).parent.parent / "static" / "learning_dashboard.html"
+        if dashboard_path.exists():
+            return dashboard_path.read_text()
+        else:
+            return "<h1>Dashboard not found</h1>"
+    except Exception as e:
+        return f"<h1>Error loading dashboard: {e}</h1>"
+
+
 # --- Endpoint-urile /api/migrate, /api/fix-schema, /login, /users, /api/backup,
 #     /api/restore, /api/import-dictionar-excel, /api/admin/*, /buletin/{id}, /pacient/{id}
 #     sunt inregistrate prin routerele din backend/routers/.
@@ -874,10 +950,27 @@ def _process_upload_sync_job(
                 laborator_name_override=laborator_name_override,
             )
             normalize_rezultate(parsed.rezultate, laborator_id=lab_id)
+            
+            # Wrapper pentru logging erori din background thread
+            def _llm_learn_with_logging():
+                try:
+                    result = apply_llm_learn_after_normalize(
+                        parsed.rezultate,
+                        laborator_id=lab_id
+                    )
+                    applied = result.get("auto_applied", 0)
+                    if applied > 0:
+                        print(f"[LLM-LEARN-SUCCESS] Applied {applied} aliases from upload", flush=True)
+                    else:
+                        reason = result.get("skipped_reason", "unknown")
+                        print(f"[LLM-LEARN-SKIP] Reason: {reason}", flush=True)
+                    return result
+                except Exception as ex:
+                    print(f"[LLM-LEARN-ERROR] {str(ex)[:300]}", flush=True)
+                    return {"status": "error", "error": str(ex)[:200]}
+            
             threading.Thread(
-                target=apply_llm_learn_after_normalize,
-                args=(parsed.rezultate,),
-                kwargs={"laborator_id": lab_id},
+                target=_llm_learn_with_logging,
                 daemon=True,
             ).start()
             llm_learn_report = {"status": "started_background"}

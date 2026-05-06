@@ -64,7 +64,7 @@ railway up
 # 5. Rulează migrații
 railway run python run_migrations.py
 
-# 6. Gata! Ai URL-ul: https://your-app.railway.app
+# 6. Gata! URL public: vezi [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md) (sau `railway domain`)
 ```
 
 ### Opțiunea 2: Render.com (100% GRATUIT)
@@ -179,7 +179,8 @@ DATABASE_URL=mysql://analize_user:parola123@localhost:3306/analize
 ### 1. Verificare funcționare
 
 ```bash
-curl https://your-app.railway.app/health
+# Health: deschide în browser linkul din coloana „Health check” din RAILWAY_PRODUCTION.md
+# (același URL ca în README → secțiunea Producție Railway).
 ```
 
 ### 2. Upload date inițiale

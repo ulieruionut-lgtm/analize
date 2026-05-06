@@ -89,10 +89,10 @@ Deschide PowerShell în: D:\Ionut analize
 │ PAS 3: Test (2 min)                                                    │
 └─────────────────────────────────────────────────────────────────────────┘
 
-1. Health check: https://your-app.railway.app/health
+1. Health check: vezi RAILWAY_PRODUCTION.md — „Health check”
    → Răspuns: {"status": "ok", "database": "connected"}
 
-2. Interfață: https://your-app.railway.app
+2. Interfață: vezi RAILWAY_PRODUCTION.md — „Aplicație (panou medic)”
    → Upload un PDF de analize
    → Verifică că apare în "Pacient"
 

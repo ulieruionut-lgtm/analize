@@ -99,14 +99,14 @@ AVANTAJE:
    
    f) Obține URL-ul:
       > railway domain
-      → Salvează URL-ul (ex: https://analize-xxx.railway.app)
+      → Salvează URL-ul (vezi RAILWAY_PRODUCTION.md sau `railway domain`)
 
 8. TEST APLICAȚIE
    
-   a) Accesează: https://analize-xxx.railway.app/health
+   a) Health: vezi RAILWAY_PRODUCTION.md — „Health check”
       Răspuns așteptat: {"status": "ok", "database": "connected"}
    
-   b) Accesează: https://analize-xxx.railway.app
+   b) Interfață: vezi RAILWAY_PRODUCTION.md — „Aplicație (panou medic)”
       → Ar trebui să vezi interfața aplicației
 
 ═══ VARIANTA 2: Doar pe Romarg (dacă ai SSH) ═══

@@ -1,0 +1,20 @@
+{
+  "description": "Set etalon OCR/parser. Completeaza cu PDF-uri reale din proiect.",
+  "cases": [
+    {
+      "pdf": "samples/buletin_exemplu.pdf",
+      "expected": [
+        {
+          "denumire": "Hemoglobina",
+          "valoare": 13.2,
+          "unitate": "g/dL"
+        },
+        {
+          "denumire": "Leucocite",
+          "valoare": 6.4,
+          "unitate": "10^3/uL"
+        }
+      ]
+    }
+  ]
+}

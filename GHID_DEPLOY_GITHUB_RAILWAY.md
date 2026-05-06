@@ -1,5 +1,8 @@
 # Ghid: Deploy automat cu GitHub + Railway
 
+**Producție (URL, health, `railway up`):** sursa unică → [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)  
+*(Proiect dashboard: **soothing-fascination** → **production** → serviciu **analize**. Detalii: [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md).)*
+
 ## Situația actuală
 
 - **Proiectul nu este în Git** – folderul `D:\Ionut analize` nu are repo Git inițializat.
@@ -52,9 +55,7 @@ git push -u origin main
 
 ### Pasul 5: Verificare
 
-După push, așteaptă 1–2 minute și deschide:
-
-https://ionut-analize-app-production.up.railway.app
+După push, așteaptă 1–2 minute și deschide URL-ul din **[RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)** (producție curentă).
 
 Ar trebui să vezi butonul **Export backup** lângă **Ieșire** (dacă ești logat ca admin).
 

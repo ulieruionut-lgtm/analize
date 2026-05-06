@@ -72,7 +72,9 @@ def apply_llm_learn_after_normalize(
         if r.analiza_standard_id is not None:
             continue
         raw = (r.denumire_raw or "").strip()
-        if len(raw) < 3:
+        # NOTE: Accept short names too (min 1 char for codes like K, Na, pH, Ca, Fe, etc.)
+        # Old check: if len(raw) < 3: continue  ← THIS WAS BLOCKING SHORT ANALYSIS NAMES
+        if len(raw) < 1:
             continue
         if este_denumire_gunoi(raw):
             continue
@@ -103,11 +105,25 @@ def apply_llm_learn_after_normalize(
 
     for den in unice:
         try:
+            # Emit LLM call event
+            try:
+                from backend.learning_events import emit_learning_event
+                emit_learning_event("llm_call", den, laborator_id=laborator_id)
+            except Exception:
+                pass
+            
             cat_pdf = _categorie_pentru_denumire(lista, den)
             sug = sugestii_necunoscuta_cu_catalog(
                 den, std, categorie_pdf=cat_pdf, snippets=None
             )
         except Exception as exc:
+            # Emit error event
+            try:
+                from backend.learning_events import emit_learning_event
+                emit_learning_event("error", den, error=str(exc)[:100], laborator_id=laborator_id)
+            except Exception:
+                pass
+            
             _log.warning("llm_learn failed for %r: %s", den[:80], exc)
             out["details"].append(
                 {
@@ -156,6 +172,20 @@ def apply_llm_learn_after_normalize(
         ok = adauga_alias_nou(den, aid_int)
         applied_keys.add(key)
         out["auto_applied"] += 1
+        
+        # Emit learning success event
+        try:
+            from backend.learning_events import emit_learning_event
+            emit_learning_event(
+                "alias_learned",
+                den,
+                mapped_to=best.get("denumire_standard"),
+                score=sc,
+                laborator_id=laborator_id,
+                details={"analiza_standard_id": aid_int}
+            )
+        except Exception:
+            pass
 
         for r in lista:
             if (r.denumire_raw or "").strip() == key and r.analiza_standard_id is None:

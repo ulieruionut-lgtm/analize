@@ -176,24 +176,22 @@ PASUL 9: OBȚINERE URL APLICAȚIE
 
   railway domain
 
-Vei primi un URL, ex:
-  ionut-analize-medicale-production-abc123.up.railway.app
+Vei primi un URL în output (sau vezi RAILWAY_PRODUCTION.md pentru domeniul curent al producției).
 
-URL COMPLET:
-  https://ionut-analize-medicale-production-abc123.up.railway.app
+URL COMPLET (exemplu generic; al tău e în `railway domain` sau RAILWAY_PRODUCTION.md):
+  https://<hostname>.up.railway.app
 
 ──────────────────────────────────────────────────────────────────────────
 PASUL 10: TEST FINAL
 ──────────────────────────────────────────────────────────────────────────
 
-Deschide în browser:
-  https://[URL-TĂU]/health
+Deschide în browser (Health): vezi RAILWAY_PRODUCTION.md — coloana „Health check”.
 
 Trebuie să vezi:
   {"status":"ok","database":"connected"}
 
-SAU testează în PowerShell:
-  curl https://[URL-TĂU]/health
+SAU testează în PowerShell (copiază URL-ul din RAILWAY_PRODUCTION.md, coloana Health):
+  curl "<URL_HEALTH>"
 
 DACĂ VEZI:
   ✅ {"status":"ok","database":"connected"} = PERFECT!
@@ -204,8 +202,7 @@ DACĂ VEZI:
 PASUL 11: DESCHIDE APLICAȚIA
 ──────────────────────────────────────────────────────────────────────────
 
-Deschide în browser:
-  https://[URL-TĂU]
+Deschide în browser (aplicație): vezi RAILWAY_PRODUCTION.md — „Aplicație (panou medic)”.
 
 Vei vedea:
   🏥 Analize Medicale
@@ -301,6 +298,6 @@ Soluție:
 
 🎉 GATA! APLICAȚIA TA E LIVE!
 
-  URL: https://[proiect-tau].up.railway.app
+  URL: vezi RAILWAY_PRODUCTION.md (sau `railway domain`)
 
 ══════════════════════════════════════════════════════════════════════════

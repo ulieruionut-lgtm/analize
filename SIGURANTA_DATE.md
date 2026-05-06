@@ -36,7 +36,7 @@ Trebuie să existe `DATABASE_URL` cu valoare de tip `postgresql://...`
 
 ### Dacă tabelele lipsesc (eroare "relation does not exist")
 
-Deschide în browser: `https://[URL-ul-tau].railway.app/api/migrate`
+Deschide în browser: **baza URL** din [RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md) (coloana „Aplicație”) + sufixul **`/api/migrate`** — doar dacă știi ce face; în producție restricționează accesul.
 
 Acest endpoint rulează migrările și creează tabelele. După ce se încarcă, reîncearcă upload-ul PDF.
 

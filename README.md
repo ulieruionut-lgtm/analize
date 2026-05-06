@@ -51,6 +51,11 @@ uvicorn main:app --reload
 
 Aplicația va rula pe: **http://localhost:8000**
 
+## 🌐 Producție (Railway)
+
+**URL live, health check și deploy (`railway up`):** tot ce e oficial e într-un singur loc → **[RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)**  
+*(Domeniu / health / deploy: tot în **[RAILWAY_PRODUCTION.md](RAILWAY_PRODUCTION.md)** — proiect `soothing-fascination`, mediu `production`, serviciu `analize`.)*
+
 ## 📦 Deployment Online
 
 Aplicația suportă:

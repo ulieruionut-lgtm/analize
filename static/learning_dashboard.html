@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 LLM Learning Dashboard - Real-time</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4caf50;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.disconnected {
+            background: #f44336;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-number {
+            font-size: 42px;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            color: #999;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+        
+        .event-log {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .event-log h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .event-item {
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 10px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .event-item.alias-learned {
+            border-left-color: #4caf50;
+            background: #f1f8f4;
+        }
+        
+        .event-item.error {
+            border-left-color: #f44336;
+            background: #fff1f1;
+        }
+        
+        .event-item.llm-call {
+            border-left-color: #2196f3;
+            background: #f1f7ff;
+        }
+        
+        .event-content {
+            flex: 1;
+        }
+        
+        .event-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .event-detail {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .event-score {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 15px;
+        }
+        
+        .event-score.high {
+            background: #4caf50;
+        }
+        
+        .event-score.low {
+            background: #ff9800;
+        }
+        
+        .event-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .connection-status {
+            display: inline-block;
+            margin-left: auto;
+            font-size: 12px;
+            padding: 6px 12px;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 20px;
+        }
+        
+        .connection-status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .stat-mini {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-mini-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-mini-label {
+            font-size: 11px;
+            color: #999;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+        
+        .empty-state p {
+            margin: 10px 0;
+        }
+        
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #764ba2;
+        }
+        
+        .timestamp {
+            font-size: 11px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span class="status-indicator" id="statusIndicator"></span>
+                🧠 LLM Learning Dashboard
+            </h1>
+            <p style="color: #999; margin-top: 5px;">Real-time learning monitoring</p>
+            <div style="margin-top: 10px;">
+                <span class="connection-status" id="connectionStatus">Connecting...</span>
+                <button class="refresh-btn" onclick="refreshStats()">🔄 Refresh</button>
+            </div>
+        </div>
+        
+        <!-- Statistics Cards -->
+        <div class="grid">
+            <div class="card">
+                <h3>📊 Total Events</h3>
+                <div class="stat-number" id="totalEvents">0</div>
+                <div class="stat-label">Events processed</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>✅ Aliases Learned</h3>
+                <div class="stat-number" id="aliasesLearned">0</div>
+                <div class="stat-label">New mappings created</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>🔍 LLM Calls</h3>
+                <div class="stat-number" id="llmCalls">0</div>
+                <div class="stat-label">Claude analyses made</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>⚠️ Errors</h3>
+                <div class="stat-number" id="errors">0</div>
+                <div class="stat-label">Failed operations</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📈 Success Rate</h3>
+                <div class="stat-number" id="successRate">0%</div>
+                <div class="stat-label">Successful learning</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="successRateBar" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>⏱️ Last Event</h3>
+                <div class="stat-label">
+                    <span id="lastEventTime">Never</span>
+                </div>
+                <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px;">
+                    <div id="lastEventDetail" style="font-size: 13px; color: #666;">No events yet</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Event Log -->
+        <div class="event-log">
+            <h3>📝 Real-time Event Log</h3>
+            <div id="eventList">
+                <div class="empty-state">
+                    <p>⏳ Waiting for learning events...</p>
+                    <p style="font-size: 12px;">Upload a PDF with unknown analyses to see events</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        const maxEvents = 50;
+        let events = [];
+        
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${protocol}//${window.location.host}/ws/learning`;
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                updateConnectionStatus(true);
+                console.log('WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleEvent(data);
+            };
+            
+            ws.onerror = () => {
+                updateConnectionStatus(false);
+            };
+            
+            ws.onclose = () => {
+                updateConnectionStatus(false);
+                // Try to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+        
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const status = document.getElementById('connectionStatus');
+            
+            if (connected) {
+                indicator.classList.remove('disconnected');
+                status.textContent = '✅ Connected';
+                status.classList.remove('disconnected');
+            } else {
+                indicator.classList.add('disconnected');
+                status.textContent = '❌ Disconnected';
+                status.classList.add('disconnected');
+            }
+        }
+        
+        function handleEvent(data) {
+            if (data.type === 'learning_event') {
+                const event = data.event;
+                events.unshift(event);
+                if (events.length > maxEvents) {
+                    events.pop();
+                }
+                renderEvents();
+                updateStats(data.stats);
+            } else if (data.type === 'stats') {
+                updateStats(data.data);
+            }
+        }
+        
+        function updateStats(stats) {
+            if (!stats) return;
+            
+            document.getElementById('totalEvents').textContent = stats.total_events || 0;
+            document.getElementById('aliasesLearned').textContent = stats.aliases_learned || 0;
+            document.getElementById('llmCalls').textContent = stats.llm_calls || 0;
+            document.getElementById('errors').textContent = stats.errors || 0;
+            
+            const successRate = stats.success_rate || 0;
+            document.getElementById('successRate').textContent = successRate.toFixed(1) + '%';
+            document.getElementById('successRateBar').style.width = successRate + '%';
+            
+            // Update last event
+            if (stats.recent_events && stats.recent_events.length > 0) {
+                const lastEvent = stats.recent_events[0];
+                const time = new Date(lastEvent.timestamp).toLocaleTimeString();
+                document.getElementById('lastEventTime').textContent = time;
+                
+                let detail = '';
+                if (lastEvent.type === 'alias_learned') {
+                    detail = `✅ ${lastEvent.analysis_name} → ${lastEvent.mapped_to}`;
+                } else if (lastEvent.type === 'error') {
+                    detail = `❌ Error: ${lastEvent.error}`;
+                } else if (lastEvent.type === 'llm_call') {
+                    detail = `🔍 Analyzing: ${lastEvent.analysis_name}`;
+                }
+                document.getElementById('lastEventDetail').textContent = detail;
+            }
+        }
+        
+        function renderEvents() {
+            const list = document.getElementById('eventList');
+            
+            if (events.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <p>⏳ Waiting for learning events...</p>
+                        <p style="font-size: 12px;">Upload a PDF with unknown analyses to see events</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = events.map(event => {
+                let icon = '📝';
+                let className = '';
+                let scoreHtml = '';
+                
+                if (event.type === 'alias_learned') {
+                    icon = '✅';
+                    className = 'alias-learned';
+                    if (event.score) {
+                        const scoreClass = event.score >= 86 ? 'high' : event.score >= 70 ? '' : 'low';
+                        scoreHtml = `<span class="event-score ${scoreClass}">${event.score.toFixed(1)}%</span>`;
+                    }
+                } else if (event.type === 'error') {
+                    icon = '❌';
+                    className = 'error';
+                } else if (event.type === 'llm_call') {
+                    icon = '🔍';
+                    className = 'llm-call';
+                }
+                
+                const time = new Date(event.timestamp).toLocaleTimeString();
+                let detail = '';
+                
+                if (event.type === 'alias_learned') {
+                    detail = `Mapped to: <strong>${event.mapped_to}</strong>`;
+                } else if (event.type === 'error') {
+                    detail = `Error: ${event.error}`;
+                } else if (event.type === 'llm_call') {
+                    detail = 'LLM analysis in progress...';
+                }
+                
+                return `
+                    <div class="event-item ${className}">
+                        <div class="event-icon">${icon}</div>
+                        <div class="event-content">
+                            <div class="event-name">${event.analysis_name}</div>
+                            <div class="event-detail">${detail}</div>
+                            <div class="event-detail timestamp">${time}</div>
+                        </div>
+                        ${scoreHtml}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function refreshStats() {
+            // Request fresh stats via REST
+            fetch('/api/learning/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    updateStats(stats);
+                    console.log('Stats refreshed');
+                });
+        }
+        
+        // Initialize
+        window.addEventListener('load', () => {
+            connectWebSocket();
+            refreshStats();
+            // Refresh stats every 5 seconds
+            setInterval(refreshStats, 5000);
+        });
+    </script>
+</body>
+</html>

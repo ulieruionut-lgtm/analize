@@ -1,0 +1,49 @@
+{
+  "surse": {
+    "laboratoare-analize.ro": {
+      "url": "https://www.laboratoare-analize.ro/analize-laborator",
+      "format": "html",
+      "structura": "liste pe judete"
+    },
+    "bioclinica": {
+      "url": "https://bioclinica.ro/analize",
+      "categorii": [
+        "https://bioclinica.ro/analize/biochimie",
+        "https://bioclinica.ro/analize/afectiuni-medicale"
+      ],
+      "format": "html"
+    },
+    "synevo": {
+      "url": "https://www.synevo.ro/analize-de-sange",
+      "tarife_pdf": "https://www.synevo.ro/storage/blocks/2025/04/tarife-asisteta-medicala-paraclinica-2024.pdf",
+      "format": "html, pdf"
+    },
+    "medz": {
+      "url": "https://medz.ro/unitati-sanitare/liste/laboratoare-de-analize-medicale/",
+      "format": "html"
+    },
+    "roportal": {
+      "url": "https://www.roportal.ro/servicii/info/laboratoare_medicale/",
+      "format": "html"
+    }
+  },
+  "laboratoare_nationale": [
+    {"nume": "Bioclinica", "retea": "Bioclinica", "website": "https://bioclinica.ro"},
+    {"nume": "Synevo", "retea": "Synevo", "website": "https://www.synevo.ro"},
+    {"nume": "MedLife", "retea": "MedLife", "website": "https://www.medlife.ro"},
+    {"nume": "Regina Maria", "retea": "Regina Maria", "website": "https://www.reginamaria.ro"},
+    {"nume": "Medicover", "retea": "Medicover", "website": "https://www.medicover.ro"},
+    {"nume": "Cerba", "retea": "Cerba", "website": "https://www.cerba.ro"},
+    {"nume": "Unilabs", "retea": "Unilabs", "website": "https://www.unilabs.ro"}
+  ],
+  "laboratoare_regionale": [
+    {"nume": "Lumisan", "retea": "Lumisan", "website": null, "judet": "Iasi"},
+    {"nume": "Analimed", "retea": "Analimed", "website": null, "judet": "Alba"},
+    {"nume": "Ecomed", "retea": "Ecomed", "website": null, "judet": "Botosani"},
+    {"nume": "CIM Medical", "retea": "CIM Medical", "website": null, "judet": "Bacau"},
+    {"nume": "DGP Laboratory", "retea": "DGP Laboratory", "website": null, "judet": "Arad"},
+    {"nume": "Prodia", "retea": "Prodia", "website": null, "judet": "Harghita"},
+    {"nume": "Roval Center", "retea": "Roval Center", "website": null, "judet": "Alba"},
+    {"nume": "New Medical", "retea": "New Medical", "website": null, "judet": "Buzau"}
+  ]
+}

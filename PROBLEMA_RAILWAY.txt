@@ -2,6 +2,8 @@
 ║                    PROBLEMA DETECTATA                                   ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
+NOTĂ: Fișier istoric (zestful-truth). Producție curentă: RAILWAY_PRODUCTION.md.
+
 STATUS CURENT:
   ✓ Railway logat
   ✓ Proiect creat (zestful-truth)

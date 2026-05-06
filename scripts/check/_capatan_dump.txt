@@ -1,0 +1,418 @@
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+1. VSH -Sange - Metoda Westergreen 13 mm/h < 20 / mm/h
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+2. Hemoleucograma -Sange - Spectroscopie de impedanta;spectofotometrie,citometrie de flux (Sysmex XN 530)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Hematii 4.46 10^6/uL 4.0 - 5.2 / 10^6/uL
+Hemoglobina 14.5 g/dl 11.8 - 15.2 / g/dl
+Hematocrit 43.6 % 37 - 46 / %
+Trombocite 280 10^3/ul 150 - 400 / 10^3/ul
+Leucocite 7.47 10^3/ul 4 - 10 / 10^3/ul
+Neutrofile % 63.8 % 45 - 80 / %
+Neutrofile 4.76 10^3/ul 2 - 8 / 10^3/ul
+Eozinofile % 0.4 % 0 - 7 / %
+Eozinofile 0.03 10^3/ul 0.05 - 0.7 / 10^3/ul
+Bazofile % 0.1 % 0 - 2 / %
+Bazofile 0.01 10^3/ul 0 - 0.2 / 10^3/ul
+Limfocite % 28.9 % 25 - 40 / %
+Limfocite 2.16 10^3/ul 1 - 4 / 10^3/ul
+Monocite % 6.8 % 0 - 15 / %
+Monocite 0.51 10^3/ul 0.3 - 1 / 10^3/ul
+VEM 97.8 FL 82.5 - 97.4 / FL
+HEM 32.5 pg 27 - 34 / pg
+CHEM 33.3 g/dl 32 - 36 / g/dl
+MPV 11.5 FL 8 - 13 / FL
+RDW 12.3 % 11 - 16 / %
+#PDW 14.3 FL 9 - 17 / FL
+#P-LCR 37.7 % 13 - 43 / %
+#PCT 0.32 % 0.17 - 0.35 / %
+BIOCHIMIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+3. Fosfataza alcalina -Ser - Spectrofotometrie (Advia 1800) 51.32 U/L 35 - 104 / U/L
+4. Glicemie a jeune -Ser - Spectofotometrie (Advia 1800) 94 mg/dl 74 - 106 / mg/dl
+5. Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800) 0.16 mg/dl 0 - 0.5 / mg/dl
+6. Sideremie -Ser - Spectrofotometrie (Advia 1800) 127 ug/dl 50 - 170 / ug/dl
+7. TGO / AST -Ser - Spectrofotometrie (Advia 1800) 21 U/L 0 - 32 / U/L
+8. TGP / ALT -Ser - Spectrofotometrie (Advia 1800) 19 U/L 0 - 49 / U/L
+9. #Transferina -Ser - (Advia 1800) 233 mg/dl 250 - 380 / mg/dl
+CREATININA - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+10. Creatinina serica -Ser -
+0.80 mg/dl 0 - 1.02 / mg/dl
+Spectrofotometrie (Advia 1800)
+11. #Rata de filtrare glomerulara(RFG) -Ser - (Advia 1800)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Rata de filtrare glomerulara(RFG) 96.19 ml/min/1.73 m² ≥ 60 ml/min/1.73m
+Rata de filtrare glomerulara(RFG):
+Estimarea ratei de filtrare glomerulara (eGFR) se determina prin formula de calcul matematic CKD-EPI.
+Rezultatul se interpreteaza in context clinic.Formula nu se aplica pacientilor sub 18 ani
+ANALIZE DE URINA - VALIDAT DE : ALFATH SAAD - MEDIC SPECIALIST LABORATOR
+12. Examen complet urina(sumar+sediment) -Urina - metoda reflexiei+microscopie optica
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+IMUNOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Femei<45 ani-4-104.2 ng/ml
+Femei>45 ani-4.9-232.3 ng/ml Barbati: 18.2-
+341.2 ng/ml
+1-7 ani:6-67 ng/ml
+13. Feritina -Ser - Chemiluminiscenta 26.91 ng/ml
+7-13 ani:M:14-124 ng/ml
+F:7-84 ng/ml
+13-18 ani:M:14-152 ng/ml
+F:13-68 ng/ml
+14. FT4-Tiroxina serica libera -Ser - Chemiluminiscenta 1.241 ng/dL 0.8 - 1.7 / ng/dL
+15. TSH-Hormonul hipofizar tireostimulator bazal -Ser -
+2.236 uUI/mL 0.30 - 3.60 / uUI/mL
+Chemiluminiscenta
+16. #Vitamina B12 -Ser - 190 pg/mL 197 - 771 / pg/mL
+Pagina 1 din 3
+
+
+
+
+           Buletin de analize medicale nr. 7408371
+                                      Data cerere 04/12/2025 08:12
+                                  Data si ora recoltare: 04/12/2025 08:12
+ Sef Laborator: Dr. BARSASTEANU ROXANA
+ Cod parafa: 495083                                                               DUPLICAT
+
+  Nume: CAPATAN LUMINITA  Varsta: 34 Sex: F          Medic: ULIERU CLAUDIA
+  C.N.P: 2910823151959                Recoltat: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+   Localitate: BRASOV                Adresa:
+
+
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+                     ANALIZE                        REZULTATE             INTERVAL BIOLOGIC DE REFERINTA / UM
+ 1. VSH -Sange - Metoda Westergreen                 13 mm/h                    < 20 / mm/h
+
+
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+  2. Hemoleucograma -Sange - Spectroscopie de impedanta;spectofotometrie,citometrie de flux (Sysmex XN 530)
+                ANALIZE                     REZULTATE                  INTERVAL BIOLOGIC DE REFERINTA / UM
+ Hematii                                     4.46 10^6/uL                            4.0 - 5.2 / 10^6/uL
+ Hemoglobina                                  14.5 g/dl                              11.8 - 15.2 / g/dl
+ Hematocrit                                    43.6 %                             37 - 46 / %
+ Trombocite                              280 10^3/ul                        150 - 400 / 10^3/ul
+ Leucocite                                   7.47 10^3/ul                         4 - 10 / 10^3/ul
+ Neutrofile %                                   63.8 %                             45 - 80 / %
+ Neutrofile                                   4.76 10^3/ul                         2 - 8 / 10^3/ul
+ Eozinofile %                                      0.4 %                              0 - 7 / %
+ Eozinofile                                  0.03 10^3/ul                            0.05 - 0.7 / 10^3/ul
+ Bazofile %                                        0.1 %                              0 - 2 / %
+ Bazofile                                     0.01 10^3/ul                         0 - 0.2 / 10^3/ul
+ Limfocite %                                    28.9 %                             25 - 40 / %
+ Limfocite                                   2.16 10^3/ul                         1 - 4 / 10^3/ul
+ Monocite %                                      6.8 %                              0 - 15 / %
+ Monocite                                    0.51 10^3/ul                              0.3 - 1 / 10^3/ul
+VEM                                         97.8 FL                                82.5 - 97.4 / FL
+HEM                                          32.5 pg                            27 - 34 / pg
+CHEM                                        33.3 g/dl                           32 - 36 / g/dl
+MPV                                          11.5 FL                             8 - 13 / FL
+RDW                                          12.3 %                             11 - 16 / %
+#PDW                                         14.3 FL                             9 - 17 / FL
+ #P-LCR                                        37.7 %                             13 - 43 / %
+ #PCT                                          0.32 %                                0.17 - 0.35 / %
+
+
+ Cod formular:F-7.3-01 Ed.1/Rev.0                      Data tiparirii: 08 Dec 2025 11:51:08
+Pagina 2 din 3
+
+
+
+
+           Buletin de analize medicale nr. 7408371
+                                      Data cerere 04/12/2025 08:12
+                                  Data si ora recoltare: 04/12/2025 08:12
+                                                              DUPLICAT
+ Nume: CAPATAN LUMINITA Varsta: 34 Sex: F           Medic: ULIERU CLAUDIA
+  C.N.P: 2910823151959            RECOLTAT: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+  Localitate: BRASOV               Adresa:
+
+
+BIOCHIMIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+                            ANALIZE                              REZULTATE     INTERVAL BIOLOGIC DE REFERINTA / UM
+3. Fosfataza alcalina -Ser - Spectrofotometrie (Advia 1800)              51.32 U/L              35 - 104 / U/L
+
+4. Glicemie a jeune -Ser - Spectofotometrie (Advia 1800)              94 mg/dl              74 - 106 / mg/dl
+
+5. Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800)        0.16 mg/dl              0 - 0.5 / mg/dl
+
+6. Sideremie -Ser - Spectrofotometrie (Advia 1800)                   127 ug/dl              50 - 170 / ug/dl
+
+7. TGO / AST -Ser - Spectrofotometrie (Advia 1800)                    21 U/L                 0 - 32 / U/L
+
+8. TGP / ALT -Ser - Spectrofotometrie (Advia 1800)                    19 U/L                 0 - 49 / U/L
+9. #Transferina -Ser - (Advia 1800)                               233 mg/dl             250 - 380 / mg/dl
+
+
+CREATININA - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+               ANALIZE                         REZULTATE                  INTERVAL BIOLOGIC DE REFERINTA / UM
+
+10. Creatinina serica -Ser -
+                                                0.80 mg/dl                         0 - 1.02 / mg/dl
+Spectrofotometrie (Advia 1800)
+ 11. #Rata de filtrare glomerulara(RFG) -Ser - (Advia 1800)
+               ANALIZE                         REZULTATE                  INTERVAL BIOLOGIC DE REFERINTA / UM
+Rata de filtrare glomerulara(RFG)             96.19 ml/min/1.73 m²                  ≥ 60 ml/min/1.73m
+
+Rata de filtrare glomerulara(RFG):
+Estimarea ratei de filtrare glomerulara (eGFR) se determina prin formula de calcul matematic CKD-EPI.
+
+Rezultatul se interpreteaza in context clinic.Formula nu se aplica pacientilor sub 18 ani
+
+
+ANALIZE DE URINA - VALIDAT DE : ALFATH SAAD - MEDIC SPECIALIST LABORATOR
+ 12. Examen complet urina(sumar+sediment) -Urina - metoda reflexiei+microscopie optica
+               ANALIZE                      REZULTATE                  INTERVAL BIOLOGIC DE REFERINTA / UM
+pH                                                  5.5                                       4.6 - 8
+Densitate                                       1.018                                1.010 - 1.025
+Proteine                                             -                                   - (Negativ)
+Glucoza                                              -                                 Normal
+Corpi cetonici                                        -                                   - (Negativ)
+Urobilinogen                         NORMAL                              Normal
+Bilirubina                                            -                                   - (Negativ)
+Leucocite                                 25 Leu/ul                                - (Negativ)
+Hematii                                              -                                   - (Negativ)
+Nitriti                                                -                                   - (Negativ)
+SEDIMENT:
+                                                Relativ frecvente                             Rare
+Celule epiteliale
+Leucocite                                      Relativ frecvente                      Rare (1-4/camp 40X)
+Observatii                             Mucus prezent
+
+
+Cod formular:F-7.3-01 Ed.1/Rev.0                      Data tiparirii: 08 Dec 2025 11:51:08
+Pagina 3 din 3
+
+
+
+
+           Buletin de analize medicale nr. 7408371
+                                      Data cerere 04/12/2025 08:12
+                                  Data si ora recoltare: 04/12/2025 08:12
+                                                              DUPLICAT
+ Nume: CAPATAN LUMINITA Varsta: 34 Sex: F           Medic: ULIERU CLAUDIA
+  C.N.P: 2910823151959            RECOLTAT: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+  Localitate: BRASOV               Adresa:
+
+
+IMUNOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+                         ANALIZE                            REZULTATE       INTERVAL BIOLOGIC DE REFERINTA / UM
+                                                                           Femei<45 ani-4-104.2 ng/ml
+                                                                    Femei>45 ani-4.9-232.3 ng/ml Barbati: 18.2-
+                                                                                             341.2 ng/ml
+                                                                                   1-7 ani:6-67 ng/ml
+13. Feritina -Ser - Chemiluminiscenta                          26.91 ng/ml                                                                                7-13 ani:M:14-124 ng/ml
+                                                                                            F:7-84 ng/ml
+                                                                               13-18 ani:M:14-152 ng/ml
+                                                                                          F:13-68 ng/ml
+14. FT4-Tiroxina serica libera -Ser - Chemiluminiscenta          1.241 ng/dL                  0.8 - 1.7 / ng/dL
+15. TSH-Hormonul hipofizar tireostimulator bazal -Ser -
+                                                           2.236 uUI/mL              0.30 - 3.60 / uUI/mL
+Chemiluminiscenta
+16. #Vitamina B12 -Ser -                                 190 pg/mL               197 - 771 / pg/mL
+
+
+
+
+Analizele si activitatile de recoltare marcate cu # NU sunt acoperite de acreditarea
+RENAR.                                                                        Verificat de Sef laborator:
+Opiniile si interpretarile continute de prezentul document NU sunt acoperite de
+acreditarea RENAR
+Analizele marcate cu * au fost lucrate cu laboratoare externe contractante
+Rezultatele analizelor se refera doar la proba analizata
+Punctul din rezultatul analizei corespune virgulei, cu exceptia rezultatului pentru
+densitate urinara.
+
+
+
+
+Cod formular:F-7.3-01 Ed.1/Rev.0                      Data tiparirii: 08 Dec 2025 11:51:08
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+1. VSH -Sange - Metoda Westergreen 13 mm/h < 20 / mm/h
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+2. Hemoleucograma -Sange - Spectroscopie de impedanta;spectofotometrie,citometrie de flux (Sysmex XN 530)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Hematii 4.46 10^6/uL 4.0 - 5.2 / 10^6/uL
+Hemoglobina 14.5 g/dl 11.8 - 15.2 / g/dl
+Hematocrit 43.6 % 37 - 46 / %
+Trombocite 280 10^3/ul 150 - 400 / 10^3/ul
+Leucocite 7.47 10^3/ul 4 - 10 / 10^3/ul
+Neutrofile % 63.8 % 45 - 80 / %
+Neutrofile 4.76 10^3/ul 2 - 8 / 10^3/ul
+Eozinofile % 0.4 % 0 - 7 / %
+Eozinofile 0.03 10^3/ul 0.05 - 0.7 / 10^3/ul
+Bazofile % 0.1 % 0 - 2 / %
+Bazofile 0.01 10^3/ul 0 - 0.2 / 10^3/ul
+Limfocite % 28.9 % 25 - 40 / %
+Limfocite 2.16 10^3/ul 1 - 4 / 10^3/ul
+Monocite % 6.8 % 0 - 15 / %
+Monocite 0.51 10^3/ul 0.3 - 1 / 10^3/ul
+VEM 97.8 FL 82.5 - 97.4 / FL
+HEM 32.5 pg 27 - 34 / pg
+CHEM 33.3 g/dl 32 - 36 / g/dl
+MPV 11.5 FL 8 - 13 / FL
+RDW 12.3 % 11 - 16 / %
+#PDW 14.3 FL 9 - 17 / FL
+#P-LCR 37.7 % 13 - 43 / %
+#PCT 0.32 % 0.17 - 0.35 / %
+BIOCHIMIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+3. Fosfataza alcalina -Ser - Spectrofotometrie (Advia 1800) 51.32 U/L 35 - 104 / U/L
+4. Glicemie a jeune -Ser - Spectofotometrie (Advia 1800) 94 mg/dl 74 - 106 / mg/dl
+5. Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800) 0.16 mg/dl 0 - 0.5 / mg/dl
+6. Sideremie -Ser - Spectrofotometrie (Advia 1800) 127 ug/dl 50 - 170 / ug/dl
+7. TGO / AST -Ser - Spectrofotometrie (Advia 1800) 21 U/L 0 - 32 / U/L
+8. TGP / ALT -Ser - Spectrofotometrie (Advia 1800) 19 U/L 0 - 49 / U/L
+9. #Transferina -Ser - (Advia 1800) 233 mg/dl 250 - 380 / mg/dl
+CREATININA - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+10. Creatinina serica -Ser -
+0.80 mg/dl 0 - 1.02 / mg/dl
+Spectrofotometrie (Advia 1800)
+11. #Rata de filtrare glomerulara(RFG) -Ser - (Advia 1800)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Rata de filtrare glomerulara(RFG) 96.19 ml/min/1.73 m² ≥ 60 ml/min/1.73m
+Rata de filtrare glomerulara(RFG):
+Estimarea ratei de filtrare glomerulara (eGFR) se determina prin formula de calcul matematic CKD-EPI.
+Rezultatul se interpreteaza in context clinic.Formula nu se aplica pacientilor sub 18 ani
+ANALIZE DE URINA - VALIDAT DE : ALFATH SAAD - MEDIC SPECIALIST LABORATOR
+12. Examen complet urina(sumar+sediment) -Urina - metoda reflexiei+microscopie optica
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+IMUNOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Femei<45 ani-4-104.2 ng/ml
+Femei>45 ani-4.9-232.3 ng/ml Barbati: 18.2-
+341.2 ng/ml
+1-7 ani:6-67 ng/ml
+13. Feritina -Ser - Chemiluminiscenta 26.91 ng/ml
+7-13 ani:M:14-124 ng/ml
+F:7-84 ng/ml
+13-18 ani:M:14-152 ng/ml
+F:13-68 ng/ml
+14. FT4-Tiroxina serica libera -Ser - Chemiluminiscenta 1.241 ng/dL 0.8 - 1.7 / ng/dL
+15. TSH-Hormonul hipofizar tireostimulator bazal -Ser -
+2.236 uUI/mL 0.30 - 3.60 / uUI/mL
+Chemiluminiscenta
+16. #Vitamina B12 -Ser - 190 pg/mL 197 - 771 / pg/mL
+Pagina 1 din 3
+Buletin de analize medicale nr. 7408371
+Data cerere 04/12/2025 08∶12
+Data si ora recoltare: 04/12/2025 08∶12
+Sef Laborator: Dr. BARSASTEANU ROXANA
+Cod parafa: 495083 DUPLICAT
+Nume: CAPATAN LUMINITA Varsta: 34 Sex: F Medic: ULIERU CLAUDIA
+C.N.P: 2910823151959 Recoltat: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+Localitate: BRASOV Adresa:
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+1. VSH -Sange - Metoda Westergreen 13 mm/h < 20 / mm/h
+HEMATOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+2. Hemoleucograma -Sange - Spectroscopie de impedanta;spectofotometrie,citometrie de flux (Sysmex XN 530)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Hematii 4.46 10^6/uL 4.0 - 5.2 / 10^6/uL
+Hemoglobina 14.5 g/dl 11.8 - 15.2 / g/dl
+Hematocrit 43.6 % 37 - 46 / %
+Trombocite 280 10^3/ul 150 - 400 / 10^3/ul
+Leucocite 7.47 10^3/ul 4 - 10 / 10^3/ul
+Neutrofile % 63.8 % 45 - 80 / %
+Neutrofile 4.76 10^3/ul 2 - 8 / 10^3/ul
+Eozinofile % 0.4 % 0 - 7 / %
+Eozinofile 0.03 10^3/ul 0.05 - 0.7 / 10^3/ul
+Bazofile % 0.1 % 0 - 2 / %
+Bazofile 0.01 10^3/ul 0 - 0.2 / 10^3/ul
+Limfocite % 28.9 % 25 - 40 / %
+Limfocite 2.16 10^3/ul 1 - 4 / 10^3/ul
+Monocite % 6.8 % 0 - 15 / %
+Monocite 0.51 10^3/ul 0.3 - 1 / 10^3/ul
+VEM 97.8 FL 82.5 - 97.4 / FL
+HEM 32.5 pg 27 - 34 / pg
+CHEM 33.3 g/dl 32 - 36 / g/dl
+MPV 11.5 FL 8 - 13 / FL
+RDW 12.3 % 11 - 16 / %
+#PDW 14.3 FL 9 - 17 / FL
+#P-LCR 37.7 % 13 - 43 / %
+#PCT 0.32 % 0.17 - 0.35 / %
+Cod formular:F-7.3-01 Ed.1/Rev.0 Data tiparirii: 08 Dec 2025 11:51:08
+Pagina 2 din 3
+Buletin de analize medicale nr. 7408371
+Data cerere 04/12/2025 08∶12
+Data si ora recoltare: 04/12/2025 08∶12
+DUPLICAT
+Nume: CAPATAN LUMINITA Varsta: 34 Sex: F Medic: ULIERU CLAUDIA
+C.N.P: 2910823151959 RECOLTAT: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+Localitate: BRASOV Adresa:
+BIOCHIMIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+3. Fosfataza alcalina -Ser - Spectrofotometrie (Advia 1800) 51.32 U/L 35 - 104 / U/L
+4. Glicemie a jeune -Ser - Spectofotometrie (Advia 1800) 94 mg/dl 74 - 106 / mg/dl
+5. Proteina C reactiva cantitativ -Ser - turbidimetrie (Advia 1800) 0.16 mg/dl 0 - 0.5 / mg/dl
+6. Sideremie -Ser - Spectrofotometrie (Advia 1800) 127 ug/dl 50 - 170 / ug/dl
+7. TGO / AST -Ser - Spectrofotometrie (Advia 1800) 21 U/L 0 - 32 / U/L
+8. TGP / ALT -Ser - Spectrofotometrie (Advia 1800) 19 U/L 0 - 49 / U/L
+9. #Transferina -Ser - (Advia 1800) 233 mg/dl 250 - 380 / mg/dl
+CREATININA - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+10. Creatinina serica -Ser -
+0.80 mg/dl 0 - 1.02 / mg/dl
+Spectrofotometrie (Advia 1800)
+11. #Rata de filtrare glomerulara(RFG) -Ser - (Advia 1800)
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Rata de filtrare glomerulara(RFG) 96.19 ml/min/1.73 m² ≥ 60 ml/min/1.73m
+Rata de filtrare glomerulara(RFG):
+Estimarea ratei de filtrare glomerulara (eGFR) se determina prin formula de calcul matematic CKD-EPI.
+Rezultatul se interpreteaza in context clinic.Formula nu se aplica pacientilor sub 18 ani
+ANALIZE DE URINA - VALIDAT DE : ALFATH SAAD - MEDIC SPECIALIST LABORATOR
+12. Examen complet urina(sumar+sediment) -Urina - metoda reflexiei+microscopie optica
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+pH 5.5 4.6 - 8
+Densitate 1.018 1.010 - 1.025
+Proteine - - (Negativ)
+Glucoza - Normal
+Corpi cetonici - - (Negativ)
+Urobilinogen NORMAL Normal
+Bilirubina - - (Negativ)
+Leucocite 25 Leu/ul - (Negativ)
+Hematii - - (Negativ)
+Nitriti - - (Negativ)
+SEDIMENT:
+Relativ frecvente Rare
+Celule epiteliale
+Leucocite Relativ frecvente Rare (1-4/camp 40X)
+Observatii Mucus prezent
+Cod formular:F-7.3-01 Ed.1/Rev.0 Data tiparirii: 08 Dec 2025 11:51:08
+Pagina 3 din 3
+Buletin de analize medicale nr. 7408371
+Data cerere 04/12/2025 08∶12
+Data si ora recoltare: 04/12/2025 08∶12
+DUPLICAT
+Nume: CAPATAN LUMINITA Varsta: 34 Sex: F Medic: ULIERU CLAUDIA
+C.N.P: 2910823151959 RECOLTAT: SEDIU BRASOV CONTRACT: CAS BRASOV LABORATOR - BVLAB
+Localitate: BRASOV Adresa:
+IMUNOLOGIE - VALIDAT DE : ROXANA BARSASTEANU - MEDIC PRIMAR LABORATOR CLINIC
+ANALIZE REZULTATE INTERVAL BIOLOGIC DE REFERINTA / UM
+Femei<45 ani-4-104.2 ng/ml
+Femei>45 ani-4.9-232.3 ng/ml Barbati: 18.2-
+341.2 ng/ml
+1-7 ani:6-67 ng/ml
+13. Feritina -Ser - Chemiluminiscenta 26.91 ng/ml
+7-13 ani:M:14-124 ng/ml
+F:7-84 ng/ml
+13-18 ani:M:14-152 ng/ml
+F:13-68 ng/ml
+14. FT4-Tiroxina serica libera -Ser - Chemiluminiscenta 1.241 ng/dL 0.8 - 1.7 / ng/dL
+15. TSH-Hormonul hipofizar tireostimulator bazal -Ser -
+2.236 uUI/mL 0.30 - 3.60 / uUI/mL
+Chemiluminiscenta
+16. #Vitamina B12 -Ser - 190 pg/mL 197 - 771 / pg/mL
+Analizele si activitatile de recoltare marcate cu # NU sunt acoperite de acreditarea
+RENAR. Verificat de Sef laborator:
+Opiniile si interpretarile continute de prezentul document NU sunt acoperite de
+acreditarea RENAR
+Analizele marcate cu * au fost lucrate cu laboratoare externe contractante
+Rezultatele analizelor se refera doar la proba analizata
+Punctul din rezultatul analizei corespune virgulei, cu exceptia rezultatului pentru
+densitate urinara.
+Cod formular:F-7.3-01 Ed.1/Rev.0 Data tiparirii: 08 Dec 2025 11:51:08

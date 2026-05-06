@@ -1,0 +1,12 @@
+[
+  {
+    "laborator": "Bioclinica",
+    "website": "https://bioclinica.ro",
+    "analize": ["Hematii", "Hemoglobină", "Hematocrit", "Leucocite", "Trombocite", "Glicemie", "Creatinină", "TGO (ASAT)", "TGP (ALAT)", "Proteina C reactivă", "Colesterol total", "HDL", "LDL", "TSH", "Feritina", "MCV", "MCH", "MCHC", "RDW", "Neutrofile", "Limfocite", "Monocite", "Eozinofile", "Bazofile"]
+  },
+  {
+    "laborator": "Synevo",
+    "website": "https://www.synevo.ro",
+    "analize": ["Hemoleucograma", "Eritrocite", "Hemoglobină", "Leucocite", "Trombocite", "Glicemie", "Creatinina", "Colesterol total", "TSH", "HbA1c", "Proteina C reactiva", "TGO", "TGP", "HDL", "LDL"]
+  }
+]

@@ -2,6 +2,8 @@
 ║                    ACTIUNE NECESARA - URGENT                            ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
+NOTĂ: Fișier istoric (proiect „zestful-truth”). Producție curentă: RAILWAY_PRODUCTION.md.
+
 AM IDENTIFICAT PROBLEMA!
 
 Proiectul "zestful-truth" are 2 servicii, dar doar 1 ruleaza (1/2 services online).
@@ -10,7 +12,7 @@ Proiectul "zestful-truth" are 2 servicii, dar doar 1 ruleaza (1/2 services onlin
 
 PASI PENTRU A REPARA:
 
-1. Deschide proiectul zestful-truth:
+1. Deschide proiectul zestful-truth (sau proiectul tău actual din dashboard):
    https://railway.com/project/8a6b04fc-a7b8-4584-bcfc-5a47a83595a1
 
 2. Vei vedea 2 servicii. Unul din ele probabil e:
